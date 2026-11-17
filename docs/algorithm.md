@@ -1,41 +1,38 @@
 # AutoPCB algorithm
 
 <style>
-body{font-size:10pt;line-height:1.23}
-h3{margin:0.13in 0 0.05in}
-table{font-size:8.9pt;margin:0.07in 0 0.10in}
-th,td{padding:3pt 4.6pt}
-th:first-child{width:22%}
-.math-display{margin:0.06in auto 0.08in}
-.workflow{display:flex;gap:7px;align-items:center;margin:0.02in 0 0.17in;break-inside:avoid;font:9pt Arial,sans-serif;color:#173f59}
+body{font-size:10.3pt;line-height:1.26}
+table{font-size:9.2pt;margin:0.06in 0 0.10in}
+th,td{padding:4pt 5pt}
+th:first-child{width:19%}
+tbody tr:last-child td{background:#e4f1ee}
+.math-display{margin:0.07in auto 0.09in}
+.priority{margin:0.04in 0 0.13in;padding:9px 12px;border-left:4px solid #207268;background:#e4f1ee;color:#143d3a;font:10.2pt Arial,sans-serif;line-height:1.4}
+.priority strong{display:block;margin-bottom:3px;font-size:11.8pt}
+.workflow{display:flex;gap:7px;align-items:center;margin:0.07in 0 0.1in;break-inside:avoid;font:9pt Arial,sans-serif;color:#173f59}
 .workflow div{flex:1;border:1px solid #b8cbd6;background:#eef5f6;padding:8px 3px;text-align:center}
-.workflow div:last-child{border-color:#7ba8a1;background:#e6f2ef}
+.workflow div:last-child{border-color:#7ba8a1;background:#e4f1ee}
 </style>
 
-<div class="workflow">
-<div><strong>Snapshot</strong><br>KiCad sources</div><span>→</span>
-<div><strong>Plan</strong><br>Copper islands</div><span>→</span>
-<div><strong>Preview</strong><br>Route or repair</div><span>→</span>
-<div><strong>Verify</strong><br>Refill and check</div><span>→</span>
-<div><strong>Accept</strong><br>Next checkpoint</div>
+<div class="priority">
+<strong>Open connections → Channel symmetry → Layout cost</strong>
+Candidates must meet clearance, electrical limits, and protected geometry rules.
 </div>
 
-## Board objective
+## Board score
 
-Let $U$ count open connections and $S$ measure asymmetry between equivalent channels. Let $C$ be layout cost. Rank candidates by $U$, then $S$, then $C$. Clearance, electrical limits, and protected geometry constrain which candidates are eligible.
-
-Let $L$ be trace length in millimeters, $L_{45}$ its diagonal portion, $V$ the number of vias, and $J$ the bend count after merging collinear runs. Let $D$ be the layer penalty, $M$ placement movement, $R$ copper rework, and $C_{\mathrm{silk}}$ silkscreen cost. Each $w$ sets the weight of its term.
+$U$ counts opens, $S$ measures channel asymmetry, and $C$ is layout cost. $L$ and $L_{45}$ are total and diagonal trace length in mm. $V$ counts vias and $J$ counts bends after collinear merging. $D$ is the layer penalty, $M$ placement movement, $R$ copper rework, and $C_{\mathrm{silk}}$ silkscreen cost. Each $w$ weights its term.
 
 $$
 \operatorname{lex\,min}(U,S,C),\qquad
 C=w_L L+w_{45}L_{45}+w_V V+w_J J+D+w_M M+R+w_I C_{\mathrm{silk}}.
 $$
 
-Compare channels by circuit role and connectivity in translated, rotated, or mirrored local frames. The default positional tolerance is 0.05 mm. Via alignment, bend patterns, and topology also contribute. Record differences forced by fixed endpoints.
+**Symmetry.** Match equivalent circuit roles and connections. Compare geometry, vias, bends, and topology in translated, rotated, or mirrored frames. Positional tolerance defaults to 0.05 mm. Record differences forced by fixed endpoints.
 
 ## Placement
 
-For component $i$, its pose $x_i$ comprises position $p_i$, rotation $\theta_i$, and board side $b_i$. For net $n$, let $W_n$ and $H_n$ be the width and height of its pin bounding box and $w_n$ its importance. Let $C_{\mathrm{cong}}$ estimate routing congestion and $C_{\mathrm{prox}}$ penalize departures from placement spacing targets. The placement score is $\widehat C_{\mathrm{place}}$.
+Component $i$ has pose $x_i$, with position $p_i$, rotation $\theta_i$, and side $b_i$. For net $n$, the pin bounding box has width $W_n$, height $H_n$, and net weight $w_n$. The placement score $\widehat C_{\mathrm{place}}$ adds half-perimeter wirelength to estimates for congestion $C_{\mathrm{cong}}$, spacing $C_{\mathrm{prox}}$, and movement.
 
 $$
 x_i=(p_i,\theta_i,b_i),\qquad
@@ -43,72 +40,82 @@ x_i=(p_i,\theta_i,b_i),\qquad
 =\sum_n w_n(W_n+H_n)+w_C C_{\mathrm{cong}}+w_P C_{\mathrm{prox}}+w_M M.
 $$
 
-$W_n+H_n$ is the net's half-perimeter wirelength. Use it to rank placements before routing. Recovery tries bounded moves of eligible components and reroutes their affected nets.
+**Recovery.** Try eligible component moves on a copy and reroute affected nets.
 
 ## Checkpoints and search
 
-Let $B_{\mathrm{saved}}$ be the starting board. At step $t$, $B_t$ is the current board, $q_t$ selects pins and optional same-net copper, $P_t$ is its pin set, and $k$ is the pin limit. The acceptance operation $A$ applies a validated route $r_t$.
+<div class="workflow">
+<div>Saved board</div><span>→</span>
+<div>Copper islands</div><span>→</span>
+<div>Route or repair</div><span>→</span>
+<div>Refill and check</div><span>→</span>
+<div>Keep checkpoint</div>
+</div>
+
+$B_{\mathrm{saved}}$ is the source board. Checkpoint $q_t$ on board $B_t$ selects pin set $P_t$ and optional same-net copper. $k$ limits pins per checkpoint. Acceptance $A$ applies a validated route $r_t$.
 
 $$
 B_0=B_{\mathrm{saved}},\qquad |P_t|\le k,\qquad B_{t+1}=A(B_t,q_t,r_t).
 $$
 
-For order $s$, $\widehat C(s)$ estimates final cost, $\widehat T(s)$ estimates search time, and $\lambda_T$ weights time. The order model ranks $\widehat C(s)+\lambda_T\widehat T(s)$. The implemented scheduler uses net priority, copper islands, and compatible windows, with bounded backtracking.
+**Order.** For order $s$, $\widehat C(s)$ estimates final cost, $\widehat T(s)$ estimates runtime, and $\lambda_T$ weights time. The model ranks $\widehat C(s)+\lambda_T\widehat T(s)$. The scheduler uses net priority, islands, compatible windows, and bounded backtracking.
 
-For route $r$ in the checkpoint's legal route set $\mathcal R_t$, let $\Delta C_t(r)$ be immediate cost change and $\widehat C_{\mathrm{remain}}(r)$ the estimated cost to finish. The look-ahead model favors route $r_t^\star$.
+**Look-ahead.** In legal route set $\mathcal R_t$, route $r$ changes cost by $\Delta C_t(r)$ and leaves estimated work $\widehat C_{\mathrm{remain}}(r)$. The model favors $r_t^\star$.
 
 $$
 r_t^\star\approx \arg\min_{r\in\mathcal R_t}
 \big[\Delta C_t(r)+\widehat C_{\mathrm{remain}}(r)\big].
 $$
 
-A grid state $v$ tracks position, layer, and arrival heading. Weighted A* ranks it by $g(v)+\eta h(v)$, where $g$ is the accumulated cost, $h$ estimates the remaining cost, and $\eta$ is the heuristic weight, normally 1. Exhausted search retains the best validated candidate and reports the remaining opens.
+**Grid search.** State $v$ stores position, layer, and heading. A* ranks $g(v)+\eta h(v)$ using accumulated cost $g$, estimated remaining cost $h$, and heuristic weight $\eta$ (default 1).
 
 <!-- pagebreak -->
 
-# Routing checks and acceptance
+# Copper checks and acceptance
 
 ## Geometry and rework
 
-Default local cost is $L+L_{45}+10V+J$, plus configured layer and guide costs. For replaced trace $e$, let $d_e$ be the length no longer reproduced at the same position, layer, and width. Let $m_v$ be 1 if via $v$ changes position, span, drill, or diameter, and 0 otherwise.
+**Route rules.** Use headings in 45° increments and odd multiples of 45° at bends. Check branches as junctions. Enforce clearance, width, via access, and keepouts. Reject shorts and broken connections.
+
+**Cost.** Default local cost is $L+L_{45}+10V+J$ plus configured layer and guide costs. For trace $e$, $d_e$ is the length removed or changed in position, layer, or width. For via $v$, $m_v$ is 1 when the via is removed or changes position, span, drill, or diameter, and 0 otherwise.
 
 $$
-R=\sum_e \mathbf 1[d_e>0]+\sum_e d_e+10\sum_v m_v .
+R=\sum_e\mathbf 1[d_e>0]+\sum_e d_e+10\sum_v m_v .
 $$
 
-Each track heading is a multiple of 45°. At a true bend, the change in heading is an odd multiple of 45°. Branches and pad contacts are checked as junctions. Check each candidate for copper and drill clearance, width, keepouts, via access, shorts, and preserved connections.
-
-After collinear merging, let $\phi_i$ be run $i$'s heading in eighth-turns on an unbranched same-layer chain. Let $N_{\mathrm{stair}}$ count windows that repeat a diagonal heading across one cardinal run. Set the exception $E_i=1$ when that window lies inside a complete ordinary dogleg, such as $0^\circ,45^\circ,90^\circ,45^\circ,0^\circ$. Otherwise $E_i=0$.
+**Staircases.** After collinear merging, $\phi_i$ is heading $i$ along an unbranched same-layer chain. $N_{\mathrm{stair}}$ counts repeated diagonals separated by one cardinal run. $E_i$ is 1 inside a complete dogleg such as $0^\circ,45^\circ,90^\circ,45^\circ,0^\circ$ and 0 otherwise.
 
 $$
-N_{\mathrm{stair}}=\sum_i \mathbf 1[\phi_i\text{ diagonal},\ \phi_{i+1}\text{ cardinal},
+N_{\mathrm{stair}}=\sum_i\mathbf 1[\phi_i\text{ diagonal},\ \phi_{i+1}\text{ cardinal},\
 \phi_{i+2}=\phi_i](1-E_i).
 $$
 
-## Electrical and silkscreen checks
+## Electrical limits
 
-For a radial load scenario, $I_j$ is load $j$'s current and $I_e$ is the current in branch $e$. For branch length $L_e$, width $w_e$, copper thickness $t_e$, and copper resistivity $\rho$, the DC voltage drop $\Delta V_p$ along supply path $p$ is
-
-$$
-I_e=\sum_{j\ \mathrm{downstream\ of}\ e} I_j,\qquad
-\Delta V_p=\sum_{e\in p} I_e\,\frac{\rho L_e}{w_e t_e}.
-$$
-
-Check width, vias, and voltage clearance against the actual load cases and fabrication limits. Qualify differential-pair width, gap, impedance, and return paths on the actual stackup. The working router preserves deferred pair copper.
-
-For label $i$, let $a_i$ be its anchor and $K_i$ its footprint region. Let $u$ range over $K_i$. The nearest distance is $d_i=\inf_{u\in K_i}\|a_i-u\|_2$. Let $A_{c,i}$, $A_{h,i}$, and $A_{o,i}$ be ink area clipped by fabrication, hidden by components, and overlapping other labels. The weights $\alpha_i,\beta_i,\gamma_i,\delta_i$ penalize distance and the three areas in that order.
+In a radial load case, $I_j$ is load current, $I_e$ branch current, and $\Delta V_p$ the DC drop along supply path $p$. Branch $e$ has length $L_e$, width $w_e$, thickness $t_e$, and copper resistivity $\rho$.
 
 $$
-C_{\mathrm{silk}}=\sum_i\big(\alpha_i d_i+\beta_i A_{c,i}
-+\gamma_i A_{h,i}+\delta_i A_{o,i}\big).
+I_e=\sum_{j\ \mathrm{downstream\ of}\ e}I_j,\qquad
+\Delta V_p=\sum_{e\in p}I_e\,\frac{\rho L_e}{w_et_e}.
+$$
+
+**Power.** Size traces and vias for the load cases. Check clearance for voltage and fabrication limits. **Pairs.** Check width, gap, impedance, and return copper against the chosen stackup. Preserve deferred pair copper.
+
+## Silkscreen
+
+Label $i$ has anchor $a_i$ and footprint region $K_i$. Its distance $d_i$ is the shortest distance to any point $u$ in $K_i$. Ink areas $A_{c,i}$, $A_{h,i}$, and $A_{o,i}$ measure clipping, hiding, and overlap. The review cost $C_{\mathrm{silk}}$ uses weights $\alpha_i,\beta_i,\gamma_i,\delta_i$ in that order.
+
+$$
+d_i=\inf_{u\in K_i}\|a_i-u\|_2,\qquad
+C_{\mathrm{silk}}=\sum_i(\alpha_i d_i+\beta_i A_{c,i}+\gamma_i A_{h,i}+\delta_i A_{o,i}).
 $$
 
 ## Acceptance
 
-| Step | Required check |
+| Step | Required evidence |
 | --- | --- |
-| Preview | Refill zones and independently check protected objects, native rules, and retained connectivity. |
-| Apply | Recheck saved inputs, effective policy, and editor state. Keep a recoverable board copy. |
-| Checked export | Require passing DRC, ERC, schematic parity, and connectivity plus evidence for electrical and reference-copper checks. Track hardware validation and production approval separately. |
+| Preview | Refill zones. Check native rules, protected geometry, and retained connectivity. At budget exhaustion, keep the best checked preview and report opens. |
+| Apply | Match saved inputs and policy. Check the editor lock and keep a recoverable board copy. |
+| **Checked export** | **Zero opens and clean DRC, ERC, and schematic parity.** Require source-bound electrical and applicable reference-copper evidence. Record hardware validation and production approval separately. |
 
-Resume with matching inputs. Renew after a tool change to revalidate the candidate and rebuild the queue. Make a fresh preview after a source or policy change.
+Resume with matching inputs. Renew after tool changes. Start a fresh preview after a source or policy change.

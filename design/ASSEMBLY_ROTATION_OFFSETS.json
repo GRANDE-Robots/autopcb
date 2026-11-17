@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "export_scope": "JLCPCB_FACTORY_CPL",
+  "rotation_convention": "ADD_TO_NATIVE_DEGREES_MOD_360",
+  "native_geometry_unchanged": true,
+  "overrides": [
+    {
+      "designator": "J16",
+      "qualified": true,
+      "offset_deg": 90,
+      "expected": {
+        "Manufacturer": "XYECONN",
+        "MPN": "PM2.54-1-24P-Z",
+        "LCSC Part #": "C53244560",
+        "Footprint": "Owned_Module_Sockets_J16_U3_FemaleSocket_24__6d0daeb8",
+        "Layer": "Top",
+        "Rotation": "180.000000",
+        "Native_geometry_sha256": "7e003fcf210b9ff06b172c28e227e8e0f21ea72f9cf7be2e43a8f4bb96c76902",
+        "Mid X": "11.260000",
+        "Mid Y": "34.710000"
+      },
+      "qualification_note": "Root-approved catalog convention correction. Native vertical row is the same 24-contact physical set under +90 or270 because the actual XYECONN socket is unkeyed and uniform; no catalog pin-1 datum is asserted. JLC placement must be rechecked.",
+      "qualification_evidence": {
+        "path": "design/assembly_rotation_evidence/SOCKET_CPL_ORIENTATION_REVIEW.json",
+        "sha256": "bd06e9c972217e15e8bd14a21017e7cf8fc9e5eb6575593005d335b9b2460642"
+      }
+    },
+    {
+      "designator": "J17",
+      "qualified": true,
+      "offset_deg": 90,
+      "expected": {
+        "Manufacturer": "XYECONN",
+        "MPN": "PM2.54-1-24P-Z",
+        "LCSC Part #": "C53244560",
+        "Footprint": "Owned_Module_Sockets_J17_U3_FemaleSocket_24__6d0daeb8",
+        "Layer": "Top",
+        "Rotation": "180.000000",
+        "Native_geometry_sha256": "7e003fcf210b9ff06b172c28e227e8e0f21ea72f9cf7be2e43a8f4bb96c76902",
+        "Mid X": "26.500000",
+        "Mid Y": "34.710000"
+      },
+      "qualification_note": "Root-approved catalog convention correction. Native vertical row is the same 24-contact physical set under +90 or270 because the actual XYECONN socket is unkeyed and uniform; no catalog pin-1 datum is asserted. JLC placement must be rechecked.",
+      "qualification_evidence": {
+        "path": "design/assembly_rotation_evidence/SOCKET_CPL_ORIENTATION_REVIEW.json",
+        "sha256": "bd06e9c972217e15e8bd14a21017e7cf8fc9e5eb6575593005d335b9b2460642"
+      }
+    }
+  ],
+  "qualification_limit": "Root approved +90 degrees on 19 October 2026. Uniform unkeyed passive 24-contact sockets make 90 and270 physically/electrically equivalent. This is not proof of a catalog pin-1 datum. Actual JLC placement recheck remains required.",
+  "placement_guard_refresh": {
+    "source_board_sha256": "a4b4b9818b4b43cf9255839314014e1267bca226e334731f6cdaa9f2817d5093",
+    "scope": "Bind the existing catalog rotation and unchanged socket land patterns to the current native centres. Factory placement overlay remains required.",
+    "changes": [
+      {
+        "ref": "J16",
+        "before": {
+          "Mid X": "11.028079",
+          "Mid Y": "35.507921",
+          "Rotation": "180.000000"
+        },
+        "after": {
+          "Mid X": "11.260000",
+          "Mid Y": "34.710000",
+          "Rotation": "180.000000"
+        },
+        "land_pattern_unchanged": true
+      },
+      {
+        "ref": "J17",
+        "before": {
+          "Mid X": "26.268079",
+          "Mid Y": "35.507921",
+          "Rotation": "180.000000"
+        },
+        "after": {
+          "Mid X": "26.500000",
+          "Mid Y": "34.710000",
+          "Rotation": "180.000000"
+        },
+        "land_pattern_unchanged": true
+      }
+    ]
+  }
+}

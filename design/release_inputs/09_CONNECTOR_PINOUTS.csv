@@ -1,0 +1,259 @@
+﻿Connector,Cavity,Signal name,Net,Use,Entry,Header MPN,Mating housing,Cable scope
+J1,1,5V_IN,EXT5_CONV_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,2,LIGHTS_12V_A,LIGHTS_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,3,LIGHTS_12V_B,LIGHTS_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,4,LIGHTS_12V_C,LIGHTS_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,5,LIDAR_12V_A,LIDAR_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,6,LIDAR_12V_B,LIDAR_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,7,LIDAR_12V_C,LIDAR_12_RAW,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,8,5V_RETURN,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,9,LIGHTS_RETURN_A,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,10,LIGHTS_RETURN_B,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,11,LIGHTS_RETURN_C,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,12,LIDAR_RETURN_A,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,13,LIDAR_RETURN_B,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J1,14,LIDAR_RETURN_C,GND,Connected,Upward,430451412,43025-1400,"Saved 2x7 connector. Verify the finished power loom drawing, cavity loading, current/thermal limits, fit and end-to-end continuity."
+J2,1,12V_FUSED,LIDAR1_12V,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J2,2,COMMON_RETURN,GND,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J2,3,PPS,L1_PPS,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J2,4,NMEA,L1_NMEA,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J3,1,BTS_R_PWM,BTS_R_PWM,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,2,BTS_R_EN,BTS_R_EN,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,3,BTS_R_IS,BTS_R_IS_RAW,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,4,BTS_5V_LOGIC,EXT5_FIELD,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,5,BTS_L_PWM,BTS_L_PWM,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,6,BTS_L_EN,BTS_L_EN,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,7,BTS_L_IS,BTS_L_IS_RAW,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,8,BTS_GND,GND,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,9,ENC_5V,EXT5_FIELD,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,10,ENC_GND,GND,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,11,ENC_A,ENC_A_RAW,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J3,12,ENC_B,ENC_B_RAW,Connected,Upward,430451212,43025-1200,"Factory-finished BTS and encoder branched loom. Verify cavity mapping on the installed hardware, fit and end-to-end continuity."
+J4,A1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A4,VBUS,USB_5V_RAW,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A5,CC,USB_CC1,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A6,D+,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A7,D-,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A8,SBU,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A9,VBUS,USB_5V_RAW,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,A12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B4,VBUS,USB_5V_RAW,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B5,CC,USB_CC2,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B6,D+,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B7,D-,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B8,SBU,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B9,VBUS,USB_5V_RAW,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,B12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J4,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J6,1,M8_1_VEXT,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,2,M8_2_OPTOIN,CAM1_OPTOIN,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,3,M8_3_OPTOGND,GND,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,4,M8_4_LINE2,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,5,M8_5_VAUX,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,6,M8_6_OPTOOUT,CAM1_OPTOOUT,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,7,M8_7_GND,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J6,8,M8_8_RESERVED,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,1,M8_1_VEXT,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,2,M8_2_OPTOIN,CAM3_OPTOIN,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,3,M8_3_OPTOGND,GND,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,4,M8_4_LINE2,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,5,M8_5_VAUX,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,6,M8_6_OPTOOUT,CAM3_OPTOOUT,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,7,M8_7_GND,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J8,8,M8_8_RESERVED,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J9,1,VIN_4V5_30V,IMU_USB_5V,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,2,GND,GND,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,3,USB_D+_RS422_RX+,IMU_USB_DP,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,4,SERIAL_TX,,Intentionally NC,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,5,SERIAL_RX,,Intentionally NC,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,6,USB_D-_RS422_RX-,IMU_USB_DM,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,7,SYNCIN,MTI_SYNCIN,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,8,CLOCKSYNC,MTI_CLOCKSYNC,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,9,SYNCOUT,MTI_SYNCOUT,Connected,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J9,10,RESERVED,,Intentionally NC,Upward,430451012,43025-1000,"The retained Xsens CA-MP2-MTi cable needs a selected tray-end termination or adapter. The project cable evidence records the USB shield as open at the stock cable's PicoBlade end. Confirm the exact harness drawing, fit and USB/timing link on hardware."
+J11,1,JOG_GND,GND,Connected,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J11,2,JOG_A,JOG_A_RAW,Connected,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J11,3,JOG_B,JOG_B_RAW,Connected,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J11,4,LIMIT_NC_LOOP,LIMIT_LOOP_RAW,Connected,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J11,5,LIMIT_GND,GND,Connected,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J11,6,RESERVED,,NC,Upward,430450612,43025-0600,"Factory-finished jog and limit branched loom. Verify cavity mapping, fit and end-to-end continuity."
+J12,1,TOP+,TOP_LAMP_PLUS,Connected,Upward,436500515,43645-0500,Factory-finished plug-and-play harness; no owner termination
+J12,2,TOP-,TOP_LAMP_MINUS,Connected,Upward,436500515,43645-0500,Factory-finished plug-and-play harness; no owner termination
+J12,3,FRONT+,FRONT_LAMP_PLUS,Connected,Upward,436500515,43645-0500,Factory-finished plug-and-play harness; no owner termination
+J12,4,FRONT-,FRONT_LAMP_MINUS,Connected,Upward,436500515,43645-0500,Factory-finished plug-and-play harness; no owner termination
+J12,5,RESERVED,,Not connected,Upward,436500515,43645-0500,Factory-finished plug-and-play harness; no owner termination
+J13,1,3V3,3V3,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J13,2,AMBIENT,TOP_AMBIENT_RAW,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J13,3,GND,GND,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J14,1,3V3,3V3,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J14,2,AMBIENT,FRONT_AMBIENT_RAW,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J14,3,GND,GND,Connected,Upward,436500315,43645-0300,Factory-finished plug-and-play harness; no owner termination
+J16,1,VIN,SYS5_CORE,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,2,AGND/GND,GND,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,3,3V3,3V3,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,4,D23,BTS_R_EN_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,5,D22,LIMIT_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,6,D21,BTS_R_IS_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,7,D20,NMEA_AUX_TX_3V3,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,8,D19,RTC_SCL,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,9,D18,RTC_SDA,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,10,D17,CAM1_FB_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,11,D16,CAM2_FB_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,12,D15,CAM3_FB_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,13,D14,CAM4_FB_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,14,D13,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,15,GND@2,GND,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,16,D41,BTS_L_IS_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,17,D40,PWR_WINDOW_FAULT_N,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,18,D39,FRONT_CURRENT_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,19,D38,PPS_MASTER,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,20,D37,CAM4_TRIG_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,21,D36,CAM3_TRIG_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,22,D35,CAM2_TRIG_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,23,D34,CAM1_TRIG_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J16,24,D33,BTS_L_EN_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,1,GND,GND,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,2,D0,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,3,D1,NMEA_TX_INV_3V3,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,4,D2,TOP_PWM,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,5,D3,FRONT_PWM,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,6,D4,BTS_L_PWM_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,7,D5,BTS_R_PWM_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,8,D6,TOP_POWER_EN,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,9,D7,FRONT_POWER_EN,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,10,D8,ARM_JOG_A_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,11,D9,ARM_JOG_B_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,12,D10,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,13,D11,ENC_B_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,14,D12,ENC_A_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,15,3V3@2,3V3,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,16,D24,TOP_AMBIENT_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,17,D25,FRONT_AMBIENT_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,18,D26,TOP_CURRENT_ADC,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,19,D27,MTI_SYNCOUT_MCU_INV,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,20,D28,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,21,D29,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,22,D30,MTI_SYNCIN_MCU,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,23,D31,FIELD_VALID,Connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J17,24,D32,,Not connected,Upward,PM2.54-1-24P-Z,Owner-confirmed fitted male module header; 24 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,1,VIN,3V3,Connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,2,GND,GND,Connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,3,SCL,RTC_SCL,Connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,4,SDA,RTC_SDA,Connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,5,BAT,,Not connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,6,32K,,Not connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,7,SQW,RTC_SQW,Connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J18,8,RST,,Not connected,Upward,KH-2.54FH-1X8P-H8.5,Owner-confirmed fitted Adafruit 3013 male header; 8 contacts,Factory-finished plug-and-play harness; no owner termination
+J19,1,12V_FUSED,LIDAR2_12V,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J19,2,COMMON_RETURN,GND,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J19,3,PPS,L2_PPS,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J19,4,NMEA,L2_NMEA,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J20,1,12V_FUSED,LIDAR3_12V,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J20,2,COMMON_RETURN,GND,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J20,3,PPS,L3_PPS,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J20,4,NMEA,L3_NMEA,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J21,1,12V_FUSED,LIDAR4_12V,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J21,2,COMMON_RETURN,GND,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J21,3,PPS,L4_PPS,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J21,4,NMEA,L4_NMEA,Connected,Upward,436500415,43645-0400,Factory-finished plug-and-play harness; no owner termination
+J22,1,TX+,L1_ETH_TX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,2,TX-,L1_ETH_TX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,3,NMEA,L1_NMEA,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,4,RX-,L1_ETH_RX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,5,RX+,L1_ETH_RX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,6,PPS,L1_PPS,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,7,12V_CURRENT_LIMITED,L1_RJ45_12V,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,8,COMMON_RETURN,GND,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J22,L,Mechanical mounting lug,,Not connected,Upward,855135013,Native USB/RJ45 format,No external wire; mechanical board attachment only
+J23,1,TX+,L1_ETH_TX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,2,TX-,L1_ETH_TX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,3,RX+,L1_ETH_RX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,4,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,5,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,6,RX-,L1_ETH_RX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,7,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,8,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J23,L,Mechanical mounting lug,,Not connected,Upward,855135013,Native USB/RJ45 format,No external wire; mechanical board attachment only
+J24,1,TX+,L2_ETH_TX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,2,TX-,L2_ETH_TX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,3,NMEA,L2_NMEA,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,4,RX-,L2_ETH_RX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,5,RX+,L2_ETH_RX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,6,PPS,L2_PPS,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,7,12V_CURRENT_LIMITED,L2_RJ45_12V,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,8,COMMON_RETURN,GND,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J24,L,Mechanical mounting lug,,Not connected,Upward,855135013,Native USB/RJ45 format,No external wire; mechanical board attachment only
+J25,1,TX+,L2_ETH_TX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,2,TX-,L2_ETH_TX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,3,RX+,L2_ETH_RX_P,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,4,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,5,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,6,RX-,L2_ETH_RX_N,Connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,7,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,8,NC,,Not connected,Upward,855135013,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J25,L,Mechanical mounting lug,,Not connected,Upward,855135013,Native USB/RJ45 format,No external wire; mechanical board attachment only
+J26,1,M8_1_VEXT,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,2,M8_2_OPTOIN,CAM2_OPTOIN,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,3,M8_3_OPTOGND,GND,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,4,M8_4_LINE2,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,5,M8_5_VAUX,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,6,M8_6_OPTOOUT,CAM2_OPTOOUT,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,7,M8_7_GND,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J26,8,M8_8_RESERVED,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,1,M8_1_VEXT,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,2,M8_2_OPTOIN,CAM4_OPTOIN,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,3,M8_3_OPTOGND,GND,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,4,M8_4_LINE2,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,5,M8_5_VAUX,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,6,M8_6_OPTOOUT,CAM4_OPTOOUT,Connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,7,M8_7_GND,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J27,8,M8_8_RESERVED,,Not connected,Upward,430450812,43025-0800,Factory-finished plug-and-play harness; no owner termination
+J28,A1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A4,VBUS,TEENSY_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A5,CC1,TEENSY_CC1,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,CC1 is connected in the saved design. Qualify USB-C attachment and operation in both orientations on hardware.
+J28,A6,D+,TEENSY_HOST_USB_DP,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A7,D-,TEENSY_HOST_USB_DM,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A8,SBU1,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A9,VBUS,TEENSY_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,A12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B4,VBUS,TEENSY_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B5,CC2,TEENSY_CC2,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B6,D+,TEENSY_HOST_USB_DP,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B7,D-,TEENSY_HOST_USB_DM,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B8,SBU2,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B9,VBUS,TEENSY_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,B12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+J28,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Factory-finished plug-and-play harness; no owner termination
+CA1,1,VBUS_ISOLATED_NC,,NC,Internal — beside Teensy USB,FACTORY-USB2-PIGTAIL,N/A,"Required factory-fitted short shielded Micro-B pigtail with strain relief. CA1.1 VBUS is intentionally open. Confirm the factory drawing, attachment and USB power-order behavior on hardware."
+CA1,2,USB_D_MINUS,TEENSY_USB_DM,Connected,Internal — beside Teensy USB,FACTORY-USB2-PIGTAIL,N/A,"Required factory-fitted short shielded Micro-B pigtail with strain relief. CA1.1 VBUS is intentionally open. Confirm the factory drawing, attachment and USB power-order behavior on hardware."
+CA1,3,USB_D_PLUS,TEENSY_USB_DP,Connected,Internal — beside Teensy USB,FACTORY-USB2-PIGTAIL,N/A,"Required factory-fitted short shielded Micro-B pigtail with strain relief. CA1.1 VBUS is intentionally open. Confirm the factory drawing, attachment and USB power-order behavior on hardware."
+CA1,4,USB_GND,GND,Connected,Internal — beside Teensy USB,FACTORY-USB2-PIGTAIL,N/A,"Required factory-fitted short shielded Micro-B pigtail with strain relief. CA1.1 VBUS is intentionally open. Confirm the factory drawing, attachment and USB power-order behavior on hardware."
+CA1,5,CABLE_SHIELD,GND,Connected,Internal — beside Teensy USB,FACTORY-USB2-PIGTAIL,N/A,"Required factory-fitted short shielded Micro-B pigtail with strain relief. CA1.1 VBUS is intentionally open. Confirm the factory drawing, attachment and USB power-order behavior on hardware."
+J30,A1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A4,VBUS,IMU_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A5,CC1,IMU_CC1,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,CC1 is connected in the saved design. Qualify USB-C attachment and operation in both orientations on hardware.
+J30,A6,D+,IMU_USB_DP,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A7,D-,IMU_USB_DM,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A8,SBU1,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A9,VBUS,IMU_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,A12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B1,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B4,VBUS,IMU_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B5,CC2,IMU_CC2,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B6,D+,IMU_USB_DP,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B7,D-,IMU_USB_DM,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B8,SBU2,,Not connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B9,VBUS,IMU_HOST_VBUS,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,B12,GND,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination
+J30,SH,SHIELD,GND,Connected,Upward,GT-USB-7051A,Native USB/RJ45 format,Finished USB-C lead from J30 to NUC; no owner termination

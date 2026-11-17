@@ -1,0 +1,224 @@
+{
+  "schema": 1,
+  "all_system_parts_required": true,
+  "scope": "Every native system part remains required. Factory quotation covers carrier assembly; owned plug-in modules are installed afterward as an explicit finishing stage, never DNP.",
+  "default": {
+    "required": true,
+    "supply_owner": "JLCPCB",
+    "assembly_stage": "FACTORY_ASSEMBLY"
+  },
+  "native_connection_requirements": [
+    {
+      "connector": "CA1",
+      "cavity": "1",
+      "condition": "UNCONNECTED",
+      "reason": "Carrier USB host VBUS must not reach the stock-bridge Teensy through CA1.1. The carrier separately supplies Teensy VIN."
+    },
+    {
+      "connector": "J16",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "net": "SYS5_CORE",
+      "reason": "The stock-bridge Teensy is powered through VIN, not the isolated host USB VBUS conductor."
+    },
+    {
+      "connector": "U28",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "TEENSY_USB_DP"
+    },
+    {
+      "connector": "U28",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "TEENSY_USB_DM"
+    },
+    {
+      "connector": "U28",
+      "cavity": "3",
+      "condition": "UNCONNECTED",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology."
+    },
+    {
+      "connector": "U28",
+      "cavity": "4",
+      "condition": "UNCONNECTED",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology."
+    },
+    {
+      "connector": "U28",
+      "cavity": "5",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "U28",
+      "cavity": "6",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_OE_N"
+    },
+    {
+      "connector": "U28",
+      "cavity": "7",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "TEENSY_HOST_USB_DM"
+    },
+    {
+      "connector": "U28",
+      "cavity": "8",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "TEENSY_HOST_USB_DP"
+    },
+    {
+      "connector": "U28",
+      "cavity": "9",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "U28",
+      "cavity": "10",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "3V3"
+    },
+    {
+      "connector": "U29",
+      "cavity": "1",
+      "condition": "UNCONNECTED",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology."
+    },
+    {
+      "connector": "U29",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "U29",
+      "cavity": "3",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_VBUS_SENSE"
+    },
+    {
+      "connector": "U29",
+      "cavity": "4",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "U29",
+      "cavity": "5",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "3V3"
+    },
+    {
+      "connector": "U29",
+      "cavity": "6",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_OE_N"
+    },
+    {
+      "connector": "R152",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "TEENSY_HOST_VBUS"
+    },
+    {
+      "connector": "R152",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_VBUS_SENSE"
+    },
+    {
+      "connector": "R153",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_VBUS_SENSE"
+    },
+    {
+      "connector": "R153",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "R154",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "3V3"
+    },
+    {
+      "connector": "R154",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "USB_HOST_OE_N"
+    },
+    {
+      "connector": "C52",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "3V3"
+    },
+    {
+      "connector": "C52",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    },
+    {
+      "connector": "C53",
+      "cavity": "1",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "3V3"
+    },
+    {
+      "connector": "C53",
+      "cavity": "2",
+      "condition": "EXACT_NET",
+      "reason": "USB host-off data gate: preserve the reviewed mux, host-threshold detector, bias and local decoupling topology.",
+      "net": "GND"
+    }
+  ],
+  "overrides": {
+    "U3": {
+      "required": true,
+      "supply_owner": "OWNER",
+      "assembly_stage": "OWNER_INSTALL",
+      "expected_manufacturer": "PJRC / SparkFun",
+      "expected_mpn": "TEENSY41_PINS",
+      "required_finishing": "Owner confirmed socket-compatible male headers are already fitted. Plug both 24-pin rows into factory-fitted J16/J17 with correct orientation/engagement; the factory fits CA1, the short shielded Micro-B pigtail. Retain the stock VIN/VUSB bridge. CA1.1 is VBUS-open and the carrier data switch qualifies attachment from host VBUS. SYS5_CORE powers VIN at J16.1. Use J28 for host service; isolate external VIN before direct Micro-B-to-host servicing. No header soldering, bridge cutting or duplicate purchase.",
+      "acceptance_status": "REQUIRED OWNER PLUG-IN. Compatible male headers confirmed on 19 October 2026. Native checking must verify CA1.1 NC, J16.1 SYS5_CORE and the USB switch/monitor pin-net map. Quantity allocation, orientation/engagement, unpowered continuity and powered USB qualification remain pre-use checks. No JLC header preparation or module placement in this carrier quote."
+    },
+    "U9": {
+      "required": true,
+      "supply_owner": "OWNER",
+      "assembly_stage": "OWNER_INSTALL",
+      "expected_manufacturer": "Adafruit",
+      "expected_mpn": "3013",
+      "required_finishing": "Owner confirmed the owned RTC module already has male headers. Plug the Adafruit 3013 DS3231 module into factory-fitted J18 with the battery-holder side upward and VIN at cavity 1, after verifying the existing header direction, engagement and IC clearance. CR1220 is a separate system accessory. No owner header soldering is required.",
+      "acceptance_status": "REQUIRED OWNER PLUG-IN. Male headers confirmed by owner on 19 October 2026. Physical quantity allocation, existing header direction, orientation/engagement and clearance remain pre-power acceptance checks. No duplicate purchase, JLC header preparation or factory module placement in this carrier quote."
+    }
+  }
+}

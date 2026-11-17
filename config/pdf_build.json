@@ -1,0 +1,8 @@
+{
+  "documents": [
+    {
+      "source": "autopcb/docs/algorithm.md",
+      "output": "autopcb/docs/algorithm.pdf"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "working_scope": {
+    "kind": "connectivity",
+    "classes": ["Default", "CORE_SIGNAL", "FIELD_SIGNAL", "CORE_POWER", "FIELD_POWER",
+                "LIGHT_POWER", "GROUND", "LIDAR_TRUNK", "LIDAR_BRANCH", "LIGHT_RAW", "LIGHT_TRUNK"],
+    "manufacturing_approved": false
+  },
+  "max_pins": 3,
+  "search_margin_mm": 8.0,
+  "include_nets": [
+    "TPS_SS",
+    "TPS_ILM",
+    "CORE_OV",
+    "PPS_MASTER",
+    "BTS_R_EN_MCU",
+    "BTS_R_IS_FILT"
+  ],
+  "exclude_nets": [],
+  "priorities": {
+    "TPS_SS": 0,
+    "TPS_ILM": 0,
+    "CORE_OV": 0,
+    "PPS_MASTER": 1,
+    "BTS_R_EN_MCU": 2,
+    "BTS_R_IS_FILT": 2
+  },
+  "route": {
+    "layers": ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"],
+    "step_mm": 0.1,
+    "width_mm": 0.2,
+    "clearance_mm": 0.2,
+    "via": {"size_mm": 0.6, "drill_mm": 0.3},
+    "weights": {"length": 1.0, "bend": 1.0, "via": 10.0, "diagonal": 1.0},
+    "layer_penalties": {},
+    "assume_zone_refill": true,
+    "forbid_staircase": true,
+    "gentle_turns": true,
+    "first_feasible": true,
+    "heuristic_weight": 2.0,
+    "max_expansions": 200000,
+    "max_cells": 250000
+  },
+  "net_overrides": {
+    "TPS_SS": {"topology_heuristic": true},
+    "TPS_ILM": {"topology_heuristic": true},
+    "CORE_OV": {"step_mm": 0.05, "max_cells": 1000000, "width_mm": 0.2, "max_expansions": 1000000, "topology_heuristic": true, "heuristic_weight": 2, "via": {"size_mm": 0.82, "drill_mm": 0.3}},
+    "BTS_R_IS_FILT": {"topology_heuristic": true},
+    "BTS_R_EN_MCU": {"topology_heuristic": true, "heuristic_weight": 2}
+  },
+  "search": {
+    "tree_beam": 3,
+    "path_candidates": 1,
+    "path_calls": 200,
+    "net_path_calls": 100,
+    "validation_candidates": 3,
+    "smoothing_trials": 256,
+    "seconds": 60
+  },
+  "recovery": {"early_rework": true},
+  "max_nets": 100,
+  "max_checkpoints": 300
+}

@@ -1,0 +1,29 @@
+# KiCad local editor state and recovery files
+*.kicad_prl
+~*.lck
+_autosave-*.kicad_pcb
+_autosave-*.kicad_sch
+
+# Python environments and generated caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Operating-system and editor metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Generated routing previews, reports, and resumable checkpoints
+/results/
+
+# Keep authored configs, campaign inputs, design references, and docs under Git.

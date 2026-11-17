@@ -1,0 +1,266 @@
+{
+  "schema": 1,
+  "status": "SAVED_SIX_LAYER_DESIGN_OBSERVATIONS; FACTORY_STACKUP_AND_ELECTRICAL_QUALIFICATION_PENDING",
+  "stackup_id": "JLC061612-1080",
+  "stackup_id_evidence": "Material labels in saved native PCB; no factory acceptance inferred",
+  "copper_layers": 6,
+  "maximum_copper_layers": 6,
+  "material": "FR4",
+  "nominal_order_thickness_mm": 1.6,
+  "nominal_order_status": "Candidate JLCPCB nominal quote selection. Confirm the exact 2 oz inner stack and finished thickness with JLCPCB.",
+  "outer_copper_oz": 1,
+  "inner_copper_oz": 2,
+  "copper_thicknesses_mm": [
+    0.035,
+    0.061,
+    0.061,
+    0.061,
+    0.061,
+    0.035
+  ],
+  "dielectric_thicknesses_mm": [
+    0.1375,
+    0.35,
+    0.325,
+    0.35,
+    0.1375
+  ],
+  "physical_stack_mm": [
+    {
+      "layer": "F.Cu",
+      "type": "copper",
+      "thickness": 0.035
+    },
+    {
+      "layer": "dielectric 1",
+      "type": "prepreg",
+      "thickness": 0.1375,
+      "materials": [
+        "JLC061612-1080 1080",
+        "JLC061612-1080 1080"
+      ]
+    },
+    {
+      "layer": "In1.Cu",
+      "type": "copper",
+      "thickness": 0.061
+    },
+    {
+      "layer": "dielectric 2",
+      "type": "core",
+      "thickness": 0.35,
+      "materials": [
+        "JLC061612-1080 FR4"
+      ]
+    },
+    {
+      "layer": "In2.Cu",
+      "type": "copper",
+      "thickness": 0.061
+    },
+    {
+      "layer": "dielectric 3",
+      "type": "prepreg",
+      "thickness": 0.325,
+      "materials": [
+        "JLC061612-1080 1080",
+        "JLC061612-1080 7628",
+        "JLC061612-1080 1080"
+      ]
+    },
+    {
+      "layer": "In3.Cu",
+      "type": "copper",
+      "thickness": 0.061
+    },
+    {
+      "layer": "dielectric 4",
+      "type": "core",
+      "thickness": 0.35,
+      "materials": [
+        "JLC061612-1080 FR4"
+      ]
+    },
+    {
+      "layer": "In4.Cu",
+      "type": "copper",
+      "thickness": 0.061
+    },
+    {
+      "layer": "dielectric 5",
+      "type": "prepreg",
+      "thickness": 0.1375,
+      "materials": [
+        "JLC061612-1080 1080",
+        "JLC061612-1080 1080"
+      ]
+    },
+    {
+      "layer": "B.Cu",
+      "type": "copper",
+      "thickness": 0.035
+    }
+  ],
+  "native_electrical_stack_thickness_mm": 1.614,
+  "native_mask_total_mm": 0.06096,
+  "layer_function_status": "All six layers enabled for routing; actual ground continuity and local USB/Ethernet reference copper require verification",
+  "calculator": {
+    "status": "REQUALIFICATION_REQUIRED_FOR_ACCEPTED_SIX_LAYER_STACK",
+    "source_url": "https://jlcpcb.com/pcb-impedance-calculator",
+    "limits": [
+      "Historical four-layer inverse calculations below are retained as evidence, not a six-layer manufacturing approval.",
+      "Use the accepted factory stack and local reference-plane continuity before releasing impedance-controlled routing."
+    ]
+  },
+  "production_released": false,
+  "factory_acceptance": "PENDING",
+  "minimum_inner_copper_oz": 2,
+  "notes": [
+    "Derived from saved v4.1 PCB after the authorized latest-v4.2 import.",
+    "Copper thicknesses are CAD values; guaranteed manufactured thickness and via plating are not established.",
+    "Routing completion, DRC and review exports do not establish physical or manufacturing readiness."
+  ],
+  "historical_four_layer_observations": {
+    "schema": 1,
+    "status": "CALCULATOR_OBSERVATIONS; FINAL ROUTING AND FACTORY ACCEPTANCE PENDING",
+    "stackup_id": "JLC041612-1080A",
+    "copper_layers": 4,
+    "maximum_copper_layers": 4,
+    "material": "FR4",
+    "nominal_order_thickness_mm": 1.6,
+    "displayed_finished_thickness_mm": 1.43,
+    "displayed_finished_thickness_tolerance_percent": 10,
+    "outer_copper_oz": 1,
+    "inner_copper_oz": 2,
+    "copper_thicknesses_mm": [
+      0.035,
+      0.061,
+      0.061,
+      0.035
+    ],
+    "dielectric_thicknesses_mm": [
+      0.1375,
+      0.96,
+      0.1375
+    ],
+    "physical_stack_mm": [
+      {
+        "layer": "L1",
+        "type": "copper",
+        "thickness": 0.035
+      },
+      {
+        "type": "1080 RC67% prepreg",
+        "thickness": 0.084
+      },
+      {
+        "type": "1080 RC67% prepreg",
+        "thickness": 0.0535
+      },
+      {
+        "layer": "L2",
+        "type": "copper",
+        "thickness": 0.061
+      },
+      {
+        "type": "core",
+        "thickness": 0.96
+      },
+      {
+        "layer": "L3",
+        "type": "copper",
+        "thickness": 0.061
+      },
+      {
+        "type": "1080 RC67% prepreg",
+        "thickness": 0.0535
+      },
+      {
+        "type": "1080 RC67% prepreg",
+        "thickness": 0.084
+      },
+      {
+        "layer": "L4",
+        "type": "copper",
+        "thickness": 0.035
+      }
+    ],
+    "layer_function_status": "Final native plane functions and return-path continuity require routing review.",
+    "calculator": {
+      "source_url": "https://jlcpcb.com/pcb-impedance-calculator",
+      "status": "OFFICIAL_CALCULATOR_RESEARCH_ONLY_2OZ_INNER_PREFERRED_BY_ROOT",
+      "captured_date_utc": "2026-10-22",
+      "geometry": "Differential Pair (Non coplanar)",
+      "signal_layer": "L1",
+      "reference_layer": "L2",
+      "trace_gap_mm": 0.24,
+      "method": "Adjust target impedance until visible returned width matches native width; approximate inferred nominal Z, not a direct inverse field.",
+      "solver_tolerance_percent": 0.01,
+      "initial_target_results": [
+        {
+          "target_ohm": 90,
+          "returned_width_mm": 0.2187
+        },
+        {
+          "target_ohm": 100,
+          "returned_width_mm": 0.1717
+        }
+      ],
+      "inverse_results": [
+        {
+          "native_width_mm": 0.22,
+          "target_ohm": 89.67,
+          "returned_width_mm": 0.22,
+          "nominal_target_ohm": 90,
+          "approximate_deviation_percent": -0.3666666667,
+          "evidence": "calculator_2oz_1080A_native_widths"
+        },
+        {
+          "native_width_mm": 0.18,
+          "target_ohm": 98.19,
+          "returned_width_mm": 0.1801,
+          "nominal_target_ohm": 100,
+          "approximate_deviation_percent": -1.81,
+          "evidence": "calculator_2oz_1080A_native_widths"
+        },
+        {
+          "native_width_mm": 0.2,
+          "target_ohm": 93.71,
+          "returned_width_mm": 0.1999,
+          "nominal_target_ohm": 90,
+          "approximate_deviation_percent": 4.1222222222,
+          "evidence": "calculator_2oz_1080A_usb_escape"
+        }
+      ],
+      "limits": [
+        "No four-layer price or factory acceptance observed.",
+        "Special stack and finished1.43mm must be explicit in factory quotation and mechanical review.",
+        "Numerical solver tolerance is not manufacturing impedance tolerance.",
+        "No binding to unfinished candidate CAD hashes.",
+        "Local reference continuity and every actual escape/transition require separate audit.",
+        "Retains0.061mm inner copper cross section of six-layer source; this does not itself prove thermal performance.",
+        "No uncontrolled factory width changes authorized."
+      ]
+    },
+    "evidence_archive": "v4.1-backups/v4.1-before-autopcb-cleanup-20261116-162630.zip",
+    "evidence_files": {
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_90_100.png": "cba43fd310ee7960006c147c21f3b9eeb91a58088e48561bb6436e96189069e7",
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_90_100.txt": "0981562dfaf571dab23e7e70a654fa092b873b77387a1399d48294e045229d00",
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_native_widths.png": "7c8cefae970be0d71b77bca2ec5b4d348ec3eb64daefc6c0742726b84d0e042d",
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_native_widths.txt": "252091b5224c8d9c3279989c9b9b032e39057b0e1c8d8428698ec7455e2386e9",
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_usb_escape.png": "d937efd87e6cb6e4d74e1aef47ae0a8a900fe7f4388463b0b9cb68f868bf1e7e",
+      "autopcb/design/stackup_evidence/calculator_2oz_1080A_usb_escape.txt": "30608ed04da80d03eaa95905a1ac903df4572543c4c832ea962b10f0568f2a7f",
+      "autopcb/design/stackup_evidence/JLC_2OZ_1080A_CALCULATOR.json": "461ca110a14f24a7cf4e309b9873eb73dfd52b78381b0ac1315206c2a1a3b849"
+    },
+    "production_released": false,
+    "factory_acceptance": "PENDING",
+    "notes": [
+      "Four copper layers maximum; retain at least2oz inner copper.",
+      "Order selection and displayed finished thickness differ; confirm the exact Special stack, finished board thickness and mechanical fit with the factory.",
+      "Calculator observations do not qualify the unfinished routes, current capacity, return paths, transitions or manufacturing tolerance.",
+      "No native hashes, final route geometry, via-schedule hashes, impedance worksheet or fabrication notes are bound or regenerated."
+    ],
+    "minimum_inner_copper_oz": 2
+  },
+  "native_finished_stack_thickness_mm": 1.67496
+}

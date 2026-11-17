@@ -23,7 +23,6 @@ desktop.ini
 *.swp
 *.swo
 
-# Generated routing previews, reports, and resumable checkpoints
+# Generated routing outputs and local campaign recipes
 /results/
-
-# Keep authored configs, campaign inputs, design references, and docs under Git.
+/config/campaigns/

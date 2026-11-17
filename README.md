@@ -32,7 +32,7 @@ autopcb create results/proposals/PROPOSAL_ID.json --approve PROPOSAL_ID --name "
 autopcb verify
 ```
 
-Review the proposal before choosing its ID. The generated `.kicad_pro`, `.kicad_pcb`, `.kicad_sch`, design rules, and local library references go in `results/projects/Control Board/`. The offline catalog covers an I²C temperature sensor and a full-speed USB Type-B breakout. Missing ratings or requirements stay visible in the proposal. `lookup-sources` explicitly retrieves public manufacturer sources named by an approved proposal.
+Review the proposal before choosing its ID. The generated `.kicad_pro`, `.kicad_pcb`, `.kicad_sch`, design rules, and local library references go in `results/projects/Control Board/`. The offline catalog covers an I²C temperature sensor and a full-speed USB Type-B breakout. The USB layout tries a single-layer differential pair and an adjacent ground plane when creating the draft. Its nominal geometry and the limits of the review appear in the proposal. Missing ratings or requirements stay visible. `lookup-sources` retrieves public manufacturer sources named by an approved proposal.
 
 ### Open, preview, and verify a KiCad design
 
@@ -49,13 +49,15 @@ autopcb --project "path/to/board.kicad_pro" export --draft
 
 Use `configure-layout` to create or copy a reviewed policy into `config/projects/<project>/autopcb.json`. AutoPCB combines workspace defaults with native limits when it creates a policy. It can read an existing project-local policy for compatibility. Use `autopcb campaign new --name "Layout review"` to start an edit campaign. Use `--resume RUN_ID` for matching sources or `--renew RUN_ID` to recheck after tool changes. Preview runs against a private copy. Apply checks the files, protected geometry, and editor state before saving a validated improvement.
 
+The ordinary router preserves declared differential copper. Pair seeding currently covers a single two-terminal pair on a new catalog board with parallel pad rows. Existing boards can be routed and reviewed with their saved pair geometry.
+
 `--workspace PATH` selects the location of shared inputs and outputs. If several native projects are available, pass a file with `--project`. The desktop lets you open that file directly. For an imported board, the config and report paths include a project key so same-named boards stay separate. Verification and recovery records go in `results/jobs/<project>/`. Exports default to `results/exports/`. Use `--output` to choose an explicit new destination for an export or project.
 
 ### Evidence for a checked export
 
-The optional `autopcb.project.json` profile uses `schema_version: 1`, an `entry` native filename, and an explicit `differential_pairs` list when `high_speed_reviewed` is true. The routing adapter protects those pairs. Independent verification reports ERC, DRC, schematic agreement, and current reference-copper findings.
+The `autopcb.project.json` profile uses `schema_version: 1` and an `entry` native filename. For checked export, record `high_speed_reviewed: true` and list each differential pair as two native net names, positive first. Use an empty `differential_pairs` list for a project reviewed as having no pairs. Set `reference_net` if the return has a name other than `GND`. Verify and export independently check ERC, DRC, and schematic agreement, then sample adjacent reference copper on the refilled PCB. The findings include trace locations, layer transitions, and any unreviewed scope.
 
-A checked export requires passing native checks and an `electrical_review` pointer with the report's relative `file` and `sha256`. The report file can live in `data/projects/<project>/`. The version 1 review records the reviewer, the exact `sources` from verification excluding the profile and review file, and a `policy_sha256` of the profile without the review pointer. Compute the policy digest over compact UTF-8 JSON with sorted keys. The `checks` map includes passing `electrical` and applicable `reference_copper` checks, with a method and measurements for each. Draft packages disclose blockers. Production approval and hardware bring-up remain separate.
+A checked export requires passing native checks and an `electrical_review` pointer with the report's relative `file` and `sha256`. The report file can live in `data/projects/<project>/`. The version 1 review records the reviewer, the exact `sources` from verification excluding the profile and review file, and a `policy_sha256` of the profile without the review pointer. Compute the policy digest over compact UTF-8 JSON with sorted keys. The `checks` map includes passing `electrical` and applicable `reference_copper` checks, with a method and measurements for each. Use `checks.reference_copper.findings` to map each current finding ID to a documented engineering disposition. Draft exports include the same blockers and raw findings as verification. Production approval and hardware bring-up remain separate.
 
 ## Development and packaging
 
@@ -64,8 +66,9 @@ python scripts/run.py --project . test
 python scripts/run.py --project . docs build-pdf
 python -m pip install ".[desktop-build]"
 python packaging/build_desktop.py --output results/distribution --bundle-only
+autopcb qualify --output results/host-qualification
 ```
 
-The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. Build and qualify each on its target system. The development build has native Windows checks. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets. The original `scripts/run.py` commands remain available for existing KiCad projects.
+The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. Run `qualify` from a fresh install on each target system. It creates private copies of both reference designs, exercises preview and guarded Apply, and reads the saved projects back through verification and export. The report records the host, toolchain, search budget, remaining opens and release blockers. An incomplete run exits with status 2 and retains the evidence. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets. The original `scripts/run.py` commands remain available for existing KiCad projects.
 
 [Algorithm guide](docs/algorithm.pdf) · [Editable documentation](docs/algorithm.md)

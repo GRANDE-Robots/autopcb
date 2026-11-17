@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+import hashlib
 from pathlib import Path
 import json
 import os
@@ -127,7 +128,7 @@ def inspect(native: Native, paths: ProjectPaths) -> dict:
             "inputs": snapshot.hashes, "geometry": geometry, "toolchain": native.status()}
 
 
-def review_evidence(paths: ProjectPaths, snapshot: SourceSnapshot,
+def review_evidence(paths: ProjectPaths, snapshot: SourceSnapshot, reference: dict,
                     storage: ProjectStorage | None = None) -> tuple[bytes | None, str | None]:
     profile = read_profile(paths.root)
     review = profile.pop("electrical_review", None)
@@ -143,12 +144,12 @@ def review_evidence(paths: ProjectPaths, snapshot: SourceSnapshot,
              else paths.root)
     if not path.is_relative_to(scope) or not path.is_file() or path.stat().st_size > 2_000_000:
         return None, "The electrical review must be a report file in project or workspace data."
-    if sha(path) != review.get("sha256"):
-        return None, "The electrical review file differs from the approved report."
     content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != review.get("sha256"):
+        return None, "The electrical review file differs from the approved report."
     try:
         report = json.loads(content)
-        required = {"electrical"} | ({"reference_copper"} if profile.get("differential_pairs") else set())
+        required = ("electrical", "reference_copper") if reference["pairs"] else ("electrical",)
         measured = report.get("checks", {})
         excluded = {PROFILE_NAME}
         if path.is_relative_to(paths.root):
@@ -160,8 +161,16 @@ def review_evidence(paths: ProjectPaths, snapshot: SourceSnapshot,
                 or not all(isinstance(measured.get(check), dict)
                            and measured[check].get("status") == "pass"
                            and measured[check].get("measurements")
-                           and measured[check].get("method") for check in required)):
+                           and isinstance(measured[check].get("method"), str)
+                           and measured[check]["method"].strip() for check in required)):
             return None, "The electrical report lacks passing measurements for these exact sources and policy."
+        if reference["findings"]:
+            expected = {finding["id"] for finding in reference["findings"]}
+            dispositions = measured["reference_copper"].get("findings")
+            if (not isinstance(dispositions, dict) or dispositions.keys() != expected
+                    or any(not isinstance(reason, str) or not reason.strip() for reason in dispositions.values())):
+                return None, ("Document the disposition of every current reference finding in the source-bound "
+                              "electrical review.")
     except (ValueError, AttributeError, TypeError):
         return None, "The electrical review report is malformed."
     if sha(path) != review.get("sha256"):
@@ -169,23 +178,32 @@ def review_evidence(paths: ProjectPaths, snapshot: SourceSnapshot,
     return content, None
 
 
+def _design_checks(native: Native, paths: ProjectPaths, working: ProjectPaths, output: Path,
+                   snapshot: SourceSnapshot, storage: ProjectStorage | None, *, save_zones: bool):
+    checks = native_checks(native, working, output, save_zones=save_zones)
+    report_path = output / "reference.json"
+    native.worker("reference", working.entry, report_path, output=report_path)
+    reference = json.loads(report_path.read_text(encoding="utf-8"))
+    proof, review_blocker = review_evidence(paths, snapshot, reference, storage)
+    blockers = [] if checks["passed"] else ["Native DRC, ERC or schematic parity has findings."]
+    blockers.extend(reference["blockers"])
+    if review_blocker:
+        blockers.append(review_blocker)
+    return checks, reference, proof, review_blocker, blockers
+
+
 def verify(native: Native, paths: ProjectPaths, *, storage: ProjectStorage | None = None) -> dict:
     snapshot = SourceSnapshot.capture(paths)
-    profile = read_profile(paths.root)
-    reference = None
     with isolated(paths, snapshot) as working:
-        pairs = profile.get("differential_pairs", [])
-        checks = native_checks(native, working, working.root / "autopcb-native-reports", save_zones=bool(pairs))
-        if pairs:
-            report_path = working.root / "autopcb-reference.json"
-            native.worker("reference", working.entry, report_path, output=report_path)
-            reference = json.loads(report_path.read_text(encoding="utf-8"))
-    _, blocker = review_evidence(paths, snapshot, storage)
+        checks, reference, _, review_blocker, blockers = _design_checks(
+            native, paths, working, working.root / "autopcb-native-reports", snapshot, storage,
+            save_zones=bool(read_profile(working.root).get("differential_pairs")),
+        )
     snapshot.verify_unchanged()
     return {"schema_version": 1, "kind": "verify", "status": "native_passed" if checks["passed"] else "blocked",
             "entry": str(paths.entry), "inputs": snapshot.hashes, "native": checks, "reference_screen": reference,
-            "design_checks_passed": checks["passed"] and blocker is None,
-            "electrical_review_blocker": blocker, "toolchain": native.status(),
+            "design_checks_passed": not blockers, "blockers": blockers,
+            "electrical_review_blocker": review_blocker, "toolchain": native.status(),
             "hardware_validation": "pending", "production_approved": False}
 
 
@@ -203,7 +221,9 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
     source, symbols, links = design.schematic(proposal, title)
     layers = ["F.Cu", *[f"In{idx}.Cu" for idx in range(1, body["layers"] - 1)], "B.Cu"]
     critical = ["/" + net for pair in body["differential_pairs"] for net in pair]
-    policy = routing_policy(layers, defaults=defaults, excluded=critical, refill=False)
+    pair_layout = body.get("pair_layout")
+    policy = routing_policy(layers, defaults=defaults, excluded=critical, refill=bool(pair_layout))
+    pair_result = None
     final_policy = (storage.config if storage else output / "config") / "autopcb.json"
     if final_policy.exists():
         raise FileExistsError(f"A routing policy already exists: {final_policy}")
@@ -234,11 +254,14 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
             )
             (stage / "fp-lib-table").write_text(f"(fp_lib_table (version 7)\n{table}\n)\n", encoding="utf-8")
             paths.rules.write_text("(version 1)\n", encoding="utf-8")
-            write_json(stage / PROFILE_NAME, {"schema_version": 1, "entry": paths.settings.name,
+            profile = {"schema_version": 1, "entry": paths.settings.name,
                        "proposal": approval, "requirements": body["requirements"], "design": body["design"],
                        "supply_v": body["supply_v"], "copper_layers": body["layers"],
                        "differential_pairs": body["differential_pairs"], "high_speed_reviewed": True,
-                       "assumptions": body["assumptions"]})
+                       "assumptions": body["assumptions"]}
+            if pair_layout is not None:
+                profile["reference_net"] = pair_layout["reference_net"]
+            write_json(stage / PROFILE_NAME, profile)
             write_json(stage / "design-proposal.json", proposal)
             with tempfile.TemporaryDirectory(prefix="autopcb-netlist-") as scratch:
                 scratch = Path(scratch)
@@ -260,8 +283,15 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
                     "rule_severities", {}).update(dict.fromkeys(drc_checks, "warning"))
                 settings.setdefault("erc", {}).setdefault("rule_severities", {}).update(dict.fromkeys(erc_checks, "warning"))
                 paths.settings.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+                normalized = scratch / "normalize.json"
                 native.report(("pcb", "drc", "--refill-zones", "--save-board", "--schematic-parity"),
-                              paths.board, scratch / "normalize.json")
+                              paths.board, normalized)
+                if pair_layout is not None:
+                    request = scratch / "pair-request.json"
+                    result = scratch / "pair-result.json"
+                    write_json(request, {"pair_layout": pair_layout, "baseline_drc": str(normalized)})
+                    native.worker("pair-seed", paths.entry, result, request, output=result)
+                    pair_result = json.loads(result.read_text(encoding="utf-8"))
                 report = scratch / "inspect.json"
                 native.worker("inspect", paths.board, report, output=report)
             target = final_policy if storage else stage / "config" / final_policy.name
@@ -273,7 +303,28 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
         rollback.pop_all()
     return {"schema_version": 1, "kind": "design_build", "status": "created",
             "project": str(output.resolve() / f"{title}.kicad_pro"), "proposal_id": approval,
-            "policy": str(final_policy.resolve())}
+            "policy": str(final_policy.resolve()), "pair_layout": pair_result}
+
+
+def _check_gerbers(directory: Path, layer_count: int) -> None:
+    job_files = list(directory.glob("*.gbrjob"))
+    if len(job_files) != 1:
+        raise RuntimeError("Expected one fresh KiCad Gerber job file.")
+    job = json.loads(job_files[0].read_text(encoding="utf-8-sig"))
+    rows = job.get("FilesAttributes", [])
+    for row in rows:
+        name = row["Path"]
+        file = directory / name
+        if file.resolve().parent != directory or not file.is_file() or not file.stat().st_size:
+            raise RuntimeError(f"Gerber job references a missing or invalid plot: {name}")
+    functions = [row["FileFunction"].split(",") for row in rows]
+    required = {("SolderMask", "Top"), ("SolderMask", "Bot"), ("SolderPaste", "Top"),
+                ("SolderPaste", "Bot"), ("Legend", "Top"), ("Legend", "Bot")}
+    if (sorted((item[1] for item in functions if len(item) >= 2 and item[0] == "Copper"))
+            != sorted(f"L{index}" for index in range(1, layer_count + 1))
+            or sum(item[0] == "Profile" for item in functions) != 1
+            or not required <= {tuple(item[:2]) for item in functions}):
+        raise RuntimeError("Gerber job does not cover the required board layers.")
 
 
 def export(native: Native, paths: ProjectPaths, output: Path, *, draft: bool,
@@ -281,13 +332,7 @@ def export(native: Native, paths: ProjectPaths, output: Path, *, draft: bool,
     snapshot = SourceSnapshot.capture(paths)
     with _new_directory(output) as stage, isolated(paths, snapshot) as working:
         evidence = stage / "evidence"
-        checks = native_checks(native, working, evidence, save_zones=True)
-        proof, blocker = review_evidence(paths, snapshot, storage)
-        blockers = []
-        if not checks["passed"]:
-            blockers.append("Native DRC, ERC or schematic parity has findings.")
-        if blocker is not None:
-            blockers.append(blocker)
+        _, _, proof, _, blockers = _design_checks(native, paths, working, evidence, snapshot, storage, save_zones=True)
         if proof is not None:
             (evidence / "electrical.json").write_bytes(proof)
         if blockers and not draft:
@@ -302,8 +347,9 @@ def export(native: Native, paths: ProjectPaths, output: Path, *, draft: bool,
                     ",".join([*layers, "F.Mask", "B.Mask", "F.Paste", "B.Paste", "F.Silkscreen", "B.Silkscreen", "Edge.Cuts"]),
                     "--output", gerbers, working.board)
         native.call("pcb", "export", "drill", "--output", drills, working.board)
-        if not any(gerbers.iterdir()) or not any(drills.iterdir()):
-            raise RuntimeError("KiCad did not produce fabrication plots and drills")
+        _check_gerbers(gerbers, len(layers))
+        if not any(path.is_file() and path.stat().st_size for path in drills.glob("*.drl")):
+            raise RuntimeError("KiCad did not produce an Excellon drill file.")
         def file_export(action, source, name, flags=()):
             target = stage / name
             native.call(*action, *flags, "--output", target, source, output=target)

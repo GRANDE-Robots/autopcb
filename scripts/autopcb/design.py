@@ -69,6 +69,8 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
                       components={ref: {**data["parts"][values["part"]], "symbol": values["part"],
                                         "nets": values["pins"], "position": values["position"]}
                                   for ref, values in recipe["parts"].items()})
+        if "pair_layout" in recipe:
+            result["pair_layout"] = recipe["pair_layout"]
     result["status"] = "blocked" if unresolved else "proposed"
     result["proposal_id"] = digest(result)
     return result

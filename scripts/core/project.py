@@ -179,7 +179,7 @@ class ProjectPaths:
         return tuple(sorted(_contained(self.root, path) for path in paths))
 
 
-def declared_high_speed(root: Path, native_nets: set[str]) -> set[str] | None:
+def declared_pairs(root: Path, native_nets: set[str]) -> tuple[tuple[str, str], ...] | None:
     profile = read_profile(root)
     if profile.get("high_speed_reviewed") is not True:
         return None
@@ -187,16 +187,26 @@ def declared_high_speed(root: Path, native_nets: set[str]) -> set[str] | None:
     if not isinstance(pairs, list):
         raise ValueError("High-speed review requires an explicit differential-pair list")
     selected = set()
+    resolved = []
     for pair in pairs:
         if (not isinstance(pair, list) or len(pair) != 2
                 or not all(isinstance(name, str) and name.strip() for name in pair)):
             raise ValueError("A differential pair requires two nonempty native net names")
+        names = []
         for name in pair:
             matches = native_nets & {name, "/" + name}
             if len(matches) != 1 or matches & selected:
                 raise ValueError(f"Missing, ambiguous or repeated differential net: {name}")
-            selected.update(matches)
-    return selected
+            actual = matches.pop()
+            selected.add(actual)
+            names.append(actual)
+        resolved.append((names[0], names[1]))
+    return tuple(resolved)
+
+
+def declared_high_speed(root: Path, native_nets: set[str]) -> set[str] | None:
+    pairs = declared_pairs(root, native_nets)
+    return None if pairs is None else {name for pair in pairs for name in pair}
 
 
 def native_path(location: Path, suffix: str) -> Path:

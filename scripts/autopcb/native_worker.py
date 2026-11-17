@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import json
 import os
 from pathlib import Path
@@ -123,20 +124,89 @@ def generate(path: Path, spec: dict) -> None:
 
 
 def reference_screen(entry: Path) -> dict:
-    from core.project import ProjectPaths, read_profile
-    from pcb.net_routing.reference import reference_report
+    from core.project import ProjectPaths, declared_pairs, read_profile
+    from pcb.net_routing.reference import high_speed_nets, sample_reference
 
     paths = ProjectPaths(entry)
-    configured = read_profile(paths.root).get("differential_pairs", [])
-    names = {name for pair in configured for name in pair}
     board = pcb.LoadBoard(str(paths.board))
-    candidates = board.GetNetsByName()
-    mapped = {expected: [str(key) for key in candidates if str(key) == expected or str(key) == "/" + expected]
-              for expected in names}
-    missing = sorted(name for name, found in mapped.items() if len(found) != 1)
-    if missing:
-        return {"status": "blocked", "missing_or_ambiguous_nets": missing, "electrically_verified": False}
-    return reference_report(board, {key[0] for key in mapped.values()})
+    if board is None:
+        raise ValueError("KiCad could not reopen the board for reference-copper checks")
+    result = {"schema_version": 1, "status": "blocked", "electrically_verified": False,
+              "pairs": [], "findings": [], "blockers": []}
+    names = {str(name) for name in board.GetNetsByName() if str(name)}
+    try:
+        pairs = declared_pairs(paths.root, names)
+        if pairs is None:
+            raise ValueError("Review the high-speed scope and record an explicit pair list in the project profile.")
+        critical = {name for pair in pairs for name in pair}
+        settings = paths.settings.read_bytes() if paths.settings.is_file() else b"{}"
+        if "net_settings" in json.loads(settings.decode("utf-8-sig")):
+            omitted = high_speed_nets(settings, names) - critical
+            if omitted:
+                raise ValueError("Reviewed scope omits nets assigned to native high-speed classes: " +
+                                 ", ".join(sorted(omitted)))
+        if not pairs:
+            return {**result, "status": "not_applicable"}
+        configured = read_profile(paths.root).get("reference_net", "GND")
+        if not isinstance(configured, str) or not configured:
+            raise ValueError("Choose a native reference net in the project profile.")
+        matches = names & {configured, "/" + configured}
+        if len(matches) != 1 or matches & critical:
+            raise ValueError("Reference net is missing, ambiguous, or assigned to a signal pair.")
+    except ValueError as error:
+        result["blockers"].append(str(error))
+        return result
+
+    ground = matches.pop()
+    sample = sample_reference(board, critical, reference_net=ground)
+    covered_by_id = {track.item_id: track for track in sample.tracks}
+    with_reference = {track.net for track in sample.tracks if any(value[2] for value in track.samples)}
+    metrics = {name: {"net": name, "trace_length_mm": 0.0, "widths_mm_by_layer": defaultdict(set),
+                      "segments": 0, "vias": 0} for name in critical}
+    for item in board.GetTracks():
+        name = str(item.GetNetname())
+        if name not in critical:
+            continue
+        item_id = item.m_Uuid.AsString()
+        position = _mm(item.GetPosition())
+        layer = str(board.GetLayerName(item.GetLayer()))
+        covered = covered_by_id.get(item_id)
+        measured = metrics[name]
+        if isinstance(item, pcb.PCB_VIA):
+            measured["vias"] += 1
+            kind = "via_transition"
+        else:
+            measured["segments"] += 1
+            measured["trace_length_mm"] += pcb.ToMM(item.GetLength())
+            measured["widths_mm_by_layer"][layer].add(pcb.ToMM(copper_width(item)))
+            if covered is None:
+                kind = "unsupported_trace"
+            elif covered.missing_samples or not covered.continuous_polygon:
+                kind = "sampled_reference_gap"
+            else:
+                continue
+        result["findings"].append({
+            "id": f"{kind}/{item_id}", "type": kind, "net": name, "signal_layer": layer,
+            "reference_layer": covered.reference_layer if covered else None,
+            "missing_samples": covered.missing_samples if covered else None,
+            "continuous_polygon": covered.continuous_polygon if covered else None,
+            "positions_mm": [{"x": position[0], "y": position[1]}],
+        })
+    for row in metrics.values():
+        row["trace_length_mm"] = round(row["trace_length_mm"], 6)
+        row["widths_mm_by_layer"] = {layer: sorted(widths) for layer, widths in row["widths_mm_by_layer"].items()}
+        if not row["segments"]:
+            result["blockers"].append(f"{row['net']} has no routed traces to screen.")
+        elif row["net"] not in with_reference:
+            result["blockers"].append(f"No adjacent reference copper was sampled under {row['net']}.")
+    result["blockers"].sort()
+    result["pairs"] = [{"positive": metrics[p], "negative": metrics[n]} for p, n in pairs]
+    result["findings"].sort(key=lambda item: item["id"])
+    result["reference_net"] = ground
+    result["sampling_step_mm"] = 0.1
+    if not result["blockers"]:
+        result["status"] = "needs_review" if result["findings"] else "sampled"
+    return result
 
 
 def compare(entry: Path, run_id: str) -> dict:
@@ -167,18 +237,23 @@ def compare(entry: Path, run_id: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=("inspect", "generate", "compare", "reference", "apply"))
+    parser.add_argument("operation", choices=("inspect", "generate", "compare", "reference", "apply", "pair-seed"))
     parser.add_argument("board", type=Path)
     parser.add_argument("record", type=Path)
-    parser.add_argument("run_id", nargs="?")
+    parser.add_argument("argument", nargs="?")
     args = parser.parse_args()
     with quiet_duplicate_image_handlers():
         if args.operation == "inspect":
             args.record.write_text(json.dumps(inspect(args.board), allow_nan=False), encoding="utf-8")
         elif args.operation == "reference":
             args.record.write_text(json.dumps(reference_screen(args.board), allow_nan=False), encoding="utf-8")
+        elif args.operation == "pair-seed":
+            from autopcb.pair_seed import seed
+
+            result = seed(args.board, json.loads(Path(args.argument).read_text(encoding="utf-8")))
+            args.record.write_text(json.dumps(result, allow_nan=False), encoding="utf-8")
         elif args.operation == "compare":
-            args.record.write_text(json.dumps(compare(args.board, args.run_id), allow_nan=False), encoding="utf-8")
+            args.record.write_text(json.dumps(compare(args.board, args.argument), allow_nan=False), encoding="utf-8")
         elif args.operation == "apply":
             from autopcb.layout import _check_id
             from core.project import ENTRY_ENV, ProjectPaths
@@ -186,7 +261,7 @@ def main() -> int:
 
             paths = ProjectPaths(args.board)
             os.environ[ENTRY_ENV] = str(paths.entry)
-            result = save_working(paths.root, _check_id(args.run_id), apply=True, progress=lambda _message: None)
+            result = save_working(paths.root, _check_id(args.argument), apply=True, progress=lambda _message: None)
             args.record.write_text(json.dumps(result, allow_nan=False), encoding="utf-8")
         else:
             generate(args.board, json.loads(args.record.read_text(encoding="utf-8")))

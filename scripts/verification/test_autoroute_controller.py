@@ -224,7 +224,9 @@ class AutoControllerTests(unittest.TestCase):
         names = [entry["name"] for round_ in plan["rounds"] for req in round_ for entry in req["nets"]]
         self.assertEqual(set(names), {"TIMING", "DRIVER", "OTHER"})
         self.assertEqual(names[0], "TIMING")
-        self.assertEqual(plan["blocked_nets"], {"USB_DP": "differential-pair routing is not implemented"})
+        self.assertEqual(plan["blocked_nets"], {
+            "USB_DP": "needs a coupled route; the ordinary router preserves differential copper",
+        })
         for round_ in plan["rounds"]:
             for request in round_:
                 self.assertEqual(request["shared"]["layers"], ["B.Cu", "In2.Cu", "In1.Cu", "F.Cu"])
@@ -934,19 +936,23 @@ class AutoControllerTests(unittest.TestCase):
             copied = root / "copy"
             source.mkdir()
             copied.mkdir()
-            for name, data in (("v4.1.kicad_pcb", b"board"), ("v4.1.kicad_dru", b"rules")):
+            files = {"Board.kicad_pcb": b"board", "Board.kicad_dru": b"rules",
+                     "Board.kicad_pro": b"settings", "libraries/custom.kicad_sym": b"symbols"}
+            for name, data in files.items():
+                (source / name).parent.mkdir(parents=True, exist_ok=True)
+                (copied / name).parent.mkdir(parents=True, exist_ok=True)
                 (source / name).write_bytes(data)
                 (copied / name).write_bytes(data)
             fingerprints = {source / name: hashlib.sha256((source / name).read_bytes()).hexdigest()
-                            for name in ("v4.1.kicad_pcb", "v4.1.kicad_dru")}
-            snapshot = SimpleNamespace(source=source / "v4.1.kicad_pcb", directory=copied,
-                                       board_path=copied / "v4.1.kicad_pcb", fingerprints=fingerprints)
+                            for name in files}
+            snapshot = SimpleNamespace(source=source / "Board.kicad_pcb", directory=copied,
+                                       board_path=copied / "Board.kicad_pcb", fingerprints=fingerprints,
+                                       input_name=lambda path: path.relative_to(source))
             self.assertTrue(helper(snapshot, b"board"))
-            (copied / "v4.1.kicad_dru").write_bytes(b"changed")
-            self.assertFalse(helper(snapshot, b"board"))
-            (copied / "v4.1.kicad_dru").write_bytes(b"rules")
-            (copied / "v4.1.kicad_pcb").write_bytes(b"changed")
-            self.assertFalse(helper(snapshot, b"board"))
+            for name, data in files.items():
+                (copied / name).write_bytes(b"changed")
+                self.assertFalse(helper(snapshot, b"board"), name)
+                (copied / name).write_bytes(data)
 
     def test_resume_rechecks_native_drc_and_does_not_trust_saved_counts(self):
         from pcb.net_routing.runner import verify_resume_reports

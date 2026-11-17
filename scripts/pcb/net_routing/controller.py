@@ -56,7 +56,7 @@ def make_work_plan(preparation: dict, policy: dict, *, workers: int = 2, max_bat
     for raw in work:
         item = WorkItem(raw["name"], raw["priority"], tuple(raw["window"]), raw["island_count"])
         if item.name in critical:
-            blocked[item.name] = "differential-pair routing is not implemented"
+            blocked[item.name] = "needs a coupled route; the ordinary router preserves differential copper"
         elif item.name in excluded:
             blocked[item.name] = "excluded by routing policy"
         elif item.name in unqualified:

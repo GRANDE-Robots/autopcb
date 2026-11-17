@@ -21,6 +21,11 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--kicad-python", type=Path)
     commands = root.add_subparsers(dest="action", required=True)
     commands.add_parser("doctor", help="verify a matched KiCad CLI and native worker").add_argument("--output", type=Path)
+    qualification = commands.add_parser("qualify", help="exercise both reference boards on this installation")
+    qualification.add_argument("--output", type=Path, required=True, help="new folder for cases and evidence")
+    qualification.add_argument("--rounds", type=int, default=20)
+    qualification.add_argument("--seconds", type=int, default=10)
+    qualification.add_argument("--memory-gib", type=float)
     commands.add_parser("discover", help="list native project entries")
     propose = commands.add_parser("propose", help="design from a requirements text file")
     propose.add_argument("requirements", type=Path, nargs="?", help="defaults to data/requirements.txt")
@@ -68,6 +73,11 @@ def parser() -> argparse.ArgumentParser:
 
 def _run(args) -> dict:
     workspace = Workspace(args.workspace)
+    if args.action == "qualify":
+        from autopcb.qualification import qualify
+
+        return qualify(args.output, cli=args.kicad_cli, python=args.kicad_python, rounds=args.rounds,
+                       seconds=args.seconds, memory_gib=args.memory_gib)
     if args.action == "discover":
         entries = workspace.entries() if args.project is None else project_entries(
             args.project if args.project.is_dir() else args.project.parent
@@ -189,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         report = {"schema_version": 1, "kind": args.action, "status": "cancelled"}
     print(json.dumps(report, ensure_ascii=True, indent=2, allow_nan=False))
-    return {"blocked": 2, "cancelled": 130}.get(report["status"], 0)
+    return {"blocked": 2, "qualification_incomplete": 2, "cancelled": 130}.get(report["status"], 0)
 
 
 def desktop_main() -> int:

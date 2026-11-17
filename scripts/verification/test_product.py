@@ -150,6 +150,37 @@ class RequirementsTests(unittest.TestCase):
             design.validated(proposal, approval)
 
 
+class ElectricalEvidenceTests(unittest.TestCase):
+    def test_current_reference_findings_cannot_be_omitted_or_reused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            project = ProjectPaths(root / "Board.kicad_pcb")
+            project.board.write_text("(kicad_pcb)", encoding="utf-8")
+            scope = {"schema_version": 1, "high_speed_reviewed": True, "differential_pairs": [["P", "N"]]}
+            profile = root / PROFILE_NAME
+            review = root / "review.json"
+            source = SourceSnapshot.capture(project)
+            pass_check = {"status": "pass", "method": "Fixture measurements", "measurements": {"count": 1}}
+            record = {"schema_version": 1, "sources": source.hashes, "policy_sha256": design.digest(scope),
+                      "reviewer": "Fixture", "checks": {"electrical": pass_check,
+                                                       "reference_copper": dict(pass_check)}}
+            reference = {"pairs": [["P", "N"]], "findings": [{"id": "via_transition/current"}]}
+
+            def evidence():
+                review.write_text(json.dumps(record), encoding="utf-8")
+                profile.write_text(json.dumps({**scope, "electrical_review": {
+                    "file": review.name, "sha256": sha256(review.read_bytes()).hexdigest()}}), encoding="utf-8")
+                return jobs.review_evidence(project, SourceSnapshot.capture(project), reference)
+
+            self.assertIn("every current reference finding", evidence()[1])
+            record["checks"]["reference_copper"]["findings"] = {"via_transition/old": "Reviewed launch"}
+            self.assertIn("every current reference finding", evidence()[1])
+            record["checks"]["reference_copper"]["findings"] = {"via_transition/current": "Reviewed launch"}
+            self.assertIsNone(evidence()[1])
+            project.board.write_text("(kicad_pcb (version 1))", encoding="utf-8")
+            self.assertIn("exact sources", evidence()[1])
+
+
 class NativeProductTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -179,16 +210,45 @@ class NativeProductTests(unittest.TestCase):
                                      {"unconnected_items"})
                     self.assertGreater(findings["native"]["open_connections"], 0)
                     self.assertFalse(findings["design_checks_passed"])
+                    screen = findings["reference_screen"]
+                    if layers == 4:
+                        self.assertEqual(build["pair_layout"]["status"], "seeded")
+                        self.assertEqual(screen["reference_net"], "/GND")
+                        self.assertEqual(len(screen["pairs"]), 1)
+                        self.assertEqual(screen["blockers"], [])
+                        self.assertEqual(screen["status"], "needs_review")
+                        self.assertEqual(findings["native"]["open_connections"], 1)
+                        self.assertTrue(all(item["type"] == "sampled_reference_gap" for item in screen["findings"]))
+                    else:
+                        self.assertEqual(screen["status"], "not_applicable")
                     fabrication = root / (name + " fab")
                     with self.assertRaisesRegex(RuntimeError, "Manufacturing export blocked"):
                         jobs.export(self.native, project, fabrication, draft=False)
                     self.assertFalse(fabrication.exists())
                     report = jobs.export(self.native, project, fabrication, draft=True)
                     self.assertEqual(report["status"], "draft")
+                    self.assertEqual(report["blockers"], findings["blockers"])
+                    self.assertIn("evidence/reference.json", report["artifacts"])
                     self.assertEqual(report, json.loads((fabrication / "manifest.json").read_text(encoding="utf-8")))
                     for item, digest in report["artifacts"].items():
                         self.assertEqual(sha256((fabrication / item).read_bytes()).hexdigest(), digest)
                     original.verify_unchanged()
+
+    def test_exhausted_pair_seed_preserves_the_unrouted_project(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            spec = design.catalog()
+            spec["designs"]["usb"]["pair_layout"]["max_launch_mm"] = 0.01
+            catalog = root / "catalog.json"
+            catalog.write_text(json.dumps(spec), encoding="utf-8")
+            proposal = design.propose("Four-layer full-speed Type-B USB breakout at 5 V", catalog_file=catalog)
+            build = jobs.build(self.native, proposal, proposal["proposal_id"], root / "USB Short Escapes")
+            self.assertEqual(build["pair_layout"]["status"], "deferred")
+            project = ProjectPaths(Path(build["project"]))
+            manifest = jobs.verify(self.native, project)
+            self.assertGreater(manifest["native"]["open_connections"], 1)
+            self.assertEqual(len(manifest["reference_screen"]["blockers"]), 2)
+            self.assertEqual(jobs.inspect(self.native, project)["geometry"]["tracks"], [])
 
 
 if __name__ == "__main__":

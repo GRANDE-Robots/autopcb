@@ -263,13 +263,14 @@
       "assumptions": [
         "The connector breaks out USB signals to the attached device. This circuit contains no USB controller or bus termination.",
         "The host supplies VBUS, and the connector shield is tied to the board return. Review the enclosure grounding.",
+        "The initial layout allows 0.25 mm traces, at least a 0.26 mm gap, and up to 2 mm of trace-length difference on the draft stackup.",
         "A qualified stackup and complete USB signal-integrity check are needed before fabrication approval."
       ],
       "parts": {
         "J1": {
           "part": "usb_b",
           "position": [
-            10,
+            21,
             13,
             0
           ],
@@ -284,8 +285,8 @@
         "J2": {
           "part": "header",
           "position": [
-            25,
-            9,
+            5,
+            11,
             0
           ],
           "pins": {
@@ -297,6 +298,16 @@
         }
       },
       "power_flags": [],
+      "pair_layout": {
+        "signal_layer": "F.Cu",
+        "reference_layer": "In1.Cu",
+        "reference_net": "GND",
+        "width_mm": 0.25,
+        "gap_mm": 0.26,
+        "clearance_mm": 0.2,
+        "max_launch_mm": 7.5,
+        "max_skew_mm": 2.0
+      },
       "differential_pairs": [
         [
           "USB_P",

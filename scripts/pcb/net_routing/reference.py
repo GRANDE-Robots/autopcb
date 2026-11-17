@@ -17,6 +17,12 @@ from core.pcb_io import copper_width
 from pcb.route_optimizer import GridRouter, Obstacle, Point, mm
 
 
+def _default_return(board) -> str | None:
+    """Recognize the root net only when its conventional name is unambiguous."""
+    matches = {str(name) for name in board.GetNetsByName()} & {"GND", "/GND"}
+    return matches.pop() if len(matches) == 1 else None
+
+
 def adjacent_reference_layers(board) -> dict[int, tuple[int, ...]]:
     """Use physical neighbors from the enabled native copper stack."""
     stack = tuple(board.GetEnabledLayers().CuStack())
@@ -119,6 +125,7 @@ def reference_corridors(board, high_speed_nets: set[str], *, margin_mm: float = 
     sources = []
     adjacent = adjacent_reference_layers(board)
     stack = tuple(adjacent)
+    return_net = _default_return(board) or "GND"
 
     def reserve(item, obstacle):
         obstacles.append(obstacle)
@@ -131,14 +138,14 @@ def reference_corridors(board, high_speed_nets: set[str], *, margin_mm: float = 
         return Obstacle(
             Point(int(bounds.GetX()) - margin, int(bounds.GetY()) - margin),
             Point(int(bounds.GetRight()) + margin, int(bounds.GetBottom()) + margin),
-            (layer,), "GND", "copper",
+            (layer,), return_net, "copper",
         )
 
     def capsule(start: Point, end: Point, radius: int, layer: str):
         return Obstacle(
             Point(min(start.x, end.x) - radius, min(start.y, end.y) - radius),
             Point(max(start.x, end.x) + radius, max(start.y, end.y) + radius),
-            (layer,), "GND", "copper", centerline=(start, end), copper_radius=radius,
+            (layer,), return_net, "copper", centerline=(start, end), copper_radius=radius,
         )
 
     for pad in board.GetPads():
@@ -186,9 +193,10 @@ def reference_conflicts(
     if clearance < 0:
         raise ValueError("Reference clearance must be nonnegative")
     layers = {board.GetLayerName(layer): layer for layer in board.GetEnabledLayers().CuStack()}
+    return_net = _default_return(board)
     found = {}
     for item in (*board.GetTracks(), *board.GetPads()):
-        if item.GetNetname() == "GND":
+        if item.GetNetname() == return_net:
             continue
         uid = item.m_Uuid.AsString()
         for guard, source in zip(corridors.obstacles, corridors.source_item_ids, strict=True):
@@ -218,7 +226,8 @@ def reference_conflicts(
     return tuple(found[key] for key in sorted(found))
 
 
-def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1) -> ReferenceSnapshot:
+def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1,
+                     reference_net: str | None = None) -> ReferenceSnapshot:
     """Sample filled adjacent-layer GND polygons along each data trace.
 
     One polygon on one adjacent layer must cover all samples. Inner-layer
@@ -231,9 +240,10 @@ def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1) 
     if step <= 0:
         raise ValueError("Reference sampling step must be positive")
     adjacent = adjacent_reference_layers(board)
+    reference_net = _default_return(board) if reference_net is None else reference_net
     zones = {layer: [] for layer in adjacent}
     for zone in board.Zones():
-        if zone.GetIsRuleArea() or zone.GetNetname() != "GND":
+        if zone.GetIsRuleArea() or zone.GetNetname() != reference_net:
             continue
         for layer in zones:
             if zone.IsOnLayer(layer):

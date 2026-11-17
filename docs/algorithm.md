@@ -99,7 +99,9 @@ I_e=\sum_{j\ \mathrm{downstream\ of}\ e}I_j,\qquad
 \Delta V_p=\sum_{e\in p}I_e\,\frac{\rho L_e}{w_et_e}.
 $$
 
-**Power.** Size traces and vias for the load cases. Check clearance for voltage and fabrication limits. **Pairs.** Check width, gap, impedance, and return copper against the chosen stackup. Preserve deferred pair copper.
+**Power.** Size traces and vias for the load cases. Check clearance for voltage and fabrication limits.
+
+**Pairs.** New catalog designs can seed two parallel lanes with 45° launches. Check separation, length difference, and reference coverage along the coupled run. Verify launch gaps, impedance, and stackup through the electrical review.
 
 ## Silkscreen
 
@@ -116,6 +118,6 @@ $$
 | --- | --- |
 | Preview | Refill zones. Check native rules, protected geometry, and retained connectivity. At budget exhaustion, keep the best checked preview and report opens. |
 | Apply | Match saved inputs and policy. Check the editor lock and keep a recoverable board copy. |
-| **Checked export** | **Zero opens and clean DRC, ERC, and schematic parity.** Require source-bound electrical and applicable reference-copper evidence. Record hardware validation and production approval separately. |
+| **Checked export** | **Zero opens and clean DRC, ERC, and schematic parity.** Bind electrical review and reference findings to the exact sources. Track hardware and production approval separately. |
 
 Resume with matching inputs. Renew after tool changes. Start a fresh preview after a source or policy change.

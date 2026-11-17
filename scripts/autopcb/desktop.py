@@ -384,6 +384,16 @@ class Desktop(QMainWindow):
     def findings_ready(self, result):
         self.findings.clear()
         rows = list(result["native"]["findings"])
+        reference = result.get("reference_screen") or {}
+        for message in reference.get("blockers", []):
+            rows.append({"check": "reference copper", "description": message, "positions_mm": []})
+        labels = {"sampled_reference_gap": "Gap in sampled reference copper",
+                  "via_transition": "Layer transition needs return-path review",
+                  "unsupported_trace": "Trace geometry needs reference review"}
+        for finding in reference.get("findings", []):
+            rows.append({"check": "reference copper",
+                         "description": f"{finding['net']} on {finding['signal_layer']} — {labels[finding['type']]}",
+                         "positions_mm": finding["positions_mm"]})
         if result.get("electrical_review_blocker"):
             rows.append({"check": "electrical", "description": result["electrical_review_blocker"],
                          "positions_mm": []})

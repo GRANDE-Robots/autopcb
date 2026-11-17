@@ -1,128 +1,114 @@
 # AutoPCB algorithm
 
-<style>body{font-size:10pt;line-height:1.27}table{font-size:8.8pt}</style>
+<style>
+body{font-size:10pt;line-height:1.23}
+h3{margin:0.13in 0 0.05in}
+table{font-size:8.9pt;margin:0.07in 0 0.10in}
+th,td{padding:3pt 4.6pt}
+th:first-child{width:22%}
+.math-display{margin:0.06in auto 0.08in}
+.workflow{display:flex;gap:7px;align-items:center;margin:0.02in 0 0.17in;break-inside:avoid;font:9pt Arial,sans-serif;color:#173f59}
+.workflow div{flex:1;border:1px solid #b8cbd6;background:#eef5f6;padding:8px 3px;text-align:center}
+.workflow div:last-child{border-color:#7ba8a1;background:#e6f2ef}
+</style>
 
-## 1. Board and placement model
-
-The workflow is **requirements → native KiCad design → private layout preview → independent verification → export**. An existing KiCad design enters at layout or verification. Rules, hierarchy, libraries, and design evidence travel with each private job.
-
-Let $B_t$ be the copper and footprint state after $t$ accepted checkpoints. A checkpoint $q_t$ selects pins and optional existing copper on the same net. $P(q_t)$ is its pin set, and $k$ is its pin limit. A route $r_t$ adds, replaces, or removes permitted copper. Let $A$ denote acceptance of a validated candidate.
-
-$$
-|P(q_t)|\le k,\qquad B_{t+1}=A(B_t,q_t,r_t),\qquad B_0=B_{\mathrm{saved}}.
-$$
-
-A large net can span several checkpoints. Each accepted batch preserves previous required connections. Related nets may have to be repaired together when they compete for the same space.
-
-### Board objective
-
-Let $U$ count unintended opens and $S$ measure symmetry error across equivalent channels. Let $L$ be track length, $L_{45}$ diagonal length, $V$ vias, and $J$ bends after collinear merging. Let $D$ be a layer penalty, $M$ placement movement, $R$ copper rework, and $C_{\mathrm{silk}}$ the silkscreen cost. Weights specify the cost of each layout feature.
-
-$$
-\operatorname{lex\,min}\ (U,S,C),\qquad
-C=w_L L+w_{45}L_{45}+w_V V+w_J J+w_D D+w_M M+R+w_I C_{\mathrm{silk}}.
-$$
-
-Compare $U$ first, then $S$, then $C$. The legal candidate set is defined separately by the hard constraints. A smaller score cannot override a clearance, electrical, or protection failure. Symmetry compares role-equivalent routes in translated, rotated, or mirrored local frames. Measure separation, via positions, bends, and topology with an explicit tolerance. Positional comparisons default to 0.05 mm. Record differences forced by fixed endpoints. The current preview engine does bounded local optimization. A full board-wide symmetry solve remains outside its coverage.
-
-### Placement estimate
-
-For component $i$, $x_i=(p_i,\theta_i,\ell_i)$ gives its position, rotation, and side. Protected items keep their saved pose. For net $n$, the half-perimeter wirelength $\operatorname{HPWL}_n(x)$ is the width plus height of its pin bounding box.
-
-$$
-\widehat C_{\mathrm{place}}(x)=
-\sum_n w_n\operatorname{HPWL}_n(x)
-+w_C C_{\mathrm{congestion}}+w_P C_{\mathrm{proximity}}+w_M M.
-$$
-
-Congestion estimates available routing space. The proximity term covers requirements such as bypass placement. This estimate ranks placements before routing. It cannot certify clearance or routed length, especially with 45° tracks. The current engine tries bounded moves for eligible components during recovery and routes affected nets on the trial board.
-
-<div style="display:flex;gap:8px;align-items:center;margin:22px 0 0;break-inside:avoid;font:9.5pt Arial,sans-serif;color:#173f59">
-<div style="flex:1;border:1px solid #b8cbd6;background:#eef5f6;padding:11px;text-align:center"><strong>Saved board</strong><br>Copper islands</div><span>→</span>
-<div style="flex:1;border:1px solid #b8cbd6;background:#eef5f6;padding:11px;text-align:center"><strong>Private candidate</strong><br>Route or repair</div><span>→</span>
-<div style="flex:1;border:1px solid #b8cbd6;background:#eef5f6;padding:11px;text-align:center"><strong>Native checks</strong><br>Refill and validate</div><span>→</span>
-<div style="flex:1;border:1px solid #7ba8a1;background:#e6f2ef;padding:11px;text-align:center"><strong>Accepted board</strong><br>Next checkpoint</div>
+<div class="workflow">
+<div><strong>Snapshot</strong><br>KiCad sources</div><span>→</span>
+<div><strong>Plan</strong><br>Copper islands</div><span>→</span>
+<div><strong>Preview</strong><br>Route or repair</div><span>→</span>
+<div><strong>Verify</strong><br>Refill and check</div><span>→</span>
+<div><strong>Accept</strong><br>Next checkpoint</div>
 </div>
 
+## Board objective
+
+Let $U$ count open connections and $S$ measure asymmetry between equivalent channels. Let $C$ be layout cost. Rank candidates by $U$, then $S$, then $C$. Clearance, electrical limits, and protected geometry constrain which candidates are eligible.
+
+Let $L$ be trace length in millimeters, $L_{45}$ its diagonal portion, $V$ the number of vias, and $J$ the bend count after merging collinear runs. Let $D$ be the layer penalty, $M$ placement movement, $R$ copper rework, and $C_{\mathrm{silk}}$ silkscreen cost. Each $w$ sets the weight of its term.
+
+$$
+\operatorname{lex\,min}(U,S,C),\qquad
+C=w_L L+w_{45}L_{45}+w_V V+w_J J+D+w_M M+R+w_I C_{\mathrm{silk}}.
+$$
+
+Compare channels by circuit role and connectivity in translated, rotated, or mirrored local frames. The default positional tolerance is 0.05 mm. Via alignment, bend patterns, and topology also contribute. Record differences forced by fixed endpoints.
+
+## Placement
+
+For component $i$, its pose $x_i$ comprises position $p_i$, rotation $\theta_i$, and board side $b_i$. For net $n$, let $W_n$ and $H_n$ be the width and height of its pin bounding box and $w_n$ its importance. Let $C_{\mathrm{cong}}$ estimate routing congestion and $C_{\mathrm{prox}}$ penalize departures from placement spacing targets. The placement score is $\widehat C_{\mathrm{place}}$.
+
+$$
+x_i=(p_i,\theta_i,b_i),\qquad
+\widehat C_{\mathrm{place}}
+=\sum_n w_n(W_n+H_n)+w_C C_{\mathrm{cong}}+w_P C_{\mathrm{prox}}+w_M M.
+$$
+
+$W_n+H_n$ is the net's half-perimeter wirelength. Use it to rank placements before routing. Recovery tries bounded moves of eligible components and reroutes their affected nets.
+
+## Checkpoints and search
+
+Let $B_{\mathrm{saved}}$ be the starting board. At step $t$, $B_t$ is the current board, $q_t$ selects pins and optional same-net copper, $P_t$ is its pin set, and $k$ is the pin limit. The acceptance operation $A$ applies a validated route $r_t$.
+
+$$
+B_0=B_{\mathrm{saved}},\qquad |P_t|\le k,\qquad B_{t+1}=A(B_t,q_t,r_t).
+$$
+
+For order $s$, $\widehat C(s)$ estimates final cost, $\widehat T(s)$ estimates search time, and $\lambda_T$ weights time. The order model ranks $\widehat C(s)+\lambda_T\widehat T(s)$. The implemented scheduler uses net priority, copper islands, and compatible windows, with bounded backtracking.
+
+For route $r$ in the checkpoint's legal route set $\mathcal R_t$, let $\Delta C_t(r)$ be immediate cost change and $\widehat C_{\mathrm{remain}}(r)$ the estimated cost to finish. The look-ahead model favors route $r_t^\star$.
+
+$$
+r_t^\star\approx \arg\min_{r\in\mathcal R_t}
+\big[\Delta C_t(r)+\widehat C_{\mathrm{remain}}(r)\big].
+$$
+
+A grid state $v$ tracks position, layer, and arrival heading. Weighted A* ranks it by $g(v)+\eta h(v)$, where $g$ is the accumulated cost, $h$ estimates the remaining cost, and $\eta$ is the heuristic weight, normally 1. Exhausted search retains the best validated candidate and reports the remaining opens.
+
 <!-- pagebreak -->
 
-# 2. Routing and rework
+# Routing checks and acceptance
 
-### Checkpoints and path search
+## Geometry and rework
 
-Let $s=(q_0,\ldots,q_{H-1})$ be a candidate order over $H$ checkpoints. The estimated layout cost and search time are $\widehat C(s)$ and $\widehat T(s)$, with time weight $\lambda_T$. The outer search favors a small $\widehat C(s)+\lambda_T\widehat T(s)$. The preview engine schedules from policy and copper islands, with alternative orders and bounded backtracking.
-
-For a checkpoint, let $\Delta C(B_t,r)$ be the immediate cost change and $\widehat V(B)$ an estimate of the effort to route the rest of board $B$. A look-ahead criterion is
+Default local cost is $L+L_{45}+10V+J$, plus configured layer and guide costs. For replaced trace $e$, let $d_e$ be the length no longer reproduced at the same position, layer, and width. Let $m_v$ be 1 if via $v$ changes position, span, drill, or diameter, and 0 otherwise.
 
 $$
-r_t^*\approx\arg\min_{r\in\mathcal R(B_t,q_t)}
-\big[\Delta C(B_t,r)+\widehat V(A(B_t,q_t,r))\big].
+R=\sum_e \mathbf 1[d_e>0]+\sum_e d_e+10\sum_v m_v .
 $$
 
-$\mathcal R(B_t,q_t)$ contains the legal routes for that checkpoint. A grid search state includes position, copper layer, and arrival heading. A* ranks states using $g+h$, where $g$ is the incurred cost and $h$ is a remaining-distance estimate. Width, clearance, via spans, and available pad exits constrain the moves. Budgets bound grid expansion and runtime. Failed attempts can widen the search window or revisit neighboring copper.
+Each track heading is a multiple of 45°. At a true bend, the change in heading is an odd multiple of 45°. Branches and pad contacts are checked as junctions. Check each candidate for copper and drill clearance, width, keepouts, via access, shorts, and preserved connections.
 
-Let $L,L_{45}$ be in millimeters. The default local cost is $L+L_{45}+10V+J$, plus configured layer and guide costs. Let $d_e$ be the length of track $e$ no longer reproduced at the same position, layer, and width. Let $h_v$ be 1 when via $v$ changes position, span, drill, or copper diameter, and 0 otherwise. These terms give the default rework penalty.
-
-$$
-R=\sum_e\mathbf 1[d_e>0]+\sum_e d_e+10\sum_v h_v.
-$$
-
-Collinear splits or changed UUIDs on equivalent copper leave $R$ at zero.
-
-### Geometry and connectivity
-
-| Constraint | Test |
-| --- | --- |
-| Net connectivity | Join every selected terminal and same-net anchor. Preserve previously connected terminal pairs. |
-| Isolation | Different nets' copper stays separated, except in modeled net-tie regions. |
-| Directions | Let $\theta$ be track heading. Require $\theta=m\pi/4$ for integer $m$. After merging collinear runs, every actual bend changes direction by an odd multiple of 45°. Branches and pad contacts have separate topology. |
-| Physical limits | Check copper and drill separation, keepouts, width, via size and span, and geometry preserved by the profile. |
-
-A staircase is counted on an unbranched same-layer chain after collinear merging. Let $d_i$ be heading $i$ in eighth-turns. A window of diagonal–cardinal–same diagonal counts once. Its dogleg exception $E_i=1$ applies when the complete five-run pattern is $(a,d,c,d,a)$ with perpendicular cardinal headings $a,c$ and a chamfer $d$ one eighth-turn from each.
+After collinear merging, let $\phi_i$ be run $i$'s heading in eighth-turns on an unbranched same-layer chain. Let $N_{\mathrm{stair}}$ count windows that repeat a diagonal heading across one cardinal run. Set the exception $E_i=1$ when that window lies inside a complete ordinary dogleg, such as $0^\circ,45^\circ,90^\circ,45^\circ,0^\circ$. Otherwise $E_i=0$.
 
 $$
-N_{\mathrm{stair}}=\sum_i
-\mathbf 1[d_i\text{ diagonal},\ d_{i+1}\text{ cardinal},\ d_{i+2}=d_i]\,(1-E_i).
+N_{\mathrm{stair}}=\sum_i \mathbf 1[\phi_i\text{ diagonal},\ \phi_{i+1}\text{ cardinal},
+\phi_{i+2}=\phi_i](1-E_i).
 $$
 
-An exhausted search leaves the affected connections unresolved. Its best validated candidate remains available for inspection.
+## Electrical and silkscreen checks
 
-<!-- pagebreak -->
-
-# 3. Engineering checks and publication
-
-### Electrical limits
-
-For a radial load scenario, $I_j$ is load $j$'s current and $I_e$ is branch $e$'s aggregate downstream current. Let $\rho$ be copper resistivity and $L_e,w_e,t_e$ the length, width, and thickness of that branch. A uniform-conductor DC estimate for the drop along path $p$ is
+For a radial load scenario, $I_j$ is load $j$'s current and $I_e$ is the current in branch $e$. For branch length $L_e$, width $w_e$, copper thickness $t_e$, and copper resistivity $\rho$, the DC voltage drop $\Delta V_p$ along supply path $p$ is
 
 $$
 I_e=\sum_{j\ \mathrm{downstream\ of}\ e} I_j,\qquad
 \Delta V_p=\sum_{e\in p} I_e\,\frac{\rho L_e}{w_e t_e}.
 $$
 
-Width and via limits also depend on temperature rise, fabrication tolerances, and inrush or fault conditions. Check clearance against the voltage difference and the applicable fabrication and insulation requirements. Differential pairs require checked widths and gaps on the actual stackup and a continuous return path through transitions. The preview engine protects deferred pairs. Current budgets, impedance, and physical validation need evidence for the exact design.
+Check width, vias, and voltage clearance against the actual load cases and fabrication limits. Qualify differential-pair width, gap, impedance, and return paths on the actual stackup. The working router preserves deferred pair copper.
 
-### Silkscreen
-
-For label $i$, let $a_i$ be its anchor and $K_i$ its footprint region. Their distance is $d_i=\inf_{u\in K_i}\|a_i-u\|_2$. Let $a_{\mathrm{clip},i}$, $a_{\mathrm{hidden},i}$, and $a_{\mathrm{overlap},i}$ be clipped ink, ink hidden by components, and ink overlapping other labels. Use the actual ink and mask openings in the loss terms. With weights for those four effects,
+For label $i$, let $a_i$ be its anchor and $K_i$ its footprint region. Let $u$ range over $K_i$. The nearest distance is $d_i=\inf_{u\in K_i}\|a_i-u\|_2$. Let $A_{c,i}$, $A_{h,i}$, and $A_{o,i}$ be ink area clipped by fabrication, hidden by components, and overlapping other labels. The weights $\alpha_i,\beta_i,\gamma_i,\delta_i$ penalize distance and the three areas in that order.
 
 $$
-C_{\mathrm{silk}}=\sum_i
-\left(\alpha_i d_i+\beta_i a_{\mathrm{clip},i}+
-\gamma_i a_{\mathrm{hidden},i}+\delta_i a_{\mathrm{overlap},i}\right).
+C_{\mathrm{silk}}=\sum_i\big(\alpha_i d_i+\beta_i A_{c,i}
++\gamma_i A_{h,i}+\delta_i A_{o,i}\big).
 $$
 
-This model guides separate silkscreen review. It respects fixed labels and fabrication clearances. The layout preview does not solve a global glyph-area optimization.
+## Acceptance
 
-### Acceptance gates
-
-| Gate | Evidence |
+| Step | Required check |
 | --- | --- |
-| Saved sources | Native files, dependencies, and effective policy still match the preview. KiCad editor state permits a guarded write. |
-| Protected geometry | The schematic, outline, stackup, protected footprints and silkscreen match the baseline. |
-| Native verification | Refill zones. Check opens, DRC, ERC, schematic parity, and retained connections independently. |
-| Checked export | Require passing native checks and source-bound electrical evidence, including reference copper when applicable. Record hardware validation and production approval separately. |
+| Preview | Refill zones and independently check protected objects, native rules, and retained connectivity. |
+| Apply | Recheck saved inputs, effective policy, and editor state. Keep a recoverable board copy. |
+| Checked export | Require passing DRC, ERC, schematic parity, and connectivity plus evidence for electrical and reference-copper checks. Track hardware validation and production approval separately. |
 
-Apply rechecks the candidate and keeps a recoverable board copy. Resume against matching inputs. Renew after tool changes to revalidate a retained candidate and rebuild the queue. A change to saved inputs or policy requires a fresh run.
-
-Keep requirements and engineering inputs in `data/`. Store policies and campaigns in `config/`. Native projects, routing checkpoints, verification reports, and manufacturing packages belong in `results/`. See the README for command syntax.
+Resume with matching inputs. Renew after a tool change to revalidate the candidate and rebuild the queue. Make a fresh preview after a source or policy change.

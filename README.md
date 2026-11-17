@@ -22,7 +22,7 @@ Install KiCad 10 with a matching Python that can import `pcbnew`. Use `KICAD_CLI
 | `docs/` | Product documentation. |
 | `scripts/` | Shared jobs, KiCad adapters, and verification tools. |
 
-Requirements default to `data/requirements.txt`. Use [the example requirements](data/requirements.example.txt) or supply a text file. A custom catalog can go in `data/catalog.json`. Historical projects can still read engineering inputs from `design/`. Generated results and local campaigns are Git-ignored.
+Requirements default to `data/requirements.txt`. Use [the example requirements](data/requirements.example.txt) or supply a text file. A custom catalog can go in `data/catalog.json`. See [project inputs](data/README.md) for the expected engineering files and migration from `design/`. Generated results and local campaigns are Git-ignored.
 
 ### Start from requirements
 

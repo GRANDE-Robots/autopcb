@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -24,9 +25,10 @@ class ReleaseGuardTests(unittest.TestCase):
         )
         return project
 
-    def attachment_fixture(self, root: Path):
+    def attachment_fixture(self, root: Path, input_folder: str = "design"):
         project = root / "project"
-        control = project / "design/release_inputs"
+        inputs = project / input_folder
+        control = inputs / "release_inputs"
         control.mkdir(parents=True)
         (control / "INPUT_MANIFEST.json").write_text(
             json.dumps({"status": "REVIEWED", "files": {}}), encoding="utf-8"
@@ -46,22 +48,26 @@ class ReleaseGuardTests(unittest.TestCase):
             "maximum_copper_layers": 4,
             "evidence_files": {},
         }
-        (project / "design/STACKUP_CURRENT.json").write_text(
+        evidence = inputs / "stackup_evidence" / "calculator.txt"
+        evidence.parent.mkdir()
+        evidence.write_text("fixture calculator evidence", encoding="utf-8")
+        stack["evidence_files"]["design/stackup_evidence/calculator.txt"] = sha(evidence)
+        (inputs / "STACKUP_CURRENT.json").write_text(
             json.dumps(stack), encoding="utf-8"
         )
         design_files = [
-            "design/USB_HOST_POWER_GATE.md",
-            "design/fabrication/FABRICATION_SUPPLEMENTS.json",
-            "design/fabrication/REQUIRED_IMPEDANCE_CONTROL.xlsx",
-            "design/fabrication/IMPEDANCE_POSITIONS.jpg",
-            "design/fabrication/FABRICATION_NOTES.txt",
-            "design/fabrication/FACTORY_MODEL_HOLDS.csv",
-            "design/fabrication/evidence/NATIVE_IMPEDANCE_GEOMETRY.json",
-            "design/fabrication/evidence/ALL_DIFFERENTIAL_TRACKS.csv",
-            "design/fabrication/evidence/IMPEDANCE_MANIFEST.json",
+            "USB_HOST_POWER_GATE.md",
+            "fabrication/FABRICATION_SUPPLEMENTS.json",
+            "fabrication/REQUIRED_IMPEDANCE_CONTROL.xlsx",
+            "fabrication/IMPEDANCE_POSITIONS.jpg",
+            "fabrication/FABRICATION_NOTES.txt",
+            "fabrication/FACTORY_MODEL_HOLDS.csv",
+            "fabrication/evidence/NATIVE_IMPEDANCE_GEOMETRY.json",
+            "fabrication/evidence/ALL_DIFFERENTIAL_TRACKS.csv",
+            "fabrication/evidence/IMPEDANCE_MANIFEST.json",
         ]
         for name in design_files:
-            file = project / name
+            file = inputs / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text("fixture", encoding="utf-8")
         manufacturing = root / "manufacturing"
@@ -129,6 +135,17 @@ class ReleaseGuardTests(unittest.TestCase):
             build_technical_attachment.build(project, manufacturing, gallery, output)
             self.assertTrue(output.is_file())
             self.assertFalse((root / "attachment_inputs").exists())
+
+    def test_technical_attachment_uses_data_after_input_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project, manufacturing, gallery = self.attachment_fixture(root, input_folder="data")
+            output = root / "attachment.zip"
+            build_technical_attachment.build(project, manufacturing, gallery, output)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("data/STACKUP_CURRENT.json", archive.namelist())
+                self.assertIn("data/stackup_evidence/calculator.txt", archive.namelist())
+                self.assertFalse(any(name.startswith("design/") for name in archive.namelist()))
 
     def test_technical_attachment_does_not_overwrite_existing_receipt(self):
         with tempfile.TemporaryDirectory(prefix="jessie-attachment-test-") as directory:

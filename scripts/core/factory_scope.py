@@ -11,9 +11,9 @@ import hashlib
 import json
 from pathlib import Path
 
-from core.paths import data_path
+from core.paths import data_path, support_input_name
 
-from core.assembly_rotation import POLICY_PATH as ROTATION_POLICY_PATH
+from core.assembly_rotation import POLICY_FILE as ROTATION_POLICY_FILE
 from core.assembly_rotation import SCHEDULE_FIELDS, apply_offsets, load_policy
 from core.export_helpers import (
     BOM_FIELDS,
@@ -347,6 +347,7 @@ def export_factory_scope(
     }
     bom, merge_evidence, split_evidence = consolidate(factory, geometry)
     factoryrefs = {p["Designator"] for p in factory}
+    rotation_policy = data_path(project, ROTATION_POLICY_FILE)
     factorycpl, rotation_schedule = apply_offsets(
         [p for p in cpl if p["Designator"] in factoryrefs],
         factory,
@@ -373,7 +374,7 @@ def export_factory_scope(
         )
     receipt = {
         "schema": 1,
-        "policy_path": policy_path.relative_to(project.resolve()).as_posix(),
+        "policy_path": support_input_name(project, policy_path).as_posix(),
         "policy_sha256": sha(policy_path),
         "source_sha256": {
             p.name: sha(p)
@@ -391,8 +392,8 @@ def export_factory_scope(
         "factory_bom_groups": len(bom),
         "scope_partition": scope,
         "native_geometry_by_ref": geometry,
-        "rotation_policy_path": ROTATION_POLICY_PATH,
-        "rotation_policy_sha256": sha(project / ROTATION_POLICY_PATH),
+        "rotation_policy_path": support_input_name(project, rotation_policy).as_posix(),
+        "rotation_policy_sha256": sha(rotation_policy),
         "qualified_catalog_rotation_offsets": rotation_schedule,
         "native_connection_requirements": connection_evidence,
         "consolidation_groups": merge_evidence,

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.assembly_rotation import POLICY_PATH, apply_offsets, load_policy
+from core.assembly_rotation import POLICY_FILE, apply_offsets, load_policy
 
 
 def fixture():
@@ -128,20 +128,23 @@ class RotationTests(unittest.TestCase):
                 apply_offsets(cpl, parts, g, p)
 
     def test_actual_qualification_file_must_match_its_controlled_hash(self):
-        _, _, _, p = fixture()
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "design").mkdir()
-            e = root / "design/rotation_evidence.json"
-            e.write_text("qualified pin1 evidence")
-            p["overrides"][0]["qualification_evidence"]["sha256"] = hashlib.sha256(
-                e.read_bytes()
-            ).hexdigest()
-            (root / POLICY_PATH).write_text(json.dumps(p))
-            self.assertEqual(load_policy(root), p)
-            e.write_text("different preview")
-            with self.assertRaisesRegex(RuntimeError, "qualification evidence changed"):
-                load_policy(root)
+        for folder, reference in (("design", "design"), ("data", "design"), ("data", "data")):
+            with self.subTest(folder=folder, reference=reference), tempfile.TemporaryDirectory() as td:
+                _, _, _, policy = fixture()
+                root = Path(td)
+                inputs = root / "autopcb" / folder
+                inputs.mkdir(parents=True)
+                evidence = inputs / "rotation_evidence.json"
+                evidence.write_text("qualified pin1 evidence")
+                policy["overrides"][0]["qualification_evidence"] = {
+                    "path": f"{reference}/{evidence.name}",
+                    "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                }
+                (inputs / POLICY_FILE).write_text(json.dumps(policy))
+                self.assertEqual(load_policy(root), policy)
+                evidence.write_text("different preview")
+                with self.assertRaisesRegex(RuntimeError, "qualification evidence changed"):
+                    load_policy(root)
 
     def test_empty_policy_preserves_every_original_factory_row(self):
         parts, cpl, g, p = fixture()

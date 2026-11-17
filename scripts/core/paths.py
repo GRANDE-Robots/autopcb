@@ -86,10 +86,10 @@ class ProjectStorage:
         return legacy if not selected.exists() and legacy.exists() else selected
 
     def data_file(self, *relative: str) -> Path:
-        selected = self.data.joinpath(*relative)
-        current = (self.legacy / "data").joinpath(*relative)
-        historical = (self.legacy / "design").joinpath(*relative)
-        return next((path for path in (selected, current, historical) if path.exists()), selected)
+        roots = (self.data, self.legacy / "data", self.legacy / "design")
+        # The first owner of an input folder supplies the entire collection.
+        owner = next((root for root in roots if root.joinpath(*relative[:1]).exists()), roots[0])
+        return owner.joinpath(*relative)
 
     def environment(self, entry: Path) -> dict[str, str]:
         return {ENTRY_ENV: str(entry.resolve()), WORKSPACE_ENV: str(self.workspace)} if self.workspace else {}
@@ -109,6 +109,17 @@ def data_path(project: Path, *relative: str) -> Path:
     return project_storage(project).data_file(*relative)
 
 
+def data_reference(project: Path, name: str) -> Path:
+    """Resolve a saved evidence reference across historical and current input paths."""
+    reference = Path(name.replace("\\", "/"))
+    if not reference.parts or reference.anchor or ".." in reference.parts:
+        raise ValueError(f"Expected a relative evidence path: {name}")
+    if reference.parts[0] in {"data", "design"}:
+        if len(reference.parts) < 2:
+            raise ValueError(f"Expected an evidence file: {name}")
+        return data_path(project, *reference.parts[1:])
+    return asset_root(project) / reference
+
 
 def config_path(project: Path, name: str) -> Path:
     return project_storage(project).config_file(name)
@@ -116,7 +127,6 @@ def config_path(project: Path, name: str) -> Path:
 
 def results_path(project: Path, *parts: str) -> Path:
     return project_storage(project).results.joinpath(*parts)
-
 
 
 def stored_result(project: Path, *parts: str) -> Path:
@@ -136,6 +146,7 @@ def support_input_name(project: Path, source: Path) -> Path:
         if source.is_relative_to(store.data):
             return support / "data" / source.relative_to(store.data)
     return source.relative_to(store.native)
+
 
 def library_root(project: Path) -> Path:
     """Locate project-level libraries, with support for the previous AutoPCB layout."""

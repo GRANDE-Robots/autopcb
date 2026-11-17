@@ -5,11 +5,11 @@ import math
 import re
 from pathlib import Path
 
-from core.paths import asset_root, data_path
+from core.paths import data_path, data_reference
 
 from core.export_helpers import require, sha
 
-POLICY_PATH = "design/ASSEMBLY_ROTATION_OFFSETS.json"
+POLICY_FILE = "ASSEMBLY_ROTATION_OFFSETS.json"
 SCHEDULE_FIELDS = [
     "Designator",
     "Native rotation deg",
@@ -82,10 +82,10 @@ def validate_policy(policy):
         evidence = rule.get("qualification_evidence", {})
         path = Path(str(evidence.get("path", "")))
         require(
-            path.parts
-            and not path.is_absolute()
+            len(path.parts) > 1
+            and not path.anchor
             and ".." not in path.parts
-            and path.parts[0] == "design"
+            and path.parts[0] in {"data", "design"}
             and bool(re.fullmatch(r"[0-9a-f]{64}", str(evidence.get("sha256", "")))),
             ref + ": missing/unsafe source-controlled qualification evidence",
         )
@@ -94,14 +94,12 @@ def validate_policy(policy):
 
 def load_policy(project):
     project = Path(project)
-    path = data_path(project, Path(POLICY_PATH).name)
-    require(path.is_file(), "Source-controlled " + POLICY_PATH + " is required")
+    path = data_path(project, POLICY_FILE)
+    require(path.is_file(), f"Source-controlled rotation policy is required at {path}")
     policy = json.loads(path.read_text(encoding="utf-8-sig"))
     for rule in validate_policy(policy):
         e = rule["qualification_evidence"]
-        relative = Path(e["path"])
-        p = (data_path(project, *relative.parts[1:]) if relative.parts[0] in {"data", "design"}
-             else asset_root(project) / relative)
+        p = data_reference(project, e["path"])
         require(
             p.is_file() and sha(p) == e["sha256"],
             rule["designator"] + ": qualification evidence changed/missing",

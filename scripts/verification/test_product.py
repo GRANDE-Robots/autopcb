@@ -123,6 +123,18 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(data_path(root, name), current / name)
             self.assertEqual(data_path(root, 'OTHER.json'), current / 'OTHER.json')
 
+    def test_current_release_input_folder_owns_its_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            historical = root / "design" / "release_inputs"
+            historical.mkdir(parents=True)
+            manifest = historical / "INPUT_MANIFEST.json"
+            manifest.write_text("{}", encoding="utf-8")
+            self.assertEqual(data_path(root, "release_inputs", manifest.name), manifest)
+            current = root / "data" / "release_inputs"
+            current.mkdir(parents=True)
+            self.assertEqual(data_path(root, "release_inputs", manifest.name), current / manifest.name)
+
 
 class RequirementsTests(unittest.TestCase):
     def test_unknown_supply_unsupported_signal_and_unapproved_edits_block_generation(self):

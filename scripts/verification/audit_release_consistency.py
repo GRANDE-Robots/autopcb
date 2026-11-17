@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-from core.paths import data_path
+from core.paths import data_path, data_reference
 
 
 def digest(p):
@@ -218,15 +218,16 @@ def audit(project, manufacturing, gallery=None, archive=None):
             )
             relative = Path(str(e.get("path", "")))
             valid_path = (
-                relative.parts
-                and not relative.is_absolute()
+                len(relative.parts) > 1
+                and not relative.anchor
                 and ".." not in relative.parts
-                and relative.parts[0] == "design"
+                and relative.parts[0] in {"data", "design"}
             )
+            evidence_path = data_reference(project, relative.as_posix()) if valid_path else None
             check(
-                valid_path
-                and (project / relative).is_file()
-                and digest(project / relative) == e.get("sha256"),
+                evidence_path is not None
+                and evidence_path.is_file()
+                and digest(evidence_path) == e.get("sha256"),
                 "Catalog qualification evidence bytes: " + ref,
             )
             guard_actual = {

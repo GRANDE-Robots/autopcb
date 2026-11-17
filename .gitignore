@@ -27,6 +27,9 @@ desktop.ini
 /results/
 /config/campaigns/
 
+# Local snapshots of earlier project inputs
+/data/archive/
+
 # Python package and installer output
 /build/
 /dist/

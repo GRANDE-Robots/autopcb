@@ -9,7 +9,7 @@ import json
 import math
 from pathlib import Path
 
-from core.paths import data_path
+from core.paths import data_path, data_reference, support_input_name
 
 from core.export_helpers import (
     factory_input_dir,
@@ -67,7 +67,8 @@ def generate(project, output):
         "Stack contract must retain review-only scope",
     )
     for n, h in stack["evidence_files"].items():
-        require(sha(P / n) == h, "Stack calculator evidence changed: " + n)
+        evidence = data_reference(P, n)
+        require(evidence.is_file() and sha(evidence) == h, "Stack calculator evidence changed: " + n)
     stack_name = stack["stackup_id"]
     order_mm = stack["nominal_order_thickness_mm"]
     finished_mm = stack["displayed_finished_thickness_mm"]
@@ -90,7 +91,7 @@ def generate(project, output):
         M / "evidence/CURRENT_STACKUP_CONTRACT.json",
         {
             "source_sha256": identity["source_sha256"],
-            "contract": stackpath.relative_to(P.resolve()).as_posix(),
+            "contract": support_input_name(P, stackpath).as_posix(),
             "contract_sha256": sha(stackpath),
             "stack": stack,
             "factory_approved": False,

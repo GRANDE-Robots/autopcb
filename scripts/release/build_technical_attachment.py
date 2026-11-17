@@ -5,7 +5,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from core.paths import asset_root, data_path
+from core.paths import data_path, data_reference
 
 from core.export_helpers import (
     assert_factory_sources,
@@ -113,7 +113,7 @@ def build(project, manufacturing, gallery, out):
         ]
     ]
     entries += [
-        (data_path(P, n), "design/" + n)
+        (data_path(P, n), "data/" + n)
         for n in ["USB_HOST_POWER_GATE.md", "STACKUP_CURRENT.json"]
     ]
     entries += [
@@ -135,8 +135,10 @@ def build(project, manufacturing, gallery, out):
         ]
     ]
     for n, h in stack["evidence_files"].items():
-        require(sha(asset_root(P) / n) == h, "Stack evidence changed: " + n)
-        entries.append((asset_root(P) / n, n))
+        evidence = data_reference(P, n)
+        require(evidence.is_file() and sha(evidence) == h, "Stack evidence changed: " + n)
+        member = (Path("data") / Path(n.removeprefix("design/"))).as_posix() if n.startswith("design/") else n
+        entries.append((evidence, member))
     validate_generated_files(M, source, entries)
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="jessie-attachment-") as work:

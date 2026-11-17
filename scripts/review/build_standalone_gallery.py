@@ -110,6 +110,7 @@ def main():
         and any(name.endswith(".kicad_pcb") for name in native)
         and any(name.endswith(".kicad_sch") for name in native)
     ), "Missing native source identity"
+    title = html.escape(Path(next(name for name in native if name.endswith(".kicad_pcb"))).stem)
     nav = (
         "<nav>"
         + "".join(
@@ -155,11 +156,11 @@ def main():
             '<!doctype html><html lang="en"><meta '
             'charset="utf-8"><meta name="viewport" '
             'content="width=device-width, '
-            'initial-scale=1"><title>Jessie v4.1 — standalone '
-            "views</title><style>"
+            'initial-scale=1"><title>'
         )
+        + title + " — review views</title><style>"
         + css
-        + "</style><h1>Jessie v4.1 — "
+        + "</style><h1>" + title + " — "
         + str(len(views))
         + " views</h1><p>"
         + html.escape(a.status)

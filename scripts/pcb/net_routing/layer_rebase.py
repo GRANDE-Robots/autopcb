@@ -91,8 +91,8 @@ def rebase_checkpoint(checkpoint: dict, current_inputs: dict, current_tools: dic
     """Rebind a preview only when every other source and hard policy is unchanged."""
     from pcb.net_routing.controller import decode_checkpoint
 
-    if (not isinstance(current_inputs, dict)
-            or current_inputs.get("v4.1.kicad_pcb") != hashlib.sha256(new_board).hexdigest()):
+    boards = [name for name in current_inputs if name.endswith(".kicad_pcb") and "/" not in name] if isinstance(current_inputs, dict) else []
+    if len(boards) != 1 or current_inputs[boards[0]] != hashlib.sha256(new_board).hexdigest():
         raise ValueError("Current board fingerprint does not match the supplied board")
     try:
         old_config = json.loads(old_policy.decode("utf-8-sig"))
@@ -102,7 +102,7 @@ def rebase_checkpoint(checkpoint: dict, current_inputs: dict, current_tools: dic
     if not compatible_policies(old_config, new_config):
         raise ValueError("Routing policy changed beyond layer ordering or soft costs")
     old_inputs = dict(current_inputs)
-    old_inputs["v4.1.kicad_pcb"] = hashlib.sha256(old_board).hexdigest()
+    old_inputs[boards[0]] = hashlib.sha256(old_board).hexdigest()
     candidate = decode_checkpoint(
         checkpoint, old_inputs, current_tools, hashlib.sha256(old_policy).hexdigest(),
         allow_tool_changes=True,

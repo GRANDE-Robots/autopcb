@@ -6,6 +6,8 @@ reference-path verification remain required before a publication path exists.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import collections
 import concurrent.futures
 import hashlib
@@ -25,7 +27,7 @@ from pathlib import Path
 import pcbnew
 
 from core.kicad_campaign import CampaignPlanner
-from core.paths import asset_root
+from core.paths import asset_root, config_path, data_path, results_path, stored_result
 from pcb.checkpoints import read_config
 from pcb.net_routing.batch import _search, preview_round
 from pcb.net_routing.controller import decode_checkpoint, encode_checkpoint, make_work_plan, new_style_issues
@@ -49,10 +51,15 @@ from pcb.route_validation import (
 
 
 def _source_hashes(snapshot: Snapshot, project: Path, assets: Path) -> dict[str, str]:
-    result = {path.relative_to(project).as_posix(): digest for path, digest in snapshot.fingerprints.items()}
-    for path in (assets / "design" / "POWER_LOAD_BUDGET.csv", assets / "design" / "STACKUP_CURRENT.json"):
-        result[path.relative_to(project).as_posix()] = sha(path) if path.is_file() else "absent"
-    policy_path = assets / "config" / "autopcb.json"
+    result = {snapshot.input_name(path).as_posix(): digest for path, digest in snapshot.fingerprints.items()}
+    for name in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json"):
+        path = data_path(project, name)
+        if path.is_file():
+            result[snapshot.input_name(path).as_posix()] = sha(path)
+        else:
+            # Keep the source key used by existing runs when an input is absent.
+            result[(assets / "design" / name).relative_to(project).as_posix()] = "absent"
+    policy_path = config_path(project, "autopcb.json")
     if policy_path.is_file():
         policy, _ = read_config(policy_path)
         root = project.resolve()
@@ -377,18 +384,18 @@ def _resume_action_for_project(project: Path, state: dict) -> str:
     project = project.resolve()
     assets = asset_root(project)
     try:
-        snapshot = Snapshot(project / "v4.1.kicad_pcb")
+        snapshot = Snapshot(native_path(project, ".kicad_pcb"))
         snapshot.fingerprints = {path: sha(path) for path in snapshot.files()}
         return resume_action(
             checkpoint, _source_hashes(snapshot, project, assets),
-            sha(assets / "config" / "autopcb.json"), Snapshot.tools(),
+            sha(config_path(project, "autopcb.json")), Snapshot.tools(),
         )
     except (OSError, RuntimeError, ValueError):
         return "unknown"
 
 
 def read_status(project: Path, run_id: str) -> dict:
-    path = asset_root(project) / "results" / "autoroute" / f"{_run_id(run_id)}.json"
+    path = stored_result(project, "autoroute", f"{_run_id(run_id)}.json")
     state = json.loads(path.read_text(encoding="utf-8"))
     if state.get("schema") != 1 or state.get("run_id") != run_id:
         raise ValueError("Invalid AutoPCB run state")
@@ -438,8 +445,8 @@ def _replan(snapshot: Snapshot, policy: dict, reference: dict, *, workers: int, 
 
 def _replan_native(directory: Path, policy: dict, reference: dict, *, workers: int,
                    single: bool, offset: int) -> dict:
-    board = _board(directory / "v4.1.kicad_pcb")
-    schematic = (directory / "v4.1.kicad_sch").read_text(encoding="utf-8-sig")
+    board = _board(native_path(directory, ".kicad_pcb"))
+    schematic = (native_path(directory, ".kicad_sch")).read_text(encoding="utf-8-sig")
     inventory = inventory_board(board, schematic=schematic)
     work = work_from_board(board, inventory, policy.get("priorities", {}),
                            margin_mm=policy.get("search_margin_mm") or 8.0)
@@ -796,7 +803,7 @@ def _same_snapshot_inputs(snapshot: Snapshot, original: bytes) -> bool:
             return False
         for source, expected in snapshot.fingerprints.items():
             target = (snapshot.board_path if source == snapshot.source else
-                      snapshot.directory / source.relative_to(snapshot.source.parent))
+                      snapshot.directory / snapshot.input_name(source))
             if not target.is_file() or sha(target) != expected:
                 return False
         return True
@@ -831,7 +838,7 @@ def verify_resume_board(snapshot: Snapshot, project: Path, expected_opens: int,
 def _verify_resume_connectivity(directory: Path, original_bytes: bytes) -> None:
     original_path = directory / "resume-original.kicad_pcb"
     original_path.write_bytes(original_bytes)
-    original, routed = _board(original_path), _board(directory / "v4.1.kicad_pcb")
+    original, routed = _board(original_path), _board(native_path(directory, ".kicad_pcb"))
     from pcb.net_routing.via_guard import verify_no_new_via_pad_overlaps
 
     verify_no_new_via_pad_overlaps(original, routed)
@@ -848,7 +855,7 @@ def _verify_resume_connectivity(directory: Path, original_bytes: bytes) -> None:
         raise RuntimeError("Resumed candidate broke an existing copper connection: " + nets)
     old_style = normalize_segment_identities(audit_style(original), _segment_identities(original_bytes))
     new_style = normalize_segment_identities(
-        audit_style(routed), _segment_identities((directory / "v4.1.kicad_pcb").read_bytes())
+        audit_style(routed), _segment_identities((native_path(directory, ".kicad_pcb")).read_bytes())
     )
     if new_style_issues(old_style, new_style):
         raise RuntimeError("Resumed candidate introduced routing style issues")
@@ -856,13 +863,13 @@ def _verify_resume_connectivity(directory: Path, original_bytes: bytes) -> None:
 
 def _reference_repairs_native(directory: Path, reference: dict, policy: dict,
                               workers: int) -> dict:
-    return compile_reference_repairs(_board(directory / "v4.1.kicad_pcb"),
+    return compile_reference_repairs(_board(native_path(directory, ".kicad_pcb")),
                                      reference, policy, workers=workers)
 
 
 def _compile_reroutes_native(directory: Path, request: dict, policy: dict,
                              critical_nets: tuple[str, ...]) -> dict:
-    board = _board(directory / "v4.1.kicad_pcb")
+    board = _board(native_path(directory, ".kicad_pcb"))
     protected = set(critical_nets) | unqualified_working_nets(
         board, tuple(policy.get("exclude_nets", ()))
     )
@@ -874,7 +881,7 @@ def _preview_round_native(directory: Path, requests: list[dict], workers: int,
                           critical_nets: tuple[str, ...], *,
                           precomputed: list[dict] | None = None) -> dict:
     """Bound native board lifetimes to one search/validation transaction."""
-    source = directory / "v4.1.kicad_pcb"
+    source = native_path(directory, ".kicad_pcb")
     result = preview_round(directory, requests, workers=workers, precomputed=precomputed)
     if result["status"] == "validated_preview":
         style = result["validation"].get("new_style_issues")
@@ -911,7 +918,7 @@ def _search_alternatives_native(directory: Path, requests: list[dict], workers: 
 
 def _validate_alternative_native(directory: Path, request: dict, result: dict,
                                  critical_nets: tuple[str, ...]) -> dict:
-    with Snapshot(directory / "v4.1.kicad_pcb") as snapshot:
+    with Snapshot(native_path(directory, ".kicad_pcb")) as snapshot:
         return _preview_round_native(snapshot.directory, [request], 1, critical_nets,
                                      precomputed=[result])
 
@@ -1001,8 +1008,8 @@ def _verify_cumulative_reference_native(original: Path, candidate: Path,
     # would silently use defaults instead of the candidate's .kicad_pro/.dru,
     # inventing a return-copper regression even for unchanged physical copper.
     project = next((path for path in (candidate.with_suffix(".kicad_pro"),
-                    candidate.parent / "v4.1.kicad_pro", original.with_suffix(".kicad_pro"),
-                    original.parent / "v4.1.kicad_pro") if path.is_file()), None)
+                    native_path(candidate.parent, ".kicad_pro"), original.with_suffix(".kicad_pro"),
+                    native_path(original.parent, ".kicad_pro")) if path.is_file()), None)
     rules = project.with_suffix(".kicad_dru") if project else None
     context = {}
     if project is not None:
@@ -1014,7 +1021,7 @@ def _verify_cumulative_reference_native(original: Path, candidate: Path,
         for name, source in (("before", original), ("after", candidate)):
             directory = Path(folder) / name
             directory.mkdir()
-            target = directory / "v4.1.kicad_pcb"
+            target = native_path(directory, ".kicad_pcb")
             target.write_bytes(source.read_bytes())
             for suffix, data in context.items():
                 target.with_suffix(suffix).write_bytes(data)
@@ -1039,7 +1046,7 @@ def _neutral_lookahead(snapshot: Snapshot, neutral_board: bytes, initial: dict,
     if sha(snapshot.board_path) != initial.get("source_sha256"):
         raise RuntimeError("Neutral preview source changed")
     with Snapshot(snapshot.board_path) as branch:
-        schematic = (branch.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(branch.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(branch.original, schematic)
         if protected.differences(neutral_board, schematic):
             raise RuntimeError("Neutral preview changed a protected design item")
@@ -1167,30 +1174,32 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
     apply_search_budget([], requested_search)
     project = project.resolve()
     assets = asset_root(project)
-    policy_path = assets / "config" / "autopcb.json"
+    policy_path = config_path(project, "autopcb.json")
     policy, policy_hash = read_config(policy_path)
     if keep_placement:
         policy = {**policy, "recovery": {**policy.get("recovery", {}), "placement_candidates": 0}}
     recovery = RecoveryPolicy.from_config(policy.get("recovery"))
-    output = assets / "results" / "autoroute"
+    output = results_path(project, "autoroute")
     output.mkdir(parents=True, exist_ok=True)
     run_id = _run_id(resume) if resume else uuid.uuid4().hex
     state_path = output / f"{run_id}.json"
     with _exclusive(output / "active.lock"):
         if progress:
             progress({"event": "stage", "message": "Preparing a private routing board; saved PCB stays unchanged"})
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=keep_placement)
             if resume or renew:
                 if progress:
                     progress({"event": "stage", "message": "Rechecking the saved preview, protected items and source compatibility"})
                 previous_id = _run_id(resume or renew)
-                previous_path = output / f"{previous_id}.json"
+                previous_path = stored_result(project, "autoroute", f"{previous_id}.json")
                 state = json.loads(previous_path.read_text(encoding="utf-8"))
                 if state.get("schema") != 1 or state.get("run_id") != previous_id:
                     raise ValueError("Invalid AutoPCB run state")
+                if previous_path.parent != output and (previous_path.parent / "active.lock").exists():
+                    raise RuntimeError("A legacy routing job is active for this board")
                 mode_changed = ((single_net_search and not state.get("single_net_search", False))
                                 or (keep_placement and not state.get("keep_placement", False)))
                 state["single_net_search"] = single_net_search or state.get("single_net_search", False)

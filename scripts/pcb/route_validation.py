@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
+from core.project import SNAPSHOT_ENTRY, ProjectPaths
+from core.toolchain import kicad_cli
+
 import collections
 import hashlib
 import json
 import math
 import shutil
-import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from core.paths import library_directories
 from typing import Any
 
 from core.kicad_campaign import CampaignPlanner
@@ -64,12 +67,11 @@ def _tool_inputs() -> dict[str, str]:
         "core/kicad_campaign.py",
         "core/kicad_sexpr.py",
         "core/pcb_io.py",
+        "core/paths.py",
         "core/native_command.py",
     )
     result = {name: _sha(scripts / name) for name in names}
-    cli = Path(sys.executable).parent / (
-        "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
-    )
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for route validation")
     result["kicad-cli"] = _sha(cli)
@@ -77,41 +79,15 @@ def _tool_inputs() -> dict[str, str]:
 
 
 def _inputs(source: Path) -> list[Path]:
-    parent = source.parent
-    files = [source]
-    for path in (
-        source.with_suffix(".kicad_sch"),
-        source.with_suffix(".kicad_pro"),
-        source.with_suffix(".kicad_dru"),
-        parent / "fp-lib-table",
-        parent / "sym-lib-table",
-    ):
-        if path.is_file():
-            files.append(path)
-    files.extend(
-        path
-        for directory in library_directories(parent)
-        for pattern in ("*.kicad_mod", "*.kicad_sym")
-        for path in directory.rglob(pattern)
-        if path.is_file()
-    )
-    return sorted(set(files))
+    return list(ProjectPaths(source).audit_inputs())
 
 
-def _copy_inputs(files: list[Path], source: Path, destination: Path) -> None:
+def _copy_inputs(files: list[Path], source: Path, destination: Path, *, names=None) -> None:
     for original in files:
-        if original == source:
-            target = destination / "v4.1.kicad_pcb"
-        elif original == source.with_suffix(".kicad_sch"):
-            target = destination / "v4.1.kicad_sch"
-        elif original == source.with_suffix(".kicad_pro"):
-            target = destination / "v4.1.kicad_pro"
-        elif original == source.with_suffix(".kicad_dru"):
-            target = destination / "v4.1.kicad_dru"
-        else:
-            target = destination / original.relative_to(source.parent)
+        target = destination / (names[original] if names is not None else original.relative_to(source.parent))
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(original, target)
+    (destination / SNAPSHOT_ENTRY).write_text(source.name, encoding="utf-8")
 
 
 def verify_validation_evidence(
@@ -800,9 +776,7 @@ def validate_routes(
     tool_fingerprints = _tool_inputs()
     if fingerprints[source] != source_sha256:
         raise RuntimeError("Saved board changed while capturing validation inputs")
-    cli = Path(sys.executable).parent / (
-        "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
-    )
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for route validation")
     with tempfile.TemporaryDirectory(prefix="jessie-route-validation-") as directory:
@@ -813,12 +787,12 @@ def validate_routes(
         _copy_inputs(files, source, before)
         _copy_inputs(files, source, after)
         if (
-            _sha(before / "v4.1.kicad_pcb") != source_sha256
-            or _sha(after / "v4.1.kicad_pcb") != source_sha256
+            _sha(native_path(before, ".kicad_pcb")) != source_sha256
+            or _sha(native_path(after, ".kicad_pcb")) != source_sha256
         ):
             raise RuntimeError("Saved board changed while copying validation inputs")
-        original_bytes = (before / "v4.1.kicad_pcb").read_bytes()
-        original = pcbnew.LoadBoard(str(before / "v4.1.kicad_pcb"))
+        original_bytes = (native_path(before, ".kicad_pcb")).read_bytes()
+        original = pcbnew.LoadBoard(str(native_path(before, ".kicad_pcb")))
         _check_bottom_footprint_moves(original, original_bytes.decode("utf-8"), moved)
         requested_removals = [
             removal for contract in contracts for removal in contract.removals
@@ -836,34 +810,34 @@ def validate_routes(
                 raise ValueError("A copper item cannot be removed by multiple routes")
             removed_ids.update(selected)
         candidate = CampaignPlanner(after).plan("pcb", changes)
-        (after / "v4.1.kicad_pcb").write_bytes(candidate.after)
+        (native_path(after, ".kicad_pcb")).write_bytes(candidate.after)
         # Both boards are refilled and saved only inside the temporary folder.
         # The candidate's changed fill cache is included in the resulting
         # campaign, so applying it cannot leave stale copper behind.
-        check_parity = (before / "v4.1.kicad_sch").is_file()
+        check_parity = (native_path(before, ".kicad_sch")).is_file()
         baseline = _drc(
-            cli, before / "v4.1.kicad_pcb", before / "drc.json",
+            cli, native_path(before, ".kicad_pcb"), before / "drc.json",
             save_refill=True, schematic_parity=check_parity,
         )
         tested = _drc(
-            cli, after / "v4.1.kicad_pcb", after / "drc.json",
+            cli, native_path(after, ".kicad_pcb"), after / "drc.json",
             save_refill=True, schematic_parity=check_parity,
         )
         zone_changes = _zone_refill_changes(
-            candidate.after, (after / "v4.1.kicad_pcb").read_bytes()
+            candidate.after, (native_path(after, ".kicad_pcb")).read_bytes()
         )
         if zone_changes:
-            (after / "v4.1.kicad_pcb").write_bytes(original_bytes)
+            (native_path(after, ".kicad_pcb")).write_bytes(original_bytes)
             candidate = CampaignPlanner(after).plan("pcb", [*changes, *zone_changes])
-            (after / "v4.1.kicad_pcb").write_bytes(candidate.after)
+            (native_path(after, ".kicad_pcb")).write_bytes(candidate.after)
             tested = _drc(
-                cli, after / "v4.1.kicad_pcb", after / "final_drc.json",
+                cli, native_path(after, ".kicad_pcb"), after / "final_drc.json",
                 schematic_parity=check_parity,
             )
-        original = pcbnew.LoadBoard(str(before / "v4.1.kicad_pcb"))
+        original = pcbnew.LoadBoard(str(native_path(before, ".kicad_pcb")))
         original.GetConnectivity().Build(original)
         original_nets = _net_identities(original)
-        routed = pcbnew.LoadBoard(str(after / "v4.1.kicad_pcb"))
+        routed = pcbnew.LoadBoard(str(native_path(after, ".kicad_pcb")))
         routed.GetConnectivity().Build(routed)
         anchors = []
         for contract in contracts:
@@ -932,7 +906,7 @@ def validate_routes(
         from pcb.net_routing.style import audit_style, normalize_segment_identities
 
         old_segment_ids = _segment_identities(original_bytes)
-        new_segment_ids = _segment_identities((after / "v4.1.kicad_pcb").read_bytes())
+        new_segment_ids = _segment_identities((native_path(after, ".kicad_pcb")).read_bytes())
         new_style = new_style_issues(
             normalize_segment_identities(audit_style(original), old_segment_ids),
             normalize_segment_identities(audit_style(routed), new_segment_ids),
@@ -941,7 +915,7 @@ def validate_routes(
 
         new_via_pad = sorted(set(via_pad_overlaps(routed)) - set(via_pad_overlaps(original)))
         reference_comparison = {"status": "project_rules_missing", "degraded_track_ids": [], "unverified_track_ids": []}
-        rules = before / "v4.1.kicad_pro"
+        rules = native_path(before, ".kicad_pro")
         if rules.is_file():
             from pcb.net_routing.reference import comparable_missing_samples, compare_reference, high_speed_nets, sample_reference
 

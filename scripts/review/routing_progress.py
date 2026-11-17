@@ -6,6 +6,8 @@ all checked sources remain unchanged. It never saves or reloads an editor.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import contextlib
 import csv
@@ -95,8 +97,8 @@ def _sha(path: Path) -> str:
 
 def _fingerprint(project: Path) -> tuple[list[Path], dict[str, str], str]:
     project = long_path(project)
-    board = project / "v4.1.kicad_pcb"
-    schematic = project / "v4.1.kicad_sch"
+    board = native_path(project, ".kicad_pcb")
+    schematic = native_path(project, ".kicad_sch")
     if not board.is_file() or not schematic.is_file():
         raise ValueError("The saved v4.1 PCB and schematic are required")
     files = sorted({*_inputs(board), schematic})
@@ -216,7 +218,7 @@ def check_saved_board(
 ) -> tuple[ProgressPoint, dict[str, str]]:
     project = long_path(project)
     files, before, signature = _fingerprint(project)
-    board = project / "v4.1.kicad_pcb"
+    board = native_path(project, ".kicad_pcb")
     cli = kicad_python.parent / (
         "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
     )
@@ -227,7 +229,7 @@ def check_saved_board(
         _copy_inputs(
             [path for path in files if path.suffix != ".kicad_sch"], board, scratch
         )
-        shutil.copy2(project / "v4.1.kicad_sch", scratch / "v4.1.kicad_sch")
+        shutil.copy2(native_path(project, ".kicad_sch"), native_path(scratch, ".kicad_sch"))
         copied = {name: _sha(scratch / name) for name in before}
         if copied != before:
             raise RuntimeError("Inputs changed while copying the saved board")
@@ -624,7 +626,7 @@ def review_points(history: list[ProgressPoint], review: Path) -> tuple[list[Prog
         actual = _sha(source) if source.is_file() else "absent"
         if actual != expected:
             return history, None  # An older preview is not current-board progress.
-    if data["inputs"].get("v4.1.kicad_pcb") != history[-1].pcb_sha256:
+    if data["inputs"].get(native_path(project, ".kicad_pcb").name) != history[-1].pcb_sha256:
         return history, None
     points = [ProgressPoint(**raw) for raw in data.get("points", [])]
     for point in points:
@@ -688,11 +690,11 @@ def refresh_preview(project: Path, run_id: str) -> dict:
     path = assets / "results" / "autoroute" / f"{_run_id(run_id)}.json"
     original = path.read_bytes()
     state = json.loads(original)
-    with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+    with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         inputs = _source_hashes(snapshot, project, assets)
         candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                       sha(assets / "config" / "autopcb.json"), allow_tool_changes=True)
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         if ProtectedState.capture(snapshot.original, schematic).differences(candidate, schematic):
             raise ValueError("Preview changes protected design items")
         snapshot.board_path.write_bytes(candidate)
@@ -829,7 +831,7 @@ def backfill(project: Path, review: Path, snapshots: Path) -> dict:
     history = read_history(review / CSV_NAME)
     wanted = {point.pcb_sha256 for point in history if point.track_length_mm is None}
     measured: dict[str, tuple[GeometryMetrics, str]] = {}
-    candidates = [project / "v4.1.kicad_pcb", *snapshots.glob("*/v4.1.kicad_pcb")]
+    candidates = [native_path(project, ".kicad_pcb"), *snapshots.glob("*/*.kicad_pcb")]
     with summarize_kicad_warnings():
         for path in candidates:
             if not wanted:

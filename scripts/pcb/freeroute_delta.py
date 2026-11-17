@@ -6,6 +6,8 @@ connectivity, routing-style, reference-copper and electrical validation.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from decimal import Decimal
@@ -13,6 +15,8 @@ from itertools import chain, combinations
 import json
 import math
 from pathlib import Path
+
+from core.toolchain import kicad_cli
 import tempfile
 import time
 from uuid import uuid4
@@ -2173,7 +2177,6 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
     from pcb.route_validation import (
         _dangling_track_identities, _drc, _segment_identities, stable_connection_items,
     )
-    import sys
 
     if not isinstance(allow_temporary_disconnect, bool):
         raise ValueError("Temporary disconnect permission must be boolean")
@@ -2190,15 +2193,15 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
             raise SearchBudgetExceeded("Cleanup time budget reached")
 
     project = project.resolve()
-    source = project / "v4.1.kicad_pcb"
-    cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+    source = native_path(project, ".kicad_pcb")
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for proposal filtering")
     with tempfile.TemporaryDirectory(prefix="autopcb-external-filter-") as directory:
         stage = Path(directory)
         fingerprints = _snapshot(source, stage)
         boardfile = stage / source.name
-        schematic = (stage / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(stage, ".kicad_sch")).read_bytes()
         source_bytes = boardfile.read_bytes()
         protected = ProtectedState.capture(source_bytes, schematic)
         baseline_report = _drc(cli, boardfile, stage / "baseline-drc.json",
@@ -2221,7 +2224,7 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
         original = read_copper(boardfile)
         comparison, external = read_copper(roundtrip), read_copper(routed)
         net_names = {item.net for item in original + comparison + external}
-        critical = set(high_speed_nets((stage / "v4.1.kicad_pro").read_bytes(),
+        critical = set(high_speed_nets((native_path(stage, ".kicad_pro")).read_bytes(),
                                        net_names))
         netclasses = {}
         for name in net_names:
@@ -2240,7 +2243,7 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
         delta, snapped = snap_proposal_via_escapes(delta, original, anchor)
         if snapped and progress:
             progress({"event": "via_alignment", "nets": sorted(snapped)})
-        rules = RoutingRules.from_board(baseline_board, stage / "v4.1.kicad_dru")
+        rules = RoutingRules.from_board(baseline_board, native_path(stage, ".kicad_dru"))
         reference = reference_corridors(baseline_board, critical)
         if reference.unsupported_items:
             raise RuntimeError("Cannot screen unsupported high-speed reference geometry")

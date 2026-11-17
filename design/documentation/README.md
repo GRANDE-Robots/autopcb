@@ -1,9 +1,0 @@
-# Design
-
-Requirements, circuit decisions and presentation conventions.
-
-- [DESIGN_NOTES.md](DESIGN_NOTES.md)
-- [LIGHTING_REFERENCE.md](LIGHTING_REFERENCE.md)
-- [SCHEMATIC_STYLE.md](SCHEMATIC_STYLE.md)
-- [SILKSCREEN_LEGEND.md](SILKSCREEN_LEGEND.md)
-- [SYSTEM_REQUIREMENTS.csv](SYSTEM_REQUIREMENTS.csv)

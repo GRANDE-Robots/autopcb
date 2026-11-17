@@ -6,14 +6,17 @@ reference geometry do not establish differential impedance or electrical safety.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import hashlib
 import math
 import os
 import subprocess
-import sys
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from core.toolchain import kicad_cli
 
 import pcbnew
 
@@ -208,13 +211,13 @@ def probe(project: Path, *, seconds: int = 45, progress=None, engine: str = "fas
         from pcb.net_routing import krt_adapter
 
         krt_tool = krt_adapter.validate_installation(krt_root)
-    cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for the pair preview")
 
-    with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+    with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         stage("Checking the saved board and identifying paired endpoints")
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic)
         baseline = _drc(cli, snapshot.board_path, snapshot.directory / "pair-baseline.json",
                         save_refill=True, schematic_parity=True)
@@ -224,7 +227,7 @@ def probe(project: Path, *, seconds: int = 45, progress=None, engine: str = "fas
         board = pcbnew.LoadBoard(str(snapshot.board_path))
         if board is None:
             raise RuntimeError("KiCad could not read the saved PCB copy")
-        all_pairs, all_critical = _pairs(board, (snapshot.directory / "v4.1.kicad_pro").read_bytes())
+        all_pairs, all_critical = _pairs(board, (native_path(snapshot.directory, ".kicad_pro")).read_bytes())
         pairs, critical = select_pair_scope(all_pairs, pair_index)
         before_nets = unconnected_by_net(baseline, native_item_nets(board))
         if before_nets.get("<unknown>", 0):

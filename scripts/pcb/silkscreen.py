@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from datetime import datetime, timezone
 import fnmatch
@@ -65,9 +67,9 @@ def plan_top_text(project: Path, policy: dict) -> tuple[bytes, dict[str, int]]:
     """Set connector label banks from the saved footprints, with fixed line spacing."""
     import pcbnew
 
-    original = (project / 'v4.1.kicad_pcb').read_bytes()
+    original = (native_path(project, ".kicad_pcb")).read_bytes()
     source = original.decode('utf-8-sig')
-    board = pcbnew.LoadBoard(str(project / 'v4.1.kicad_pcb'))
+    board = pcbnew.LoadBoard(str(native_path(project, ".kicad_pcb")))
     pitch = round(policy['line_pitch_mm'] * 1e6)
     gap = round(policy['gap_mm'] * 1e6)
     if not 1250000 <= pitch <= 2400000 or not 250000 <= gap <= 1200000:
@@ -362,8 +364,8 @@ def plan_silkscreen(project: Path, policy: dict) -> tuple[bytes, dict[str, int]]
 
     if policy.get('schema') != 1:
         raise ValueError('Unsupported silkscreen policy')
-    original = (project / 'v4.1.kicad_pcb').read_bytes()
-    board = pcbnew.LoadBoard(str(project / 'v4.1.kicad_pcb'))
+    original = (native_path(project, ".kicad_pcb")).read_bytes()
+    board = pcbnew.LoadBoard(str(native_path(project, ".kicad_pcb")))
     silks = {pcbnew.F_SilkS, pcbnew.B_SilkS}
     graphics = [*board.GetDrawings(), *(x for f in board.GetFootprints() for x in f.GraphicalItems())]
     indexed = {item.m_Uuid.AsString(): item for item in graphics}
@@ -488,7 +490,7 @@ def cleanup(project: Path, *, apply: bool = False, top_alignment: bool = False) 
     config = json.loads(policy_path.read_bytes())
     cli = Path(sys.executable).with_name('kicad-cli.exe')
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
-        with Snapshot(project / 'v4.1.kicad_pcb') as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             dependencies = dict(snapshot.fingerprints)
             dependencies[policy_path] = file_sha256(policy_path)
             for binding in (() if top_alignment else config.get('stock_silkscreen', [])):

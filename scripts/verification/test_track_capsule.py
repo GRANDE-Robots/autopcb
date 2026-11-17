@@ -201,7 +201,10 @@ class TrackCapsuleTests(unittest.TestCase):
                 )
 
     def test_native_straight_track_is_covered_by_split_capsules(self):
+        import pcbnew
+
         item = types.SimpleNamespace(
+            Type=lambda: pcbnew.PCB_TRACE_T,
             GetStart=lambda: types.SimpleNamespace(x=mm(0), y=mm(0)),
             GetEnd=lambda: types.SimpleNamespace(x=mm(1.000001), y=mm(1)),
             GetWidth=lambda: mm(0.2),
@@ -215,8 +218,11 @@ class TrackCapsuleTests(unittest.TestCase):
         )
 
     def test_long_trace_uses_fewer_capsules_without_missing_copper(self):
+        import pcbnew
+
         first, last = Point(0, 0), Point(mm(7.123456), mm(-4.123457))
         item = types.SimpleNamespace(
+            Type=lambda: pcbnew.PCB_TRACE_T,
             GetStart=lambda: types.SimpleNamespace(x=first.x, y=first.y),
             GetEnd=lambda: types.SimpleNamespace(x=last.x, y=last.y),
             GetWidth=lambda: mm(.2),

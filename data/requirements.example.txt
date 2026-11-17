@@ -1,0 +1,1 @@
+Build a two-layer I2C temperature sensor powered by regulated 3.3 V. Use a 35 x 25 mm board.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -13,7 +15,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from core.paths import asset_root
+from core.toolchain import kicad_cli
+
+from core.paths import asset_root, config_path, results_path
 from core.pcb_io import quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import filter_proposal, native_item_nets, router_class, unconnected_by_net
@@ -81,7 +85,7 @@ def _exported_members(board, directory: Path) -> set[str]:
 def _automatic_deferred(project: Path, excluded: tuple[str, ...]) -> tuple[str, ...]:
     import pcbnew
 
-    board = pcbnew.LoadBoard(str(project / "v4.1.kicad_pcb"))
+    board = pcbnew.LoadBoard(str(native_path(project, ".kicad_pcb")))
     if board is None:
         raise RuntimeError("KiCad could not read the private preview")
     with tempfile.TemporaryDirectory(prefix="autopcb-safe-scope-") as directory:
@@ -96,8 +100,8 @@ def _focus_deferred(project: Path, state: dict, classes: tuple[str, ...], exclud
 
     from pcb.route_validation import _drc
 
-    board_path = project / "v4.1.kicad_pcb"
-    cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+    board_path = native_path(project, ".kicad_pcb")
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for focused net selection")
     with tempfile.TemporaryDirectory(prefix="autopcb-focus-") as directory:
@@ -125,7 +129,7 @@ def _eligible_signal_classes(project: Path) -> tuple[str, ...]:
     """Discover ordinary signal classes without treating protected nets as eligible."""
     import pcbnew
 
-    board = pcbnew.LoadBoard(str(project / "v4.1.kicad_pcb"))
+    board = pcbnew.LoadBoard(str(native_path(project, ".kicad_pcb")))
     if board is None:
         raise RuntimeError("KiCad could not read the private preview")
     protected = unqualified_working_nets(board)
@@ -214,20 +218,20 @@ def run_one(project: Path, run_id: str, *, items: int, timeout: int, jar: Path,
     run_id = _run_id(run_id)
     ignore_net_classes = _class_names(ignore_net_classes)
     assets = asset_root(project)
-    policy_path = assets / "config" / "autopcb.json"
+    policy_path = config_path(project, "autopcb.json")
     policy, policy_hash = read_config(policy_path)
     ignore_nets = tuple(sorted(set(_net_names(ignore_nets)) | set(policy.get("exclude_nets", ()))))
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
         raise ValueError("Invalid source preview")
-    with Snapshot(project / "v4.1.kicad_pcb") as snapshot, \
+    with Snapshot(native_path(project, ".kicad_pcb")) as snapshot, \
             tempfile.TemporaryDirectory(prefix="autopcb-external-router-") as router_folder:
         inputs = _source_hashes(snapshot, project, assets)
         candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                       policy_hash, allow_tool_changes=True)
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic)
         if protected.differences(candidate, schematic):
             raise RuntimeError("The retained preview changed protected design items")
@@ -468,11 +472,11 @@ def load_fast_retry(project: Path, run_id: str, settings: dict) -> dict:
     """Restore retry memory only when every source and setting still matches."""
     project = project.resolve()
     assets = asset_root(project)
-    policy_path = assets / "config" / "autopcb.json"
+    policy_path = config_path(project, "autopcb.json")
     _, policy_hash = read_config(policy_path)
-    state_path = assets / "results" / "autoroute" / f"{_run_id(run_id)}.json"
+    state_path = results_path(project, "autoroute") / f"{_run_id(run_id)}.json"
     with _exclusive(state_path.parent / "active.lock", wait_seconds=55), \
-            Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+            Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         before = state_path.read_bytes()
         state = json.loads(before)
         if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -531,11 +535,11 @@ def record_unimproved_batch(project: Path, run_id: str, elapsed: float, *,
     evidence = _elapsed_evidence(approximate, evidence_note)
     project = project.resolve()
     assets = asset_root(project)
-    policy_path = assets / "config" / "autopcb.json"
+    policy_path = config_path(project, "autopcb.json")
     _, policy_hash = read_config(policy_path)
-    state_path = assets / "results" / "autoroute" / f"{_run_id(run_id)}.json"
+    state_path = results_path(project, "autoroute") / f"{_run_id(run_id)}.json"
     with _exclusive(state_path.parent / "active.lock", wait_seconds=55, progress=progress), \
-            Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+            Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         before = state_path.read_bytes()
         state = json.loads(before)
         if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -543,7 +547,7 @@ def record_unimproved_batch(project: Path, run_id: str, elapsed: float, *,
         inputs = _source_hashes(snapshot, project, assets)
         candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                       policy_hash, allow_tool_changes=True)
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         if ProtectedState.capture(snapshot.original, schematic).differences(candidate, schematic):
             raise RuntimeError("The retained preview changed protected design items")
         state["elapsed_seconds"] += elapsed

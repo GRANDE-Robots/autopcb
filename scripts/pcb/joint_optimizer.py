@@ -6,6 +6,8 @@ proof of a global optimum. The live board is never modified by this module.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import itertools
@@ -199,7 +201,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"The {total} placement combinations exceed max_candidates={limit}"
         )
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     inputs = _fingerprints(source)
     original_bytes = source.read_bytes()
     source_hash = hashlib.sha256(original_bytes).hexdigest()
@@ -217,7 +219,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="jessie-joint-opt-") as directory:
         trial = Path(directory)
         _copy_inputs(list(inputs), source, trial)
-        trial_board = trial / "v4.1.kicad_pcb"
+        trial_board = native_path(trial, ".kicad_pcb")
         for placement in itertools.product(*choices):
             trial_board.write_bytes(original_bytes)
             moves = [

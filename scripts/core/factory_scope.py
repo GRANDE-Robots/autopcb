@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 from core.assembly_rotation import POLICY_PATH as ROTATION_POLICY_PATH
 from core.assembly_rotation import SCHEDULE_FIELDS, apply_offsets, load_policy
@@ -329,10 +329,10 @@ def export_factory_scope(
     project, manufacturing, parts, cpl, footprints, module_refs=(), native_fields=None
 ):
     project, manufacturing = Path(project), Path(manufacturing)
-    policy_path = asset_root(project) / "design/ASSEMBLY_POLICY.json"
+    policy_path = data_path(project, "ASSEMBLY_POLICY.json")
     require(
         policy_path.is_file(),
-        "Source-controlled design/ASSEMBLY_POLICY.json is required",
+        "The source-controlled ASSEMBLY_POLICY.json is required",
     )
     policy = json.loads(policy_path.read_text(encoding="utf-8-sig"))
     connection_evidence = validate_native_connections(policy, footprints)

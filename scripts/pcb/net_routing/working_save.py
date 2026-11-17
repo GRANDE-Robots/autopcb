@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
@@ -9,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import asset_root, config_path, data_path, results_path, stored_result
 from core.pcb_io import BoardSaveGuard, quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import read_copper
@@ -144,11 +146,13 @@ def adopt_saved(project: Path, run_id: str, *, progress=print, allow_rule_change
     project = project.resolve()
     assets = asset_root(project)
     run_id = _run_id(run_id)
-    path = assets / "results" / "autoroute" / f"{run_id}.json"
-    policy_path = assets / "config" / "autopcb.json"
+    path = results_path(project, "autoroute") / f"{run_id}.json"
+    source_state = stored_result(project, "autoroute", f"{run_id}.json")
+    policy_path = config_path(project, "autopcb.json")
     policy, policy_hash = read_config(policy_path)
-    with _exclusive(path.parent / "active.lock"), Snapshot(project / "v4.1.kicad_pcb") as snapshot:
-        original = path.read_bytes()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _exclusive(path.parent / "active.lock"), Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
+        original = source_state.read_bytes()
         state = json.loads(original)
         inputs = _source_hashes(snapshot, project, assets)
         rebind_exact_saved_checkpoint(state["checkpoint"], snapshot.original, inputs,
@@ -161,9 +165,9 @@ def adopt_saved(project: Path, run_id: str, *, progress=print, allow_rule_change
                                allow_rule_changes=allow_rule_changes)
         if allow_rule_changes:
             revised['rule_update'] = {'native_rechecked': True, 'manufacturing_approved': False,
-                                      'rules': inputs['v4.1.kicad_dru']}
+                                      'rules': inputs[native_path(project, ".kicad_dru").name]}
         snapshot.check()
-        if path.read_bytes() != original:
+        if source_state.read_bytes() != original or (source_state != path and path.exists()):
             raise RuntimeError("The current preview changed during saved-source adoption")
         _save(path, revised)
         count = checked["drc"]
@@ -180,20 +184,24 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
         raise ValueError("Apply must be true or false")
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    board_path = project / "v4.1.kicad_pcb"
-    policy_path = assets / "config" / "autopcb.json"
+    board_path = native_path(project, ".kicad_pcb")
+    policy_path = config_path(project, "autopcb.json")
     policy, policy_hash = read_config(policy_path)
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
-    state_bytes = state_path.read_bytes()
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
+    source_state = stored_result(project, "autoroute", state_path.name)
+    state_bytes = source_state.read_bytes()
     state = json.loads(state_bytes)
     if state.get("run_id") != run_id or state.get("schema") != 1:
         raise ValueError("Invalid preview run")
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     with _exclusive(state_path.parent / "active.lock"):
+        if source_state != state_path and (source_state.parent / "active.lock").exists():
+            raise RuntimeError("A legacy routing job is active for this board")
         with Snapshot(board_path) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                           policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=True)
             if protected.differences(candidate, schematic):
                 raise RuntimeError("The preview changes protected design items")
@@ -267,7 +275,7 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
                 raise RuntimeError("The preview changed exclusions or introduced DRC errors")
             run_native(_verify_resume_connectivity, snapshot.directory, snapshot.original)
             critical = tuple(baseline["reference_copper"]["high_speed_nets"])
-            if not critical:
+            if not critical and baseline["reference_copper"].get("classification_complete") is not True:
                 raise RuntimeError("High-speed net classification is unavailable")
             if Counter(item for item in before_copper if item.net in critical) != Counter(
                 item for item in after_copper if item.net in critical
@@ -278,11 +286,11 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
             if reference["status"] == "degraded":
                 raise RuntimeError("The preview degraded sampled reference copper")
             _check_sources(snapshot, project, assets, inputs, policy_path, policy_hash)
-            if state_path.read_bytes() != state_bytes:
+            if source_state.read_bytes() != state_bytes or (source_state != state_path and state_path.exists()):
                 raise RuntimeError("The preview changed while checking")
             dependencies = dict(snapshot.fingerprints)
             for name in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json"):
-                path = assets / "design" / name
+                path = data_path(project, name)
                 if path.is_file():
                     dependencies[path.resolve()] = sha(path)
             dependencies[policy_path.resolve()] = policy_hash
@@ -295,7 +303,7 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
                 return {"status": "dry_run_passed", "improvement": improvement,
                         "saved_opens": before["open_connections"], "preview_opens": after["open_connections"],
                         "saved_warnings": before["warnings"], "preview_warnings": after["warnings"]}
-            backup_dir = assets / "results" / "autoroute" / "preimages"
+            backup_dir = results_path(project, "autoroute") / "preimages"
             backup_dir.mkdir(parents=True, exist_ok=True)
             backup = backup_dir / "working-save.json"
             journal = {"kind": "pre_working_pcb_save", "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -306,7 +314,7 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
             if decode_checkpoint(copied, inputs, tools, policy_hash) != expected_source:
                 raise RuntimeError("The recovery checkpoint did not verify")
             _check_sources(snapshot, project, assets, inputs, policy_path, policy_hash)
-            if state_path.read_bytes() != state_bytes:
+            if source_state.read_bytes() != state_bytes or (source_state != state_path and state_path.exists()):
                 raise RuntimeError("The preview changed before saving")
         if Snapshot.tools() != tools:
             raise RuntimeError("Routing tools changed before saving")

@@ -166,12 +166,6 @@ class Obstacle:
             raise ValueError("A copper capsule requires two points and a supported kind")
         if self.kind == "pad" and self.centerline[0] != self.centerline[1]:
             raise ValueError("A circular pad requires a single center point")
-
-    def gap(self, clearance: int, *, via: bool = False) -> int:
-        """Native rule areas already define where the copper edge must stop."""
-        if self.boundary_only:
-            return 0
-        return max(clearance, self.min_track_clearance, self.min_via_clearance if via else 0)
         if any(
             point.x - self.copper_radius < self.lower.x
             or point.x + self.copper_radius > self.upper.x
@@ -180,6 +174,12 @@ class Obstacle:
             for point in self.centerline
         ):
             raise ValueError("Trace bounds must include the whole copper capsule")
+
+    def gap(self, clearance: int, *, via: bool = False) -> int:
+        """Native rule areas already define where the copper edge must stop."""
+        if self.boundary_only:
+            return 0
+        return max(clearance, self.min_track_clearance, self.min_via_clearance if via else 0)
 
 
 def _point_near_segment(point: Point, first: Point, last: Point, radius: int) -> bool:

@@ -13,6 +13,8 @@ for electrical, connectivity, DRC, or physical checks.
 
 from __future__ import annotations
 
+from core.project import ProjectPaths
+
 import argparse
 import difflib
 import json
@@ -158,17 +160,7 @@ def _summary(plan: Plan) -> dict[str, Any]:
 
 
 def _dependencies(project: Path, source: Path) -> list[Path]:
-    candidates = [
-        project / name
-        for name in (
-            "v4.1.kicad_pcb",
-            "v4.1.kicad_sch",
-            "v4.1.kicad_pro",
-            "v4.1.kicad_dru",
-            "fp-lib-table",
-            "sym-lib-table",
-        )
-    ]
+    candidates = list(ProjectPaths(source).audit_inputs())
     candidates.extend(
         path
         for directory in library_directories(project)

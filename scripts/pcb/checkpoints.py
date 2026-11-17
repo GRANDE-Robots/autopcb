@@ -8,6 +8,8 @@ does not prove global optimality or physical manufacturing readiness.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -415,7 +417,7 @@ def create_plan(
     if not config_path.is_relative_to(project) or not config_path.is_file():
         raise ValueError("Configuration must be a file inside the project")
     config, config_hash = read_config(config_path)
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     limits = Limits.from_config(config.get("search", {}))
     budget = Budget(limits)
     plan_items, skipped = [], {}
@@ -574,7 +576,7 @@ def save_plan(
     root.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     destination = root / run_id
-    with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+    with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         if (
             _inputs(snapshot) != plan["input_sha256"]
             or _tools(snapshot) != plan["tool_sha256"]
@@ -671,7 +673,7 @@ def attempt(
         progress(
             f"Searching {name} on a temporary board (budget: {limits.seconds:g} seconds)."
         )
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     config_name = checkpoint.get("config_path")
     if not isinstance(config_name, str) or not config_name:
         raise ValueError("Checkpoint configuration path is missing")

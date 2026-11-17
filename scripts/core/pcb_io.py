@@ -22,6 +22,8 @@ def typed_copper(item: Any) -> Any:
     """Restore the native subtype erased by KiCad connectivity collections."""
     import pcbnew
 
+    if isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)):
+        return item
     kind = item.Type()
     if kind == pcbnew.PCB_VIA_T:
         return pcbnew.Cast_to_PCB_VIA(item)

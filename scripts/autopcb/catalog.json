@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "parts": {
+    "header": {
+      "value": "4-pin header",
+      "mpn": "TSW-104-07-G-S",
+      "manufacturer": "Samtec",
+      "source": "https://www.samtec.com/products/tsw-104-07-g-s",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+      "pins": {
+        "1": [
+          "1",
+          "passive"
+        ],
+        "2": [
+          "2",
+          "passive"
+        ],
+        "3": [
+          "3",
+          "passive"
+        ],
+        "4": [
+          "4",
+          "passive"
+        ]
+      }
+    },
+    "temp": {
+      "value": "MCP9808",
+      "mpn": "MCP9808T-E/MS",
+      "manufacturer": "Microchip",
+      "source": "https://ww1.microchip.com/downloads/en/DeviceDoc/MCP9808-0.5C-Maximum-Accuracy-Digital-Temperature-Sensor-Data-Sheet-DS20005095B.pdf",
+      "footprint": "Package_SO:MSOP-8_3x3mm_P0.65mm",
+      "ratings": {
+        "voltage_v": [
+          2.7,
+          5.5
+        ]
+      },
+      "pins": {
+        "1": [
+          "SDA",
+          "bidirectional"
+        ],
+        "2": [
+          "SCL",
+          "input"
+        ],
+        "3": [
+          "ALERT",
+          "open_collector"
+        ],
+        "4": [
+          "GND",
+          "power_in"
+        ],
+        "5": [
+          "A2",
+          "input"
+        ],
+        "6": [
+          "A1",
+          "input"
+        ],
+        "7": [
+          "A0",
+          "input"
+        ],
+        "8": [
+          "VDD",
+          "power_in"
+        ]
+      }
+    },
+    "pullup": {
+      "value": "4.7 kΩ",
+      "mpn": "RC0805FR-074K7L",
+      "manufacturer": "Yageo",
+      "source": "https://www.yageo.com/en/Product/Index/pd_R-Chip-Resistors_R_General-Purpose_RC",
+      "footprint": "Resistor_SMD:R_0805_2012Metric",
+      "pins": {
+        "1": [
+          "1",
+          "passive"
+        ],
+        "2": [
+          "2",
+          "passive"
+        ]
+      }
+    },
+    "bypass": {
+      "value": "100 nF",
+      "mpn": "C0805C104K5RACTU",
+      "manufacturer": "KEMET",
+      "source": "https://search.kemet.com/component-documentation/download/specsheet/C0805C104K5RACTU",
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "pins": {
+        "1": [
+          "1",
+          "passive"
+        ],
+        "2": [
+          "2",
+          "passive"
+        ]
+      }
+    },
+    "usb_b": {
+      "value": "USB Type-B",
+      "mpn": "5787834-1",
+      "manufacturer": "TE Connectivity",
+      "source": "https://www.te.com/en/product-5787834-1.html",
+      "footprint": "Connector_USB:USB_B_TE_5787834_Vertical",
+      "pins": {
+        "1": [
+          "VBUS",
+          "passive"
+        ],
+        "2": [
+          "D-",
+          "passive"
+        ],
+        "3": [
+          "D+",
+          "passive"
+        ],
+        "4": [
+          "GND",
+          "passive"
+        ],
+        "SH": [
+          "Shield",
+          "passive"
+        ]
+      }
+    }
+  },
+  "designs": {
+    "temperature": {
+      "keywords": [
+        "temperature sensor",
+        "mcp9808"
+      ],
+      "description": "External powered I2C temperature sensor",
+      "voltage_v": [
+        2.7,
+        5.5
+      ],
+      "layers": [
+        2,
+        4
+      ],
+      "size_mm": [
+        35,
+        25
+      ],
+      "minimum_mm": [
+        28,
+        20
+      ],
+      "assumptions": [
+        "The host supplies regulated power and is the I2C controller.",
+        "The design uses address 0x18, 4.7 kΩ pull-ups and leaves ALERT open. Check bus capacitance and any existing pull-ups."
+      ],
+      "parts": {
+        "J1": {
+          "part": "header",
+          "position": [
+            4,
+            6,
+            0
+          ],
+          "pins": {
+            "1": "VDD",
+            "2": "GND",
+            "3": "SDA",
+            "4": "SCL"
+          }
+        },
+        "U1": {
+          "part": "temp",
+          "position": [
+            17,
+            12,
+            0
+          ],
+          "pins": {
+            "1": "SDA",
+            "2": "SCL",
+            "3": null,
+            "4": "GND",
+            "5": "GND",
+            "6": "GND",
+            "7": "GND",
+            "8": "VDD"
+          }
+        },
+        "R1": {
+          "part": "pullup",
+          "position": [
+            12,
+            5,
+            0
+          ],
+          "pins": {
+            "1": "VDD",
+            "2": "SDA"
+          }
+        },
+        "R2": {
+          "part": "pullup",
+          "position": [
+            16,
+            5,
+            0
+          ],
+          "pins": {
+            "1": "VDD",
+            "2": "SCL"
+          }
+        },
+        "C1": {
+          "part": "bypass",
+          "position": [
+            20,
+            7,
+            0
+          ],
+          "pins": {
+            "1": "VDD",
+            "2": "GND"
+          }
+        }
+      },
+      "power_flags": [
+        "VDD",
+        "GND"
+      ]
+    },
+    "usb": {
+      "keywords": [
+        "usb",
+        "type-b"
+      ],
+      "description": "USB 2.0 full-speed Type-B breakout",
+      "voltage_v": [
+        4.75,
+        5.25
+      ],
+      "layers": [
+        4
+      ],
+      "size_mm": [
+        35,
+        28
+      ],
+      "minimum_mm": [
+        30,
+        25
+      ],
+      "assumptions": [
+        "The connector breaks out USB signals to the attached device. This circuit contains no USB controller or bus termination.",
+        "The host supplies VBUS, and the connector shield is tied to the board return. Review the enclosure grounding.",
+        "A qualified stackup and complete USB signal-integrity check are needed before fabrication approval."
+      ],
+      "parts": {
+        "J1": {
+          "part": "usb_b",
+          "position": [
+            10,
+            13,
+            0
+          ],
+          "pins": {
+            "1": "VBUS",
+            "2": "USB_N",
+            "3": "USB_P",
+            "4": "GND",
+            "SH": "GND"
+          }
+        },
+        "J2": {
+          "part": "header",
+          "position": [
+            25,
+            9,
+            0
+          ],
+          "pins": {
+            "1": "VBUS",
+            "2": "USB_N",
+            "3": "USB_P",
+            "4": "GND"
+          }
+        }
+      },
+      "power_flags": [],
+      "differential_pairs": [
+        [
+          "USB_P",
+          "USB_N"
+        ]
+      ]
+    }
+  }
+}

@@ -166,7 +166,7 @@ def normalize(project, output):
     assert len(set(aliases.values())) == len(nets)
     lines = [
         (
-            "C  GRANDE Jessie v4.1 - validated native geometry; explicit net aliases"
+            "C  AutoPCB - validated native geometry; explicit net aliases"
         ).ljust(80),
         ("C  PCB SHA256 " + source[stem + ".kicad_pcb"]).ljust(80),
         "P  CODE 00".ljust(80),

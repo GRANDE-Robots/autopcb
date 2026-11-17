@@ -15,7 +15,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from core.paths import asset_root, default_project, library_directories
+from core.paths import asset_root, data_path, default_project, library_directories
 
 import pcbnew
 
@@ -105,7 +105,7 @@ def main():
     support = asset_root(P)
     inputs = [
         p
-        for directory in (*library_directories(P), support / "scripts", support / "design")
+        for directory in (*library_directories(P), support / "scripts", data_path(P))
         for p in directory.rglob("*")
         if p.is_file()
         and p.name.lower() not in ("desktop.ini", "thumbs.db", ".ds_store")
@@ -183,7 +183,7 @@ def main():
         ]
     )
     b = pcbnew.LoadBoard(str(boardpath))
-    layer_limit = asset_root(P) / "design/BOARD_LAYER_LIMIT.json"
+    layer_limit = data_path(P, "BOARD_LAYER_LIMIT.json")
     if layer_limit.exists():
         maximum = int(
             json.loads(layer_limit.read_text(encoding="utf8"))["maximum_copper_layers"]

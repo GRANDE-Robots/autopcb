@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import hashlib
 import itertools
 import math
@@ -10,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from core.kicad_campaign import CampaignPlanner
-from core.paths import asset_root
+from core.paths import config_path, data_path, support_input_name
 from core.pcb_io import copper_width
 from pcb.footprint_pose import native_pose_change
 from pcb.route_constraints import ExistingVia
@@ -44,10 +46,14 @@ class Snapshot:
         schematic = self.source.with_suffix(".kicad_sch")
         if schematic.is_file():
             files.add(schematic)
-        policy = asset_root(self.source.parent) / "config" / "autopcb.json"
-        if policy.is_file():
-            files.add(policy)
+        project = self.source.parent
+        support = (config_path(project, "autopcb.json"), data_path(project, "POWER_LOAD_BUDGET.csv"),
+                   data_path(project, "STACKUP_CURRENT.json"))
+        files.update(path for path in support if path.is_file())
         return tuple(sorted(files))
+
+    def input_name(self, path: Path) -> Path:
+        return support_input_name(self.source.parent, path)
 
     @staticmethod
     def tools() -> dict[str, str]:
@@ -62,21 +68,16 @@ class Snapshot:
             raise ValueError("board_snapshot must name a saved KiCad PCB")
         self.fingerprints = {p: sha(p) for p in self.files()}
         self.tool_hashes = self.tools()
-        self._temporary = tempfile.TemporaryDirectory(prefix="jessie-net-plan-")
+        self._temporary = tempfile.TemporaryDirectory(prefix="autopcb-net-plan-")
         self.directory = Path(self._temporary.name)
-        self.board_path = self.directory / "v4.1.kicad_pcb"
+        self.board_path = self.directory / self.source.name
         try:
-            _copy_inputs(list(self.fingerprints), self.source, self.directory)
+            names = {path: self.input_name(path) for path in self.fingerprints}
+            if len(set(names.values())) != len(names):
+                raise ValueError("Native snapshot has two sources for the same file")
+            _copy_inputs(list(self.fingerprints), self.source, self.directory, names=names)
             for path, digest in self.fingerprints.items():
-                if path == self.source:
-                    copied = self.board_path
-                elif (
-                    path.suffix in {".kicad_sch", ".kicad_pro", ".kicad_dru"}
-                    and path.stem == self.source.stem
-                ):
-                    copied = self.board_path.with_suffix(path.suffix)
-                else:
-                    copied = self.directory / path.relative_to(self.source.parent)
+                copied = self.directory / names[path]
                 if sha(copied) != digest:
                     raise RuntimeError(
                         "A source changed while copying the routing snapshot"
@@ -449,7 +450,7 @@ def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget)
     # Every replacement is derived independently from the pristine snapshot.
     pristine = snapshot.directory / "poses"
     pristine.mkdir()
-    base = pristine / "v4.1.kicad_pcb"
+    base = native_path(pristine, ".kicad_pcb")
     base.write_bytes(snapshot.original)
     for values in itertools.product(*choices):
         budget.check()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import json
 import math
@@ -12,7 +14,9 @@ from copy import deepcopy
 from itertools import permutations
 from pathlib import Path
 
-from core.paths import asset_root
+from core.toolchain import kicad_cli
+
+from core.paths import asset_root, config_path, results_path
 from core.pcb_io import quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import Trace, read_copper
@@ -314,15 +318,15 @@ def retain_candidate(project: Path, previous_run: str, candidate_path: Path, *,
         raise ValueError("Staircase repair needs its own objective and provenance")
     project, candidate_path = project.resolve(), candidate_path.resolve()
     assets = asset_root(project)
-    policy_path = assets / "config" / "autopcb.json"
+    policy_path = config_path(project, "autopcb.json")
     policy, policy_hash = read_config(policy_path)
-    output = assets / "results" / "autoroute"
+    output = results_path(project, "autoroute")
     output.mkdir(parents=True, exist_ok=True)
     previous_id = _run_id(previous_run)
     previous_path = output / f"{previous_id}.json"
     candidate = candidate_path.read_bytes()
     with _exclusive(output / "active.lock", wait_seconds=55, progress=stage), \
-            Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+            Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         previous_bytes = previous_path.read_bytes()
         if expected_previous is not None and previous_bytes != expected_previous:
             raise RuntimeError("The source preview changed during external routing")
@@ -332,7 +336,7 @@ def retain_candidate(project: Path, previous_run: str, candidate_path: Path, *,
         inputs = _source_hashes(snapshot, project, assets)
         retained = decode_checkpoint(old["checkpoint"], inputs, snapshot.tool_hashes,
                                      policy_hash, allow_tool_changes=True)
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic)
         if protected.differences(retained, schematic) or protected.differences(candidate, schematic):
             raise RuntimeError("The external candidate changed protected design items")
@@ -355,7 +359,7 @@ def retain_candidate(project: Path, previous_run: str, candidate_path: Path, *,
             if original_board is None:
                 raise RuntimeError("KiCad could not read the rounding baseline")
         snapshot.board_path.write_bytes(candidate)
-        cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+        cli = kicad_cli()
         stage("Refilling and checking the new private candidate")
         _drc(cli, snapshot.board_path, snapshot.directory / "external-refill.json",
              save_refill=True, schematic_parity=True)

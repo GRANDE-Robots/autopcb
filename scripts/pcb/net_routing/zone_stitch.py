@@ -6,6 +6,8 @@ private source-bound preview; native DRC and independent retention are required.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -18,9 +20,11 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
+from core.toolchain import kicad_cli
+
 import pcbnew
 
-from core.paths import asset_root
+from core.paths import asset_root, config_path, results_path
 from core.pcb_io import net_classes, quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import (Trace, Via, native_clearance_checker,
@@ -544,24 +548,24 @@ def run_one(project: Path, run_id: str, *, progress=print) -> dict:
     project = project.resolve()
     run_id = _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
         raise ValueError("Invalid source routing preview")
     with tempfile.TemporaryDirectory(prefix="autopcb-zone-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             preview = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                         policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             if ProtectedState.capture(snapshot.original, schematic).differences(preview, schematic):
                 raise RuntimeError("Preview changed protected design items")
             snapshot.board_path.write_bytes(preview)
             progress("Refilling and inspecting the private preview")
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             report = _drc(cli, snapshot.board_path, snapshot.directory / "zone-baseline.json",
                           save_refill=True, schematic_parity=True)
             board = load_board(snapshot.board_path, refill_zones=True)
@@ -574,7 +578,7 @@ def run_one(project: Path, run_id: str, *, progress=print) -> dict:
             working_classes = working_connectivity_classes(board)
             for uid, allowance in working_stitch_allowances(board, working_classes).items():
                 eligible.setdefault(uid, allowance)
-            result = propose(board, report, (snapshot.directory / "v4.1.kicad_pro").read_bytes(), rules,
+            result = propose(board, report, (native_path(snapshot.directory, ".kicad_pro")).read_bytes(), rules,
                              eligible=eligible, compact_vias=working_classes is not None, progress=progress)
             result["electrically_verified"] = False
             result["working_connectivity"] = working_classes is not None

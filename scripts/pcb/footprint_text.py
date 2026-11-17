@@ -5,6 +5,8 @@ The move is only a proposal. Check clearances and appearance before applying it.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -24,7 +26,7 @@ def position_change(
 ) -> dict[str, Any]:
     """Return a source-bound, native-verified field move in board coordinates."""
     project = project.resolve()
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     original = source.read_bytes()
     original_hash = hashlib.sha256(original).hexdigest()
     if not isinstance(reference, str) or not reference:
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             args.project, args.reference, args.field, args.x, args.y
         )
         if args.save_campaign:
-            source = args.project / "v4.1.kicad_pcb"
+            source = native_path(args.project, ".kicad_pcb")
             if digest(source.read_bytes()) != result["source_sha256"]:
                 raise RuntimeError("Saved PCB changed before creating the campaign")
             campaign = CampaignFile(args.project).create(

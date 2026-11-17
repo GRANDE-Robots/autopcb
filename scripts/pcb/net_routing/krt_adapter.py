@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import hashlib
 import json
 import math
@@ -279,7 +281,7 @@ def preview(project: Path, root: Path, python: str, targets: tuple[str, ...], ti
         raise ValueError("Strict-size salvage is not supported for paired routes")
     if differential and not (root / "py_router" / "route_diff.py").is_file():
         raise ValueError("The pinned KRT differential router is unavailable")
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     tool = validate_installation(root)
     executable = _python(root, python)
     with tempfile.TemporaryDirectory(prefix="autopcb-krt-") as directory:

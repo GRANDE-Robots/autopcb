@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 from core.pcb_io import enabled_copper_layers
 
 import hashlib
@@ -15,7 +17,7 @@ from typing import Any
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import parse
-from core.paths import asset_root
+from core.paths import results_path
 from pcb import checkpoints
 from pcb.net_routing.geometry import aggregate
 from pcb.net_routing.model import Site
@@ -275,7 +277,7 @@ def preview_sequence(
     config_hash = hashlib.sha256(config_bytes).hexdigest()
     if sha(config) != config_hash:
         raise RuntimeError("Routing configuration changed while being read")
-    source = project / "v4.1.kicad_pcb"
+    source = native_path(project, ".kicad_pcb")
     seed_data = None
     seed_hash = None
     if seed is not None:
@@ -297,7 +299,7 @@ def preview_sequence(
     prior_bytes = None
     if resume is not None:
         resume = resume.resolve()
-        root = (asset_root(project) / "results" / "autopcb").resolve()
+        root = (results_path(project, "autopcb")).resolve()
         if (
             not resume.is_file()
             or not resume.is_relative_to(root)

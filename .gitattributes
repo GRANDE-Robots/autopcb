@@ -1,2 +1,3 @@
 # Preserve the exact bytes recorded by the release input manifest.
 /design/release_inputs/** -text
+/data/release_inputs/** -text

@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 FILES = {
     "bom": "02_BOM_COMPLETE.csv",
@@ -175,7 +175,7 @@ def controlled_input(folder, stable, legacy_glob):
 
 def factory_input_dir(project):
     """Frozen control inputs are separate from regenerated manufacturing outputs."""
-    folder = asset_root(Path(project)) / "design/release_inputs"
+    folder = data_path(Path(project), "release_inputs")
     manifest = folder / "INPUT_MANIFEST.json"
     require(
         manifest.exists(),

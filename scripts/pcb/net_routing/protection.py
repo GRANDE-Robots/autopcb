@@ -14,13 +14,13 @@ from pcb.route_validation import _canonical
 
 def working_connectivity_classes(board) -> frozenset[str] | None:
     """Read the explicit WIP scope; this never supplies electrical evidence."""
-    from core.paths import asset_root
+    from core.paths import config_path
     from pcb.checkpoints import read_config
 
     filename = board.GetFileName()
     if not isinstance(filename, str) or not filename:
         return None
-    policy = asset_root(Path(filename).resolve().parent) / "config" / "autopcb.json"
+    policy = config_path(Path(filename).resolve().parent, "autopcb.json")
     if not policy.is_file():
         return None
     settings, _ = read_config(policy)

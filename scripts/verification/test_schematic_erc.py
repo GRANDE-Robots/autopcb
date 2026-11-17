@@ -18,7 +18,7 @@ from verification.audit_schematic_erc import ErcAudit, audit, main
 
 class ReadOnlyErcTests(unittest.TestCase):
     def project(self, root: Path) -> ProjectPaths:
-        project = ProjectPaths(root)
+        project = ProjectPaths(root / "Imported design.kicad_pro")
         project.schematic.write_text("schematic")
         project.board.write_text("board")
         project.rules.write_text("rules")
@@ -74,10 +74,10 @@ class ReadOnlyErcTests(unittest.TestCase):
             self.assertEqual(
                 {path.name for path in project.root.iterdir()},
                 {
-                    "v4.1.kicad_sch",
-                    "v4.1.kicad_pcb",
-                    "v4.1.kicad_pro",
-                    "v4.1.kicad_dru",
+                    "Imported design.kicad_sch",
+                    "Imported design.kicad_pcb",
+                    "Imported design.kicad_pro",
+                    "Imported design.kicad_dru",
                 },
             )
 
@@ -94,7 +94,7 @@ class ReadOnlyErcTests(unittest.TestCase):
                 "verification.audit_schematic_erc.subprocess.run",
                 side_effect=change_source,
             ):
-                with self.assertRaisesRegex(RuntimeError, "changed during ERC"):
+                with self.assertRaisesRegex(RuntimeError, "inputs changed"):
                     audit(project, Path("kicad-cli"))
 
     def test_missing_violation_list_is_not_reported_as_clean(self):

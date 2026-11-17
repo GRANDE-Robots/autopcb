@@ -147,13 +147,18 @@ def decode_checkpoint(checkpoint: dict, inputs: dict[str, str], tools: dict[str,
 
 def rebind_exact_saved_checkpoint(checkpoint: dict, board: bytes, inputs: dict[str, str],
                                   tools: dict[str, str], policy: str,
-                                  board_key: str = "v4.1.kicad_pcb", *, allow_rule_changes: bool = False) -> dict:
+                                  board_key: str | None = None, *, allow_rule_changes: bool = False) -> dict:
     """Continue only when the saved board is exactly the retained candidate."""
     if not isinstance(allow_rule_changes, bool):
         raise ValueError('Rule adoption must be explicitly boolean')
+    if board_key is None:
+        boards = [key for key in inputs if key.endswith(".kicad_pcb") and "/" not in key]
+        if len(boards) != 1:
+            raise ValueError("Checkpoint must identify one PCB source")
+        board_key = boards[0]
     allowed = {board_key}
     if allow_rule_changes:
-        allowed.add('v4.1.kicad_dru')
+        allowed.add(board_key.removesuffix(".kicad_pcb") + ".kicad_dru")
     old = checkpoint.get("inputs")
     if (not isinstance(old, dict) or old.keys() != inputs.keys()
             or any(old[key] != inputs[key] for key in inputs if key not in allowed)

@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 
 def digest(p):
@@ -51,7 +51,7 @@ def audit(project, manufacturing, gallery=None, archive=None):
         ),
         "Regenerated output files are not controlled source inputs",
     )
-    controls = asset_root(project) / "design/release_inputs"
+    controls = data_path(project, "release_inputs")
     control_manifest = obj(controls / "INPUT_MANIFEST.json")
     for rel, expected in control_manifest["files"].items():
         check(digest(controls / rel) == expected, "Frozen factory input: " + rel)
@@ -136,7 +136,7 @@ def audit(project, manufacturing, gallery=None, archive=None):
     )
 
     # Independently verify the explicit system/factory/owner partition and exact row mapping.
-    policy = obj(asset_root(project) / "design/ASSEMBLY_POLICY.json")
+    policy = obj(data_path(project, "ASSEMBLY_POLICY.json"))
     scope = obj(manufacturing / "evidence/ASSEMBLY_SCOPE.json")
     factory_bom = read_csv(manufacturing / "02_BOM_JLCPCB.csv")
     factory_cpl = read_csv(manufacturing / "03_CPL_JLCPCB.csv")
@@ -177,7 +177,7 @@ def audit(project, manufacturing, gallery=None, archive=None):
         "Factory BOM/CPL reference membership agrees",
     )
     complete_positions = {r["Designator"]: r for r in cpl}
-    rotation_path = asset_root(project) / "design/ASSEMBLY_ROTATION_OFFSETS.json"
+    rotation_path = data_path(project, "ASSEMBLY_ROTATION_OFFSETS.json")
     rotation_policy = obj(rotation_path)
     rules = rotation_policy.get("overrides", [])
     rotation_rules = {r["designator"]: r for r in rules}
@@ -293,7 +293,7 @@ def audit(project, manufacturing, gallery=None, archive=None):
     check(
         scope["source_sha256"] == source
         and scope["policy_sha256"]
-        == digest(asset_root(project) / "design/ASSEMBLY_POLICY.json"),
+        == digest(data_path(project, "ASSEMBLY_POLICY.json")),
         "Assembly scope binds current native source and source-controlled policy",
     )
     check(

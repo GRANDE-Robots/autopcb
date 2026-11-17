@@ -26,3 +26,8 @@ desktop.ini
 # Generated routing outputs and local campaign recipes
 /results/
 /config/campaigns/
+
+# Python package and installer output
+/build/
+/dist/
+*.egg-info/

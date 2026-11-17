@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 from core.export_helpers import (
     FILES,
@@ -96,7 +96,7 @@ def main():
     require(
         scope["source_sha256"] == source
         and scope["policy_sha256"]
-        == sha(asset_root(P) / "design/ASSEMBLY_POLICY.json"),
+        == sha(data_path(P, "ASSEMBLY_POLICY.json")),
         "Assembly scope/source policy mismatch",
     )
     require(

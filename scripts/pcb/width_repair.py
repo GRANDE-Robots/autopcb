@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
@@ -17,7 +19,7 @@ import time
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import parse
-from core.paths import asset_root
+from core.paths import asset_root, data_path
 from core.pcb_io import BoardSaveGuard, copper_boundary, file_sha256, quiet_duplicate_image_handlers, typed_copper
 
 
@@ -380,7 +382,7 @@ def plan_width_reroute(project: Path, uid: str, minimum: int, seconds: float, *,
     if ((same_layer_series and target_layer is None) or not math.isfinite(seconds) or seconds <= 0
             or not isinstance(minimum, int) or minimum < 150000):
         raise ValueError('Invalid width-rerouting budget or minimum')
-    source = project / 'v4.1.kicad_pcb'
+    source = native_path(project, ".kicad_pcb")
     original = source.read_bytes()
     board = pcbnew.LoadBoard(str(source))
     track = next((x for x in board.GetTracks() if x.m_Uuid.AsString() == uid), None)
@@ -544,7 +546,7 @@ def shifted_trial_sites(
     from pcb.freeroute_delta import Trace, native_clearance_checker
     from pcb.net_routing.rules import RoutingRules
 
-    path = project/'v4.1.kicad_pcb'
+    path = native_path(project, ".kicad_pcb")
     board = pcbnew.LoadBoard(str(path))
     connectivity = board.GetConnectivity()
     connectivity.Build(board)
@@ -649,7 +651,7 @@ def plan_coupled_widening(project: Path, uid: str, minimum: int,
     """Widen a fixed trace and negotiate the obstructing copper together."""
     import pcbnew
 
-    before = project / 'v4.1.kicad_pcb'
+    before = native_path(project, ".kicad_pcb")
     original = before.read_bytes()
     widened = width_candidate(project, {uid: minimum})
     if not neighbors:
@@ -1112,11 +1114,11 @@ def repair(project: Path, *, apply: bool = False, max_checks: int = 16,
     if not cli.is_file():
         raise ValueError('Native KiCad validation tool not found')
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
-        with Snapshot(project / 'v4.1.kicad_pcb') as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             dependencies = dict(snapshot.fingerprints)
             dependencies[policy_path] = file_sha256(policy_path)
             for name in ('POWER_LOAD_BUDGET.csv', 'STACKUP_CURRENT.json'):
-                path = assets / 'design' / name
+                path = data_path(project, name)
                 dependencies[path] = file_sha256(path)
             guard = BoardSaveGuard(snapshot.source, tuple(dependencies.items()))
             guard.verify_editor_unlocked()

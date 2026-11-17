@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import json
 import sys
@@ -10,10 +12,12 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
+from core.toolchain import kicad_cli
+
 import pcbnew
 
 from core.kicad_campaign import CampaignPlanner
-from core.paths import asset_root
+from core.paths import asset_root, config_path, results_path
 from core.pcb_io import copper_width, quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import router_class
@@ -399,8 +403,8 @@ def run_one(project: Path, run_id: str, classes: tuple[str, ...], *, progress=pr
     project = project.resolve()
     run_id = _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -408,11 +412,11 @@ def run_one(project: Path, run_id: str, classes: tuple[str, ...], *, progress=pr
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="autopcb-via-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                          policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(retained, schematic):
                 raise RuntimeError("The retained preview changed protected design items")
@@ -426,7 +430,7 @@ def run_one(project: Path, run_id: str, classes: tuple[str, ...], *, progress=pr
                         if router_class(str(board.FindNet(name).GetNetClassName())) in requested}
             if not eligible:
                 raise ValueError("No nets have the requested classes")
-            critical = high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(), all_names)
+            critical = high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(), all_names)
             critical |= unqualified_working_nets(board, tuple(policy.get("exclude_nets", ())))
             vias = set(candidate_vias(board, eligible, critical))
             selected = dangling_spur_items(board, vias)
@@ -473,8 +477,8 @@ def run_dangling(project: Path, run_id: str, classes: tuple[str, ...], *, progre
         raise ValueError("Choose one or more distinct net classes")
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -482,16 +486,16 @@ def run_dangling(project: Path, run_id: str, classes: tuple[str, ...], *, progre
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="autopcb-dangling-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                          policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(retained, schematic):
                 raise RuntimeError("The retained preview changed protected design items")
             snapshot.board_path.write_bytes(retained)
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             progress("Inspecting native dangling-track warnings on a private board")
             before = _drc(cli, snapshot.board_path, snapshot.directory / "dangling-before.json",
                           save_refill=True, schematic_parity=True)
@@ -512,7 +516,7 @@ def run_dangling(project: Path, run_id: str, classes: tuple[str, ...], *, progre
                         if router_class(str(board.FindNet(name).GetNetClassName())) in requested}
             if not eligible:
                 raise ValueError("No nets have the requested classes")
-            critical = high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(), all_names)
+            critical = high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(), all_names)
             if not critical:
                 raise RuntimeError("High-speed net classification is unavailable")
             critical |= unqualified_working_nets(board, tuple(policy.get("exclude_nets", ())))
@@ -604,8 +608,8 @@ def run_rounding(project: Path, run_id: str, classes: tuple[str, ...], *, progre
         raise ValueError("Choose one or more distinct net classes")
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -613,11 +617,11 @@ def run_rounding(project: Path, run_id: str, classes: tuple[str, ...], *, progre
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="autopcb-rounding-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                          policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(retained, schematic):
                 raise RuntimeError("The retained preview changed protected design items")
@@ -627,7 +631,7 @@ def run_rounding(project: Path, run_id: str, classes: tuple[str, ...], *, progre
                 raise RuntimeError("KiCad could not open the private preview")
             names = {str(name) for name in board.GetNetsByName() if str(name)}
             requested = {router_class(name) for name in classes}
-            critical = high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(), names)
+            critical = high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(), names)
             if not critical:
                 raise RuntimeError("High-speed net classification is unavailable")
             blocked = critical | unqualified_working_nets(board, tuple(policy.get("exclude_nets", ())))
@@ -670,8 +674,8 @@ def run_staircase(project: Path, run_id: str, classes: tuple[str, ...], *, progr
         raise ValueError("Choose one or more distinct net classes")
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -679,16 +683,16 @@ def run_staircase(project: Path, run_id: str, classes: tuple[str, ...], *, progr
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="autopcb-staircase-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                          policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(retained, schematic):
                 raise RuntimeError("The retained preview changed protected design items")
             snapshot.board_path.write_bytes(retained)
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             progress("Checking the native baseline for staircase cleanup")
             before = _drc(cli, snapshot.board_path, snapshot.directory / "staircase-before.json",
                           save_refill=True, schematic_parity=True)
@@ -702,7 +706,7 @@ def run_staircase(project: Path, run_id: str, classes: tuple[str, ...], *, progr
             baseline["parity_blocked_nets"] = list(parity_blocked_nets(before, pads))
             parity_nets = verify_cleanup_baseline(baseline, expected_opens=state["best_preview_opens"])
             names = {str(name) for name in board.GetNetsByName() if str(name)}
-            high_speed = high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(), names)
+            high_speed = high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(), names)
             if not high_speed:
                 raise RuntimeError("High-speed net classification is unavailable")
             blocked = (high_speed | unqualified_working_nets(board, tuple(policy.get("exclude_nets", ())))
@@ -710,7 +714,7 @@ def run_staircase(project: Path, run_id: str, classes: tuple[str, ...], *, progr
             requested = {router_class(name) for name in classes}
             eligible = {name for name in names - blocked
                         if router_class(str(board.FindNet(name).GetNetClassName())) in requested}
-            rules = RoutingRules.from_board(board, snapshot.directory / "v4.1.kicad_dru")
+            rules = RoutingRules.from_board(board, native_path(snapshot.directory, ".kicad_dru"))
             obstacles = (*native_shortcut_obstacles(board), *reference_corridors(board, high_speed).obstacles)
             profiles = {}
 
@@ -786,8 +790,8 @@ def run_isolated_fragments(project: Path, run_id: str, *, require_error: bool,
 
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -795,16 +799,16 @@ def run_isolated_fragments(project: Path, run_id: str, *, require_error: bool,
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="autopcb-isolated-candidate-") as folder:
         candidate_path = Path(folder) / "candidate.kicad_pcb"
-        with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                          policy_hash, allow_tool_changes=True)
-            schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+            schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
             protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(retained, schematic):
                 raise RuntimeError("The retained preview changed protected design items")
             snapshot.board_path.write_bytes(retained)
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             report = _drc(cli, snapshot.board_path, snapshot.directory / "isolated-before.json",
                           save_refill=True, schematic_parity=True)
             retained = snapshot.board_path.read_bytes()
@@ -817,7 +821,7 @@ def run_isolated_fragments(project: Path, run_id: str, *, require_error: bool,
             baseline["parity_blocked_nets"] = list(parity_blocked_nets(report, pads))
             parity_nets = verify_cleanup_baseline(baseline, expected_opens=state["best_preview_opens"])
             names = {str(name) for name in board.GetNetsByName() if str(name)}
-            critical = high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(), names)
+            critical = high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(), names)
             if not critical:
                 raise RuntimeError("High-speed net classification is unavailable")
             excluded = critical | set(policy.get("exclude_nets", ())) | set(parity_nets)

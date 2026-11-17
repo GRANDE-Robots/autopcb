@@ -49,6 +49,8 @@ Results also require native DRC, connectivity and reference-plane checks.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import json
 import sys
@@ -314,7 +316,7 @@ def plan(
     if snapshot is not None:
         if not isinstance(snapshot, str) or not snapshot:
             raise ValueError("board_snapshot must be a saved PCB path or 'pcb'")
-        path = project / "v4.1.kicad_pcb" if snapshot == "pcb" else Path(snapshot)
+        path = native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
         if not path.is_absolute():
             path = project / path
         snapshot_path = path.resolve()
@@ -509,10 +511,10 @@ def save_validated_campaign(
     changes: list[dict[str, Any]],
 ) -> dict[str, str]:
     """Save validated changes as a timestamped campaign without editing the PCB."""
-    source = project / "v4.1.kicad_pcb" if snapshot == "pcb" else Path(snapshot)
+    source = native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
     if not source.is_absolute():
         source = project / source
-    if source.resolve() != (project / "v4.1.kicad_pcb").resolve():
+    if source.resolve() != (native_path(project, ".kicad_pcb")).resolve():
         raise ValueError("Saved route campaigns must target this project's current PCB")
     if (
         not isinstance(source_sha256, str)

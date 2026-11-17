@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 class NativeCommandError(RuntimeError):
@@ -36,7 +36,7 @@ def _detail(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
 
 def run_checked(
     command: Sequence[str], *, operation: str, output: Path | None = None,
-    timeout: float = 180,
+    timeout: float = 180, env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run without opening an editor; require both success and a fresh output.
 
@@ -49,7 +49,7 @@ def run_checked(
         result = subprocess.run(
             list(command), stdin=subprocess.DEVNULL, capture_output=True,
             text=True, encoding="utf-8", errors="replace", timeout=timeout,
-            check=False, creationflags=0x08000000 if os.name == "nt" else 0,
+            env=env, check=False, creationflags=0x08000000 if os.name == "nt" else 0,
         )
     except subprocess.TimeoutExpired as error:
         raise NativeCommandError(

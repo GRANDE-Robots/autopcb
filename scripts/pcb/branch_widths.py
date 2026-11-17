@@ -6,6 +6,8 @@ Unknown terminals, meshed current paths and zones retain the existing rules.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from collections import Counter, defaultdict
 from collections.abc import Callable
@@ -449,8 +451,8 @@ def main(argv=None) -> int:
     policy = asset_root(project) / 'config' / 'branch_widths.json'
     policy_hash = file_sha256(policy)
     config = json.loads(policy.read_text(encoding='utf-8'))
-    target = project / 'v4.1.kicad_dru'
-    with quiet_duplicate_image_handlers(), Snapshot(project / 'v4.1.kicad_pcb') as snapshot:
+    target = native_path(project, ".kicad_dru")
+    with quiet_duplicate_image_handlers(), Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         guard = BoardSaveGuard(snapshot.source, tuple(snapshot.fingerprints.items()) + ((policy, policy_hash),))
         board = pcbnew.LoadBoard(str(snapshot.board_path))
         block, counts = compile_widths(board, config)

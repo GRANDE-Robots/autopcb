@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from collections import Counter
 from dataclasses import asdict, replace
@@ -41,7 +43,7 @@ def keepout_proposal(directory: Path, report: dict) -> tuple[bytes, dict]:
                                      SearchLimitReached, mm)
     from pcb.width_repair import route_headings, width_chain
 
-    path = directory / 'v4.1.kicad_pcb'
+    path = native_path(directory, ".kicad_pcb")
     original = path.read_bytes()
     board = pcbnew.LoadBoard(str(path))
     targets = {item['uuid'] for finding in report['violations']
@@ -189,7 +191,7 @@ def proposal(directory: Path, report: dict) -> tuple[bytes, dict]:
     from core.pcb_io import copper_width
     from pcb.net_routing.style import audit_style
 
-    source = directory / 'v4.1.kicad_pcb'
+    source = native_path(directory, ".kicad_pcb")
     original = source.read_bytes()
     board = pcbnew.LoadBoard(str(source))
     items = {item.m_Uuid.AsString(): item for item in board.GetTracks()}
@@ -275,7 +277,7 @@ def repair(project: Path, *, apply: bool = False, keepouts: bool = False) -> dic
     config = json.loads(policy_bytes)
     cli = Path(sys.executable).with_name('kicad-cli.exe')
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
-        with Snapshot(project / 'v4.1.kicad_pcb') as snapshot:
+        with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             guard = BoardSaveGuard(snapshot.source, tuple(snapshot.fingerprints.items()) + ((policy, policy_hash),))
             guard.verify_editor_unlocked()
             label = 'local keepout crossings' if keepouts else 'reported contacts and redundant vias'

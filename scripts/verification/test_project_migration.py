@@ -24,7 +24,8 @@ class ProjectMigrationTests(unittest.TestCase):
             self.assertEqual(
                 CampaignFile(project).directory, project / "autopcb/config/campaigns"
             )
-            self.assertEqual(ProjectPaths(project).board, project / "v4.1.kicad_pcb")
+            (project / "New project.kicad_pro").write_text("{}")
+            self.assertEqual(ProjectPaths(project).board, project / "New project.kicad_pcb")
             self.assertEqual(
                 ProjectPaths(project).review, project / "deliverables/review"
             )

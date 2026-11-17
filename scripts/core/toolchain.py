@@ -22,7 +22,34 @@ def _executable(requested: Path | None) -> Path | None:
     if adjacent.is_file():
         return adjacent.resolve()
     located = shutil.which("kicad-cli")
-    return Path(located).resolve() if located else None
+    if located:
+        return Path(located).resolve()
+    candidates = (
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "KiCad/10.0/bin/kicad-cli.exe",
+        Path("/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
+        Path("/Applications/KiCad.app/Contents/MacOS/kicad-cli"),
+    )
+    return next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
+
+
+def kicad_cli(requested: Path | None = None) -> Path:
+    candidate = _executable(requested)
+    if candidate is None or not candidate.is_file():
+        raise RuntimeError("KiCad CLI was not found. Install KiCad 10 or set KICAD_CLI.")
+    return candidate
+
+
+def native_python_candidates(cli: Path | None = None) -> tuple[Path, ...]:
+    if value := os.environ.get("KICAD_PYTHON"):
+        return (Path(value).expanduser().resolve(),)
+    candidates = []
+    if cli:
+        candidates.extend(cli.with_name(name) for name in ("python.exe", "python3", "python"))
+        if sys.platform == "darwin":
+            candidates.extend(cli.parent.parent.glob("Frameworks/Python.framework/Versions/*/bin/python3"))
+    candidates.extend(Path(path) for path in (sys.executable, shutil.which("python3"),
+                                             "/usr/bin/python3") if path)
+    return tuple(dict.fromkeys(candidate.resolve() for candidate in candidates if candidate.is_file()))
 
 
 def _run(cli: Path, args: list[str]) -> tuple[bool, str]:

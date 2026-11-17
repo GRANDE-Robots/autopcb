@@ -9,7 +9,7 @@ import json
 import math
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 from core.export_helpers import (
     factory_input_dir,
@@ -34,7 +34,7 @@ def generate(project, output):
             evidence["source_sha256"] == identity["source_sha256"],
             f"{label}: factory document input belongs to a different source",
         )
-    stackpath = asset_root(P) / "design/STACKUP_CURRENT.json"
+    stackpath = data_path(P, "STACKUP_CURRENT.json")
     stack = json.loads(stackpath.read_text(encoding="utf-8-sig"))
     require(stack.get("schema") == 1, "Unsupported current stack contract")
     require(
@@ -274,7 +274,7 @@ def generate(project, output):
             "are a separate required finishing stage. Factory fits "
             "J16/J17/J18 sockets. Neither module is DNP or an "
             "automatically deleted requirement. Scope is derived from "
-            "design/ASSEMBLY_POLICY.json; see "
+            "ASSEMBLY_POLICY.json; see "
             f"""evidence/ASSEMBLY_SCOPE.json.
 
 ## Fabrication
@@ -294,7 +294,7 @@ def generate(project, output):
             f"""impedance before production.
 - Observed calculator stack: copper {copper_text}mm; """
             f"dielectric gaps {dielectric_text}mm. See "
-            "design/STACKUP_CURRENT.json and "
+            "STACKUP_CURRENT.json and "
             "evidence/CURRENT_STACKUP_CONTRACT.json. These are "
             f"""recorded calculator observations, not factory approval.
 - Minimum native via drill: """
@@ -346,7 +346,7 @@ The COMPLETE CPL preserves native KiCad CCW angles and """
             "real Fab-body centres. The factory CPL applies only the "
             f"{identity.get('assembly_rotation_offset_count', 0)} "
             "explicitly qualified catalog-angle offsets controlled by "
-            "design/ASSEMBLY_ROTATION_OFFSETS.json; see "
+            "ASSEMBLY_ROTATION_OFFSETS.json; see "
             "assembly/ASSEMBLY_ROTATION_OFFSETS.csv for native/factory "
             "angles, exact parts and pin-1 qualification evidence. "
             "Coordinates, side, native footprints and routing are "
@@ -699,7 +699,7 @@ For the JLC carrier assembly quote, upload """
             f"{N}-part required system / {G} original system BOM rows. "
             "Required U3/U9 owner plug-in installation is explicitly "
             "listed in 07_OWNER_FINISHING.csv and derived from "
-            "design/ASSEMBLY_POLICY.json; no native DNP or requirement "
+            "ASSEMBLY_POLICY.json; no native DNP or requirement "
             "deletion. Read 05_BUILD_AND_ASSEMBLY.md, "
             "08_RELEASE_GATES.csv and 12_ORDER_CONFIGURATION.md before "
             "factory review. U3/U9 remain required owner-stock "

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import hashlib
 import json
 import math
@@ -13,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import project_storage
 from typing import Any
 
 from core.kicad_sexpr import Form, parse, quote
@@ -211,10 +213,10 @@ class CampaignPlanner:
         self.project = project.resolve()
 
     def document_path(self, document: str) -> Path:
-        aliases = {"pcb": "v4.1.kicad_pcb", "schematic": "v4.1.kicad_sch"}
         if not isinstance(document, str) or not document:
             raise ValueError("Each change needs a document")
-        relative = Path(aliases.get(document, document))
+        roles = {"pcb": ".kicad_pcb", "schematic": ".kicad_sch"}
+        relative = Path(native_path(self.project, roles[document]).name if document in roles else document)
         if relative.is_absolute():
             raise ValueError("Document paths must be relative to the project")
         path = (self.project / relative).resolve()
@@ -381,9 +383,11 @@ class CampaignFile:
 
     def __init__(self, project: Path):
         root = project.resolve()
-        self.directory = (asset_root(root) / "config" / "campaigns").resolve()
-        if not self.directory.is_relative_to(root):
-            raise ValueError("Campaign directory must remain inside the project")
+        storage = project_storage(root)
+        self.directory = storage.campaigns.resolve()
+        self.relative_root = storage.workspace or storage.legacy
+        if not self.directory.is_relative_to(storage.workspace or root):
+            raise ValueError("Campaign directory must remain inside its workspace or project")
 
     def path(self, name: str) -> Path:
         path = Path(name)
@@ -392,7 +396,7 @@ class CampaignFile:
             path = (
                 self.directory / path.name
                 if len(path.parts) == 1
-                else self.directory.parent.parent / path
+                else self.relative_root / path
             )
         path = path.resolve()
         if path.parent != self.directory or not CAMPAIGN_NAME.fullmatch(path.name):

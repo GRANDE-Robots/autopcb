@@ -5,7 +5,7 @@ import math
 import re
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import asset_root, data_path
 
 from core.export_helpers import require, sha
 
@@ -94,12 +94,14 @@ def validate_policy(policy):
 
 def load_policy(project):
     project = Path(project)
-    path = asset_root(project) / POLICY_PATH
+    path = data_path(project, Path(POLICY_PATH).name)
     require(path.is_file(), "Source-controlled " + POLICY_PATH + " is required")
     policy = json.loads(path.read_text(encoding="utf-8-sig"))
     for rule in validate_policy(policy):
         e = rule["qualification_evidence"]
-        p = asset_root(project) / e["path"]
+        relative = Path(e["path"])
+        p = (data_path(project, *relative.parts[1:]) if relative.parts[0] in {"data", "design"}
+             else asset_root(project) / relative)
         require(
             p.is_file() and sha(p) == e["sha256"],
             rule["designator"] + ": qualification evidence changed/missing",

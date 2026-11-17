@@ -1,6 +1,6 @@
 """One-time explicit migration of controlled inputs out of generated outputs.
 
-Writes only design/release_inputs in the explicitly selected project.
+Writes only data/release_inputs in the explicitly selected project.
 Refuses to overwrite an existing snapshot. No CAD, manufacturing, carts or orders
 are changed. Carry this directory with the native project when publishing.
 """
@@ -10,7 +10,7 @@ import datetime
 import shutil
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import asset_root, data_path
 
 from core.export_helpers import (
     FILES,
@@ -24,9 +24,9 @@ from core.export_helpers import (
 def stage(project):
     p = Path(project).resolve()
     src = p / "deliverables/jlcpcb"
-    dest = asset_root(p) / "design/release_inputs"
+    dest = asset_root(p) / "data/release_inputs"
     require(
-        not dest.exists(),
+        not data_path(p, "release_inputs").exists(),
         (
             "Controlled input snapshot already exists; review changes "
             "explicitly instead of overwriting"

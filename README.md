@@ -1,154 +1,71 @@
 # AutoPCB
 
-AutoPCB provides repeatable workflows for KiCad schematics and PCBs. Use it to audit saved designs, plan routes and edits on temporary copies, generate review artifacts, and prepare checked manufacturing exports. KiCad remains the source of the schematic, layout, and design rules.
+AutoPCB takes design requirements or an existing KiCad project through layout preview, verification, and reproducible fabrication export. The desktop and CLI run the same jobs. Edit the native schematic and board in KiCad.
 
-## Get started
-
-From the directory containing your KiCad project, clone the repository as `autopcb/`.
+## Install and open
 
 ```bash
-git clone https://github.com/GRANDE-Robots/autopcb.git autopcb
-python -B autopcb/scripts/run.py --help
-python -B autopcb/scripts/run.py status
-python -B autopcb/scripts/run.py check tools
+python -m pip install ".[desktop,benchmark]"
+autopcb doctor
+autopcb-desktop
 ```
 
-Keep the saved KiCad project, schematic, board, custom rules, and library tables in the project directory. Keep custom libraries where the KiCad library tables resolve them. When the checkout is named `autopcb`, the launcher defaults to its parent directory. Use `--project` before the command group to select a different project directory.
+Install KiCad 10 with a matching Python that can import `pcbnew`. Use `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly.
 
-```bash
-python -B autopcb/scripts/run.py --project "/path/to/kicad-project" status
-```
+## Workspace
 
-### Requirements
-
-| Workflow | Tooling |
+| Folder | What goes there |
 | --- | --- |
-| Command launcher | Python 3.11 or later. |
-| Native board operations | KiCad 10 and its Python runtime with `pcbnew`. Set `KICAD_PYTHON` or pass `--kicad-python /path/to/python` before the command group when needed. |
-| Native checks and exports | `kicad-cli` from the KiCad installation. |
-| Code and review tools | Ruff for the code audit. Pillow and either pypdfium2 or Poppler for review rasterization. |
-| Documentation PDFs | `markdown-it-py`, LaTeX, `dvisvgm`, and `pdfinfo`. The builder prefers PySide6 WebEngine with PyMuPDF and can fall back to Chrome or Edge. |
-| Freerouting trials | Java and a Freerouting JAR. Other optional engines have their own setup and command help. |
+| `config/` | Routing defaults and policies in `config/projects/<project>/`. Edit campaigns live in `config/campaigns/<project>/`. |
+| `data/` | Requirements, a component catalog, and project evidence such as stackup and load budgets in `data/projects/<project>/`. |
+| `results/` | Proposals, native files in `results/projects/`, run records in `results/jobs/`, and export packages in `results/exports/`. |
+| `docs/` | Product documentation. |
+| `scripts/` | Shared jobs, KiCad adapters, and verification tools. |
 
-### Project compatibility
+Requirements default to `data/requirements.txt`. Use [the example requirements](data/requirements.example.txt) or supply a text file. A custom catalog can go in `data/catalog.json`. Historical projects can still read engineering inputs from `design/`. Generated results and local campaigns are Git-ignored.
 
-Some commands currently use the fixed `v4.1` basename for native KiCad files. `--project` selects the directory. Check the selected action's help for explicit input arguments if your files use a different name. Check source discovery with `status` before starting a workflow. [Project path implementation](scripts/core/project.py)
-
-The configuration and design data in this checkout describe an existing board. Use them as examples of the required inputs. Keep the routing policy, rules, and release tables synchronized with the project you are working on.
-
-## Set the design inputs
-
-| Input | Define for each board |
-| --- | --- |
-| Native KiCad files | Saved connectivity, board geometry, layer stack, padstacks, footprints, net classes, and custom rules. |
-| `config/autopcb.json` | Routing scope and priorities, allowed layers and via sizes, search settings, and protected items. Configure the nets you intend to route. |
-| Electrical constraints | Load cases, voltage drop, current and temperature limits, power branches, and any special pad escapes. Keep the design's budgets and supporting evidence in `design/`. |
-| Signal integrity | Differential pair membership, target impedance, width and gap by layer, and required reference copper. Document the actual stackup and its geometry in `design/STACKUP_CURRENT.json` where applicable. |
-| Mechanical and assembly inputs | Keepouts, clearances, placement constraints, connector and harness interfaces, BOM identities, assembly side and orientation, and supplier requirements. |
-| Release inputs | Reviewed tables and their manifest in `design/release_inputs/`. Reconcile these with the saved KiCad inputs and project-specific release policy. |
-
-[Historical requirements example](docs/requirements.md) · [Local engineering inputs](design/README.md)
-
-## Inspect the saved design
+### Start from requirements
 
 ```bash
-python -B autopcb/scripts/run.py check erc
-python -B autopcb/scripts/run.py check board
-python -B autopcb/scripts/run.py check nets
-python -B autopcb/scripts/run.py check routing
+autopcb propose
+autopcb create results/proposals/PROPOSAL_ID.json --approve PROPOSAL_ID --name "Control Board"
+autopcb verify
 ```
 
-The `check` group includes library and footprint audits, copper island and routing inspections, native board checks, schematic-to-board net comparison, and release consistency. Run a specific action with `--help` for its inputs and options. Check results reflect the saved files and the checks that ran.
+Review the proposal before choosing its ID. The generated `.kicad_pro`, `.kicad_pcb`, `.kicad_sch`, design rules, and local library references go in `results/projects/Control Board/`. The offline catalog covers an I²C temperature sensor and a full-speed USB Type-B breakout. Missing ratings or requirements stay visible in the proposal. `lookup-sources` explicitly retrieves public manufacturer sources named by an approved proposal.
 
-## Plan and preview routing
-
-Use a routing scenario for a particular route, a batch, or a set of nets. Relative `--config` paths resolve from the directory where you run the command.
+### Open, preview, and verify a KiCad design
 
 ```bash
-python -B autopcb/scripts/run.py pcb plan-route --config /path/to/route.json
-python -B autopcb/scripts/run.py pcb plan-batch --config /path/to/routes.json --validate
-python -B autopcb/scripts/run.py pcb plan-nets --config /path/to/nets.json --validate
+autopcb discover
+autopcb --project "path/to/board.kicad_pro" inspect
+autopcb --project "path/to/board.kicad_pro" configure-layout
+autopcb --project "path/to/board.kicad_pro" route --rounds 10
+autopcb --project "path/to/board.kicad_pro" compare RUN_ID
+autopcb --project "path/to/board.kicad_pro" apply RUN_ID
+autopcb --project "path/to/board.kicad_pro" verify
+autopcb --project "path/to/board.kicad_pro" export --draft
 ```
 
-For a bounded preview, checkpoint routing carries accepted candidates forward on a temporary board. Resume using the sequence file printed by the previous run.
+Use `configure-layout` to create or copy a reviewed policy into `config/projects/<project>/autopcb.json`. AutoPCB combines workspace defaults with native limits when it creates a policy. It can read an existing project-local policy for compatibility. Use `autopcb campaign new --name "Layout review"` to start an edit campaign. Use `--resume RUN_ID` for matching sources or `--renew RUN_ID` to recheck after tool changes. Preview runs against a private copy. Apply checks the files, protected geometry, and editor state before saving a validated improvement.
+
+`--workspace PATH` selects the location of shared inputs and outputs. If several native projects are available, pass a file with `--project`. The desktop lets you open that file directly. For an imported board, the config and report paths include a project key so same-named boards stay separate. Verification and recovery records go in `results/jobs/<project>/`. Exports default to `results/exports/`. Use `--output` to choose an explicit new destination for an export or project.
+
+### Evidence for a checked export
+
+The optional `autopcb.project.json` profile uses `schema_version: 1`, an `entry` native filename, and an explicit `differential_pairs` list when `high_speed_reviewed` is true. The routing adapter protects those pairs. Independent verification reports ERC, DRC, schematic agreement, and current reference-copper findings.
+
+A checked export requires passing native checks and an `electrical_review` pointer with the report's relative `file` and `sha256`. The report file can live in `data/projects/<project>/`. The version 1 review records the reviewer, the exact `sources` from verification excluding the profile and review file, and a `policy_sha256` of the profile without the review pointer. Compute the policy digest over compact UTF-8 JSON with sorted keys. The `checks` map includes passing `electrical` and applicable `reference_copper` checks, with a method and measurements for each. Draft packages disclose blockers. Production approval and hardware bring-up remain separate.
+
+## Development and packaging
 
 ```bash
-python -B autopcb/scripts/run.py pcb checkpoints run --sequential --limit 3
-python -B autopcb/scripts/run.py pcb checkpoints run --sequential --resume /path/to/sequence_preview.json
+python scripts/run.py --project . test
+python scripts/run.py --project . docs build-pdf
+python -m pip install ".[desktop-build]"
+python packaging/build_desktop.py --output results/distribution --bundle-only
 ```
 
-The board-wide controller prepares the saved design, searches the configured scope, and records private previews. Board-wide publication through `--apply` is currently disabled.
+The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. Build and qualify each on its target system. The development build has native Windows checks. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets. The original `scripts/run.py` commands remain available for existing KiCad projects.
 
-```bash
-python -B autopcb/scripts/run.py pcb autoroute prepare
-python -B autopcb/scripts/run.py pcb autoroute run --workers 2 --max-rounds 10
-python -B autopcb/scripts/run.py pcb autoroute status --run RUN_ID
-python -B autopcb/scripts/run.py pcb autoroute verify
-```
-
-Use `run --resume RUN_ID` for a source-matched run. Use `run --renew RUN_ID` to revalidate a retained candidate and rebuild its queue after a routing-code change. Start a new run after changing the saved design, its libraries, or routing policy.
-
-Bound the search with `--max-rounds` and `--seconds-per-batch`. A blocked memory check preserves the last accepted candidate. Use `--memory-gib` to set an explicit budget. `--verbose` adds diagnostic detail, and supported `--json` output goes to stdout for capture by other tools.
-
-A search reports a candidate, an unresolved target, or a resource or validation failure. Search bounds and incomplete checks can leave targets unresolved. The [routing formulation](docs/algorithm.md) describes checkpoints, candidate screening, local repair, protection rules, and known limits.
-
-### Differential pairs and external routing
-
-`pcb autoroute pair-probe` runs a paired-routing trial on a disposable board and reports geometry, native DRC, and sampled reference coverage. `pcb freeroute-preview` and related commands support external-engine trials. Inspect the action help for the available engines and resource controls.
-
-When your checkout includes `pcb impedance`, the action compares the saved board with the configured stackup, pair profiles, and explicit USB pin mappings where provided by the profile. It measures overlapping straight runs and sampled ground coverage. Use `--json` for detailed measurements, `--check-reference` to fail when required runs or reference coverage are missing, and `--emit-rules` to print the managed KiCad rule block for review. Assess launches, vias, end-to-end skew, and manufactured impedance separately.
-
-## Plan and review edits
-
-Use `sch` (alias `schematic`) for presentation, label and stub cleanup, and symbol synchronization. Use `pcb` for footprint and silkscreen adjustments and focused copper repairs. Check the action's preview and write options.
-
-| Task | Actions |
-| --- | --- |
-| Schematic placement and labels | `sch style`, `sch sections`, `sch labels-deduplicate`, and `sch sync-libraries`. |
-| Board cleanup | `pcb clean-silkscreen`, `pcb repair-drc`, `pcb zone-stitch`, and `pcb via-prune`. |
-| Power copper checks and edits | `pcb branch-widths` and `pcb repair-widths`. Review exceptions at individual branches, terminals, or pad escapes against the project rules. |
-| Focused placement | `pcb move`, `pcb move-text`, and `pcb replace-connector`. |
-| Source-bound changes | `campaign preview` and `campaign apply` for edits. `library preview` and `library apply` for library changes. |
-
-```bash
-python -B autopcb/scripts/run.py sch style --check
-python -B autopcb/scripts/run.py campaign new --name "Test point grid"
-python -B autopcb/scripts/run.py campaign preview CAMPAIGN_FILE --diff
-```
-
-Campaign recipes are generated in `config/campaigns/`. Review the preview before applying an edit. Source-bound write operations check the saved inputs and can block a write if the source changed or KiCad has the file open.
-
-## Review and release
-
-```bash
-python -B autopcb/scripts/run.py review refresh
-python -B autopcb/scripts/run.py review progress --redraw
-python -B autopcb/scripts/run.py check release
-```
-
-Review commands generate the configured schematic, copper, silkscreen, and board views for the saved project. `review progress` can record new saved-board measurements. `--redraw` renders existing measurements. Preview measurements have their own records.
-
-The `release` group stages and checks controlled manufacturing inputs and can export Gerbers, drill files, assembly data, and technical attachments. `release build` requires a reviewed input manifest and passing checks. Verify mechanical fit, electrical limits, fabrication rules, and assembly details against the actual design and manufacturer before authorizing production.
-
-## Develop and test
-
-```bash
-python -B autopcb/scripts/run.py check code
-python -B autopcb/scripts/run.py test
-python -B autopcb/scripts/run.py docs build-pdf
-```
-
-The test runner uses KiCad Python for native regression tests and a Python with `markdown-it-py` for document tests. Use `test --document-python /path/to/python` to select the document runtime. The PDF builder follows `config/pdf_build.json`.
-
-| Location | Purpose |
-| --- | --- |
-| `scripts/run.py` | Main command entry point. |
-| `scripts/core/` | Command dispatch, project paths, and shared editing and validation logic. |
-| `scripts/sch/` and `scripts/pcb/` | Schematic and layout workflows. |
-| `scripts/verification/` | Audits and regression tests. |
-| `scripts/review/` and `scripts/release/` | Review artifacts and manufacturing exports. |
-| `config/`, `design/`, and `docs/` | Tool settings, project inputs, and documentation. |
-| `config/campaigns/` and `results/` | Local campaign recipes, previews, reports, and checkpoints, ignored by Git. |
-| `../deliverables/review/` | Generated gallery and routing progress in the KiCad project. |
-
-[Algorithm and implementation limits](docs/algorithm.md) · [Documentation index](docs/README.md)
+[Algorithm guide](docs/algorithm.pdf) · [Editable documentation](docs/algorithm.md)

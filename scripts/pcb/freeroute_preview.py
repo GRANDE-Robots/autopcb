@@ -7,6 +7,8 @@ validate any individual proposed change before considering it for the board.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -22,11 +24,13 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from itertools import product
 from pathlib import Path
+
+from core.toolchain import kicad_cli
 from typing import Any
 
 from core.kicad_sexpr import parse, quote
 from pcb.net_routing.prepare import summarize_drc
-from pcb.route_validation import _copy_inputs, _drc as _native_drc, _inputs
+from pcb.route_validation import _copy_inputs, _drc as _native_drc
 
 FASTROUTE_014_SHA256 = "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714ddae23f1e5"
 
@@ -120,18 +124,12 @@ def _fingerprints(files: list[Path], root: Path) -> dict[str, str]:
 
 
 def _source_files(board: Path) -> list[Path]:
-    schematic = board.with_suffix(".kicad_sch")
-    required = (
-        board,
-        schematic,
-        board.with_suffix(".kicad_pro"),
-        board.with_suffix(".kicad_dru"),
-    )
-    if not all(path.is_file() for path in required):
-        raise ValueError(
-            "The saved PCB, schematic, project, and custom rules must exist"
-        )
-    return sorted({*_inputs(board), schematic})
+    from core.project import ProjectPaths
+
+    paths = ProjectPaths(board)
+    if not all(path.is_file() for path in paths.sources):
+        raise ValueError("Freerouting needs a saved PCB, schematic, KiCad project and custom rules")
+    return list(paths.audit_inputs())
 
 
 def _dsn_scope(text: str, name: str):
@@ -639,11 +637,10 @@ def _snapshot(board: Path, destination: Path) -> dict[str, str]:
         raise ValueError("The trial directory must exist outside the project")
     files = _source_files(board)
     before = _fingerprints(files, board.parent)
-    _copy_inputs([p for p in files if p.suffix != ".kicad_sch"], board, destination)
-    shutil.copy2(board.with_suffix(".kicad_sch"), destination / "v4.1.kicad_sch")
+    _copy_inputs(list(files), board, destination)
     if files != _source_files(board) or _fingerprints(files, board.parent) != before:
         raise RuntimeError("Project inputs changed while taking the snapshot")
-    copied = _fingerprints(_source_files(destination / "v4.1.kicad_pcb"), destination)
+    copied = _fingerprints(_source_files(native_path(destination, ".kicad_pcb")), destination)
     if copied != before:
         raise RuntimeError("The trial copy does not match the saved project inputs")
     return before
@@ -735,7 +732,7 @@ def preview(
     import pcbnew
 
     project = project.resolve()
-    board = project / "v4.1.kicad_pcb"
+    board = native_path(project, ".kicad_pcb")
     jar = jar.resolve()
     if engine not in {"Freerouting", "fastroute"}:
         raise ValueError("Unsupported routing engine")
@@ -777,16 +774,14 @@ def preview(
     native = pcbnew.LoadBoard(str(trial_board))
     positions = _positions(native)
     before_tracks = len(native.GetTracks())
-    cli = Path(sys.executable).parent / (
-        "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
-    )
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required")
     baseline = {} if defer_native_checks else _drc(cli, trial_board, trial / "baseline-drc.json")
     design, session = trial / "candidate.dsn", trial / "candidate.ses"
     layers, removed_zone_planes = _prepare_router_dsn(
         native, design, optimizer=not skip_optimizer, ground_contact_margin_mm=ground_contact_margin_mm)
-    critical = (_high_speed_reservations((trial / "v4.1.kicad_pro").read_bytes(), native)
+    critical = (_high_speed_reservations((native_path(trial, ".kicad_pro")).read_bytes(), native)
                 if ignore_high_speed else ())
     all_deferred_nets = tuple(dict.fromkeys((*ignore_nets, *critical)))
     _set_net_widths(design, _compiled_router_widths(

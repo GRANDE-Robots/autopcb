@@ -39,7 +39,7 @@ def render_pdf(pdf_path, scale, page_number=0):
         raise RuntimeError(
             "Need either pypdfium2 or pdftoppm to rasterize the native PDF plots."
         )
-    with tempfile.TemporaryDirectory(prefix="jessie-gallery-") as td:
+    with tempfile.TemporaryDirectory(prefix="autopcb-gallery-") as td:
         prefix = Path(td) / "page"
         page = str(page_number + 1)
         result = subprocess.run(
@@ -165,7 +165,7 @@ def main():
         ("3D_isometric_top", "3D isometric top"),
         ("3D_isometric_bottom", "3D isometric bottom"),
     ]
-    items = [("schematic", "Schematic — one integrated sheet")] + copper + silk + three
+    items = [("schematic", "Schematic")] + copper + silk + three
     body = "".join(
         '<section id="'
         + n
@@ -190,14 +190,14 @@ def main():
             '<!doctype html><html lang="en"><meta '
             'charset="utf-8"><meta name="viewport" '
             'content="width=device-width, '
-            'initial-scale=1"><title>Jessie v4.1 CAD '
+            'initial-scale=1"><title>KiCad '
             "views</title><style>body{background:#eef1f5;color:#102030;"
             "font:18px/1.5 "
             "system-ui;max-width:1600px;margin:auto;"
             "padding:20px}img{max-width:100%;height:auto}h2{margin-"
             "top:40px}nav{display:flex;flex-wrap:wrap;"
             "gap:12px}a{color:#086795}section{scroll-margin-top:16px}</"
-            "style><h1>Jessie v4.1 — current CAD snapshot</h1><p>All "
+            "style><h1>KiCad project review</h1><p>All "
         )
         + str(len(items))
         + (

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Jessie project tools without leaving Python caches in the project."""
+"""Run AutoPCB project tools without leaving Python caches in the project."""
 
 
 def main() -> int:

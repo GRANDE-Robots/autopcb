@@ -5,7 +5,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import asset_root, data_path
 
 from core.export_helpers import (
     assert_factory_sources,
@@ -68,7 +68,7 @@ def build(project, manufacturing, gallery, out):
     factory_count = identity["factory_cpl_rows"]
     fill_count = identity["selectively_filled_capped_vias"]
     stack = json.loads(
-        (asset_root(P) / "design/STACKUP_CURRENT.json").read_text(encoding="utf-8-sig")
+        (data_path(P, "STACKUP_CURRENT.json")).read_text(encoding="utf-8-sig")
     )
     require(
         stack.get("stackup_id")
@@ -113,11 +113,11 @@ def build(project, manufacturing, gallery, out):
         ]
     ]
     entries += [
-        (asset_root(P) / "design" / n, "design/" + n)
+        (data_path(P, n), "design/" + n)
         for n in ["USB_HOST_POWER_GATE.md", "STACKUP_CURRENT.json"]
     ]
     entries += [
-        (asset_root(P) / "design/fabrication" / n, "fabrication/" + n)
+        (data_path(P, "fabrication", n), "fabrication/" + n)
         for n in [
             "FABRICATION_SUPPLEMENTS.json",
             "REQUIRED_IMPEDANCE_CONTROL.xlsx",
@@ -127,7 +127,7 @@ def build(project, manufacturing, gallery, out):
         ]
     ]
     entries += [
-        (asset_root(P) / "design/fabrication" / n, "fabrication/" + n)
+        (data_path(P, "fabrication", n), "fabrication/" + n)
         for n in [
             "evidence/NATIVE_IMPEDANCE_GEOMETRY.json",
             "evidence/ALL_DIFFERENTIAL_TRACKS.csv",

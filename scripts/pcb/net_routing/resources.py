@@ -1,9 +1,12 @@
-"""Bound AutoPCB worker memory using a Windows job-object commit limit."""
+"""Guard worker memory using a Windows job or a sampled POSIX process tree."""
 from __future__ import annotations
 
 import ctypes
 import math
 import mmap
+import os
+import subprocess
+import threading
 import sys
 import time
 from contextlib import contextmanager
@@ -25,7 +28,25 @@ class AvailableMemory:
 
 
 def available_memory() -> AvailableMemory:
-    """Read current Windows physical RAM and remaining system commit capacity."""
+    """Read available host memory without assuming a Windows runtime."""
+    if sys.platform == "linux":
+        records = {}
+        with open("/proc/meminfo", encoding="ascii") as stream:
+            for line in stream:
+                name, _, data = line.partition(":")
+                if name in ("MemAvailable", "SwapFree"):
+                    records[name] = int(data.split()[0]) * 1024
+        return AvailableMemory(records["MemAvailable"], records["MemAvailable"] + records.get("SwapFree", 0))
+    if sys.platform == "darwin":
+        result = subprocess.check_output(["vm_stat"], text=True, timeout=5)
+        first, *rows = result.splitlines()
+        page_size = int(first.split("page size of ", 1)[1].split()[0])
+        counts = {row.partition(":")[0].lower(): row.partition(":")[2].strip().rstrip(".") for row in rows}
+        capacity = sum(int(counts.get(key, "0")) for key in
+                       ("pages free", "pages inactive", "pages speculative")) * page_size
+        return AvailableMemory(capacity, capacity)
+    if sys.platform != "win32":
+        raise RuntimeError("No routing memory probe is available on this platform")
     from ctypes import wintypes
 
     class MemoryStatus(ctypes.Structure):
@@ -91,16 +112,68 @@ def plan_resources(available: AvailableMemory, *, memory_gib: float | None = Non
             "scope": "routing process and child workers"}
 
 
+def _resident_tree() -> int:
+    output = subprocess.check_output(["ps", "-ax", "-o", "pid=,ppid=,rss="], text=True, timeout=5)
+    children = {}
+    memory = {}
+    for line in output.splitlines():
+        process, parent, rss = map(int, line.split())
+        children.setdefault(parent, []).append(process)
+        memory[process] = rss * 1024
+    seen = set()
+    stack = [os.getpid()]
+    while stack:
+        current = stack.pop()
+        if current not in seen:
+            seen.add(current)
+            stack.extend(children.get(current, ()))
+    return sum(memory.get(process, 0) for process in seen)
+
+
+@contextmanager
+def _posix_limit(plan: dict):
+    """Watch resident memory and stop the coordinator on the next sample."""
+    from _thread import interrupt_main
+
+    budget = plan["job_commit_limit_bytes"]
+    if _resident_tree() > budget:
+        raise MemoryError("AutoPCB is already above its POSIX routing memory budget")
+    done = threading.Event()
+    failures = []
+
+    def watch():
+        try:
+            while not done.wait(0.5):
+                if _resident_tree() > budget:
+                    failures.append("The sampled routing process tree exceeded its memory budget.")
+                    interrupt_main()
+                    return
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            failures.append(f"Could not monitor routing process memory: {error}")
+            interrupt_main()
+
+    thread = threading.Thread(target=watch, daemon=True)
+    thread.start()
+    try:
+        try:
+            yield {**plan, "scope": "routing process tree", "budget_metric": "sampled_resident_bytes"}
+        except KeyboardInterrupt:
+            if not failures:
+                raise
+        if failures:
+            raise MemoryError(failures[0])
+    finally:
+        done.set()
+        thread.join(timeout=6)
+
+
 @contextmanager
 def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
                     progress=None):
     """Constrain this CLI process and children; fail closed if unavailable.
 
-    Windows job memory is committed memory, not a physical-RAM measurement.
-    The limit is chosen from available physical memory at process startup.
+    Windows uses committed memory. POSIX uses aggregate resident samples.
     """
-    if sys.platform != "win32":
-        raise RuntimeError("An aggregate worker memory limiter is not available on this platform")
     if (isinstance(wait_seconds, bool) or not isinstance(wait_seconds, (int, float))
             or not math.isfinite(wait_seconds) or wait_seconds < 0):
         raise ValueError("--wait-for-memory must be a finite, nonnegative number of seconds")
@@ -119,6 +192,10 @@ def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
                           f"Waiting for native-check memory; up to {remaining:.0f} seconds remain"})
                 next_message = time.monotonic() + 20
             time.sleep(min(5, remaining))
+    if sys.platform != "win32":
+        with _posix_limit(plan) as guarded:
+            yield guarded
+        return
     from ctypes import wintypes
 
     class BasicLimit(ctypes.Structure):

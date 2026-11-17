@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import concurrent.futures
 import multiprocessing
 from dataclasses import replace
@@ -62,8 +64,8 @@ def preview_round(project: Path, requests: list[dict], *, workers: int = 2, exec
     if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
         raise ValueError("workers must be a positive integer")
     project = project.resolve()
-    source = project / "v4.1.kicad_pcb"
-    schematic = project / "v4.1.kicad_sch"
+    source = native_path(project, ".kicad_pcb")
+    schematic = native_path(project, ".kicad_sch")
     if not schematic.is_file():
         raise ValueError("A saved schematic is required to protect the design")
     with Snapshot(source) as snapshot:

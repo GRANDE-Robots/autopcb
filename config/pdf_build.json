@@ -1,8 +1,6 @@
 {
+  "relative_to": "support",
   "documents": [
-    {
-      "source": "autopcb/docs/algorithm.md",
-      "output": "autopcb/docs/algorithm.pdf"
-    }
+    {"source": "docs/algorithm.md", "output": "docs/algorithm.pdf"}
   ]
 }

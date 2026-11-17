@@ -5,7 +5,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import data_path
 
 from core.export_helpers import require, sha, stable_zip, writejson
 
@@ -14,7 +14,7 @@ def apply_fabrication_supplements(project, manufacturing):
     P = Path(project).resolve()
     M = Path(manufacturing).resolve()
     identity = json.loads((M / "SOURCE_IDENTITY.json").read_text(encoding="utf-8-sig"))
-    root = asset_root(P) / "design/fabrication"
+    root = data_path(P, "fabrication")
     spec_path = root / "FABRICATION_SUPPLEMENTS.json"
     require(spec_path.is_file(), "Reviewed fabrication supplement manifest is required")
     spec = json.loads(spec_path.read_text(encoding="utf-8-sig"))

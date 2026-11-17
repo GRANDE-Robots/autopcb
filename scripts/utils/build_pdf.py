@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Build configured Markdown documents as PDFs using local tools.
-
-Adapted from the AirSpect GRANDE-style documentation renderer.
-"""
+"""Build configured Markdown documents as PDFs using local tools."""
 
 from __future__ import annotations
 
@@ -27,7 +24,7 @@ from xml.etree import ElementTree
 DEFAULT_PROJECT = default_project(__file__)
 DISPLAY_MATH = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 INLINE_MATH = re.compile(r"(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$(?!\$)", re.DOTALL)
-PAGE_BREAK_TOKEN = "AIRSPECTPDFPAGEBREAKTOKEN"
+PAGE_BREAK_TOKEN = "AUTOPCBPDFPAGEBREAKTOKEN"
 
 STYLE = r"""
 @page {
@@ -571,8 +568,12 @@ def main(arguments: list[str] | None = None) -> int:
     config_bytes = config_path.read_bytes()
     config_hash = hashlib.sha256(config_bytes).hexdigest()
     config = json.loads(config_bytes.decode("utf-8-sig"))
-    if not isinstance(config, dict) or set(config) != {"documents"}:
-        raise ValueError("PDF configuration must contain only a documents list")
+    if not isinstance(config, dict) or not {"documents"} <= config.keys() <= {"documents", "relative_to"}:
+        raise ValueError("PDF configuration needs documents and an optional relative_to")
+    relative = config.get("relative_to", "project")
+    if relative not in ("project", "support"):
+        raise ValueError("PDF relative_to must be project or support")
+    document_root = asset_root(project) if relative == "support" else project
     entries = config["documents"]
     if not isinstance(entries, list) or not entries:
         raise ValueError("PDF configuration documents must be a nonempty list")
@@ -581,8 +582,8 @@ def main(arguments: list[str] | None = None) -> int:
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {"source", "output"}:
             raise ValueError("Each PDF document needs source and output")
-        source = project_path(project, entry["source"], ".md")
-        output = project_path(project, entry["output"], ".pdf")
+        source = project_path(document_root, entry["source"], ".md")
+        output = project_path(document_root, entry["output"], ".pdf")
         if not source.is_file():
             raise ValueError(f"Markdown source not found: {source}")
         if output in outputs:

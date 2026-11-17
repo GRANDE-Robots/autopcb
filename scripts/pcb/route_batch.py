@@ -29,6 +29,8 @@ limits still need to be selected for the actual circuit.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -202,7 +204,7 @@ def plan_batch(
         "note": "Sequential proposals require batch DRC, connectivity, reference-plane and electrical review.",
     }
     if snapshot is not None:
-        source = project / "v4.1.kicad_pcb" if snapshot == "pcb" else Path(snapshot)
+        source = native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
         if not source.is_absolute():
             source = project / source
         source = source.resolve()

@@ -6,6 +6,8 @@ previously hidden schematic connection may become an open PCB connection.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import json
 import os
@@ -13,12 +15,14 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from core.toolchain import kicad_cli
 from uuid import uuid4
 
 import pcbnew
 
 from core.kicad_sexpr import quote
-from core.paths import asset_root
+from core.paths import results_path
 from core.pcb_io import BoardSaveGuard, quiet_duplicate_image_handlers
 from pcb.net_routing.controller import decode_checkpoint, encode_checkpoint
 from pcb.net_routing.native import Snapshot
@@ -102,12 +106,12 @@ def reconcile(project: Path, *, apply: bool = False, progress=print) -> dict:
     if not isinstance(apply, bool):
         raise ValueError("Apply selection must be boolean")
     project = project.resolve()
-    source = project / "v4.1.kicad_pcb"
-    cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+    source = native_path(project, ".kicad_pcb")
+    cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required for net reconciliation")
     with Snapshot(source) as snapshot:
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic)
         progress("Checking saved schematic and PCB connectivity")
         before_report = _drc(cli, snapshot.board_path, snapshot.directory / "alias-before.json",
@@ -120,7 +124,7 @@ def reconcile(project: Path, *, apply: bool = False, progress=print) -> dict:
                                dangling_identities=_dangling_track_identities(before_board, before_report))
         if before["exclusions"] or before["ignored_checks"]:
             raise RuntimeError("The source has excluded or ignored checks")
-        expected, _ = export_schematic_data(snapshot.directory / "v4.1.kicad_sch")
+        expected, _ = export_schematic_data(native_path(snapshot.directory, ".kicad_sch"))
         groups = find_groups(before_board, expected, before_report)
         if not groups:
             return {"status": "no_complete_aliases", "groups": 0}
@@ -143,7 +147,7 @@ def reconcile(project: Path, *, apply: bool = False, progress=print) -> dict:
         verify_resume_reports(before, after, expected_opens=after["open_connections"], allow_open_increase=True,
                               stable_connection_items=stable_connection_items(renamed, candidate))
         _verify_resume_connectivity(snapshot.directory, renamed)
-        critical = tuple(high_speed_nets((snapshot.directory / "v4.1.kicad_pro").read_bytes(),
+        critical = tuple(high_speed_nets((native_path(snapshot.directory, ".kicad_pro")).read_bytes(),
                                          {str(name) for name in before_board.GetNetsByName()}))
         if not critical:
             raise RuntimeError("High-speed reference nets could not be identified")
@@ -168,7 +172,7 @@ def reconcile(project: Path, *, apply: bool = False, progress=print) -> dict:
         raise RuntimeError("Routing tools changed before saving")
     guard.verify_unchanged()
     guard.verify_editor_unlocked()
-    backup_dir = asset_root(project) / "results" / "autoroute" / "preimages"
+    backup_dir = results_path(project, "autoroute") / "preimages"
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup = backup_dir / f"net-alias-{uuid4().hex}.json"
     checkpoint = encode_checkpoint(original, inputs, tools, "net-alias-v1")

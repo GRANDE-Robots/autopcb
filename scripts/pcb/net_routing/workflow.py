@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.project import native_path
+
 from dataclasses import dataclass, replace
 from contextlib import nullcontext
 import math
@@ -204,7 +206,7 @@ def plan_nets(
     if not isinstance(source_name, str) or not source_name:
         raise ValueError("board_snapshot must be a saved PCB path or 'pcb'")
     source = (
-        project / "v4.1.kicad_pcb" if source_name == "pcb" else project / source_name
+        native_path(project, ".kicad_pcb") if source_name == "pcb" else project / source_name
     )
     budget = Budget(limits)
     candidates: list[Candidate] = []

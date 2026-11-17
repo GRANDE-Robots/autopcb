@@ -7,6 +7,8 @@ the Drive project; verified files replace their active counterparts atomically.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 import hashlib
 import json
@@ -304,8 +306,8 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
     review = args.review.resolve()
     kicad_python = args.kicad_python.resolve()
     python = args.python.resolve()
-    board = project / "v4.1.kicad_pcb"
-    schematic = project / "v4.1.kicad_sch"
+    board = native_path(project, ".kicad_pcb")
+    schematic = native_path(project, ".kicad_sch")
     require(
         board.is_file() and schematic.is_file(), "Expected live v4.1 PCB and schematic"
     )
@@ -330,14 +332,14 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
         path.relative_to(project).as_posix(): digest(path)
         for path in [
             *source_paths,
-            project / "v4.1.kicad_pro",
-            project / "v4.1.kicad_dru",
+            native_path(project, ".kicad_pro"),
+            native_path(project, ".kicad_dru"),
         ]
     }
     if gallery_is_current(project, review, source_hashes):
         require(
             full_hashes == {path.relative_to(project).as_posix(): digest(path) for path in
-                            [*source_paths, project / "v4.1.kicad_pro", project / "v4.1.kicad_dru"]},
+                            [*source_paths, native_path(project, ".kicad_pro"), native_path(project, ".kicad_dru")]},
             "Native project settings changed during the review freshness check",
         )
         console.result({"status": "unchanged", "review": str(review),
@@ -361,7 +363,7 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
         os.pathsep + existing_pythonpath if existing_pythonpath else ""
     )
     tool_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    header = (project / "v4.1.kicad_pcb").read_text(encoding="utf-8-sig").split("(setup", 1)[0]
+    header = (native_path(project, ".kicad_pcb")).read_text(encoding="utf-8-sig").split("(setup", 1)[0]
     layers = re.findall(r'\(\d+\s+"((?:F|B|In[0-9]+)\.Cu)"\s', header)
     pdfs, pngs, active = required_outputs(layers)
     original_review = ReviewSnapshot.capture(review, active)
@@ -434,8 +436,8 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
                 path.relative_to(project).as_posix(): digest(path)
                 for path in [
                     *source_paths,
-                    project / "v4.1.kicad_pro",
-                    project / "v4.1.kicad_dru",
+                    native_path(project, ".kicad_pro"),
+                    native_path(project, ".kicad_dru"),
                 ]
             },
             "Native project settings changed during rendering; refusing mixed review output",

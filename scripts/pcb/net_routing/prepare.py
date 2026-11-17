@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from core.project import declared_high_speed, native_path
+
 import json
 import re
 from collections import Counter
-import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from core.toolchain import kicad_cli
+
 import pcbnew
 
-from core.paths import asset_root
+from core.paths import config_path, data_path
 from pcb.net_routing.completion import VerificationEvidence, completion_issues
 from pcb.net_routing.inventory import inventory_board
 from pcb.net_routing.native import Snapshot, sha
@@ -144,23 +147,22 @@ def prepare_project(project: Path, *, progress=None) -> dict:
 
     stage("1/6 | Reading saved files and recording protected items")
     project = project.resolve()
-    source = project / "v4.1.kicad_pcb"
-    schematic = project / "v4.1.kicad_sch"
+    source = native_path(project, ".kicad_pcb")
+    schematic = native_path(project, ".kicad_sch")
     if not schematic.is_file():
         raise ValueError("A saved schematic is required for coverage and parity")
-    assets = asset_root(project)
     extra_paths = tuple(
         path for path in (
-            assets / "config" / "autopcb.json",
-            assets / "design" / "POWER_LOAD_BUDGET.csv",
-            assets / "design" / "STACKUP_CURRENT.json",
+            config_path(project, "autopcb.json"),
+            data_path(project, "POWER_LOAD_BUDGET.csv"),
+            data_path(project, "STACKUP_CURRENT.json"),
         ) if path.is_file()
     )
     extra_hashes = {path: sha(path) for path in extra_paths}
     with Snapshot(source) as snapshot:
         schematic_bytes = (snapshot.directory / schematic.name).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic_bytes)
-        cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+        cli = kicad_cli()
         if not cli.is_file():
             raise RuntimeError("KiCad CLI is required beside the selected Python")
         output = snapshot.directory / "autoroute-drc.json"
@@ -192,12 +194,15 @@ def prepare_project(project: Path, *, progress=None) -> dict:
         from pcb.net_routing.via_guard import via_pad_overlaps
 
         via_pad = via_pad_overlaps(board)
-        rules = snapshot.directory / "v4.1.kicad_pro"
+        rules = native_path(snapshot.directory, ".kicad_pro")
         reference = {"status": "missing_project_rules", "electrically_verified": False}
         if rules.is_file():
-            critical = high_speed_nets(rules.read_bytes(), {net.name for net in inventory.nets})
+            names = {net.name for net in inventory.nets}
+            declared = declared_high_speed(project, names)
+            critical = high_speed_nets(rules.read_bytes(), names) | (declared or set())
             reference = reference_report(board, critical)
-        config = assets / "config" / "autopcb.json"
+            reference["classification_complete"] = declared is not None
+        config = config_path(project, "autopcb.json")
         priorities = {}
         margin = 8.0
         routing_policy = {}
@@ -231,8 +236,8 @@ def prepare_project(project: Path, *, progress=None) -> dict:
             "status": "prepared_incomplete",
             "publication_enabled": False,
             "source_sha256": source_hashes,
-            "input_sha256": {path.relative_to(project).as_posix(): digest for path, digest in snapshot.fingerprints.items()},
-            "policy_sha256": {path.relative_to(project).as_posix(): digest for path, digest in extra_hashes.items()},
+            "input_sha256": {snapshot.input_name(path).as_posix(): digest for path, digest in snapshot.fingerprints.items()},
+            "policy_sha256": {snapshot.input_name(path).as_posix(): digest for path, digest in extra_hashes.items()},
             "tool_sha256": snapshot.tool_hashes,
             "copper_layers": board.GetCopperLayerCount(),
             "board_bounds_mm": [board.GetBoardEdgesBoundingBox().GetX() / 1e6,

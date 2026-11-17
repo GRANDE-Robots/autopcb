@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dispatch Jessie checks, review tools, and guarded editing utilities."""
+"""Dispatch AutoPCB checks, review tools, and guarded editing utilities."""
 
 from __future__ import annotations
 
@@ -13,20 +13,19 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.paths import asset_root
+from core.paths import asset_root, data_path, default_project
 from core.console import Console, add_output_arguments
 from typing import Iterable, Literal, TextIO
 
-from core.project import ProjectPaths
+from core.project import ENTRY_ENV, ProjectPaths
+from core.toolchain import _executable, native_python_candidates
 from review.refresh_gallery import ACTIVE as REVIEW_FILES
 
 SCRIPTS = Path(__file__).resolve().parent.parent
-DEFAULT_PROJECT = (
-    SCRIPTS.parent.parent
-    if SCRIPTS.parent.name.lower() == "autopcb"
-    else SCRIPTS.parent
-)
-DEFAULT_KICAD_PYTHON = Path(r"C:\Program Files\KiCad\10.0\bin\python.exe")
+DEFAULT_PROJECT = default_project(__file__)
+def default_kicad_python() -> Path:
+    values = native_python_candidates(_executable(None))
+    return values[0] if values else Path(sys.executable)
 
 
 def _has_document_dependency(python: Path) -> bool:
@@ -257,14 +256,14 @@ def show_status(project: Path, *, json_mode: bool = False, verbose: bool = False
     paths = ProjectPaths(project)
     project = paths.root
     sources = paths.sources
-    if not all(path.is_file() for path in sources):
+    if not all(path.is_file() for path in (paths.board, paths.schematic)):
         print(
-            f"Project is missing one or more native v4.1 files: {project}",
+            f"Project is missing its native PCB or schematic: {project}",
             file=sys.stderr,
         )
         return 2
-    hashes = {path.name: sha(path) for path in sources}
-    manifest = asset_root(project) / "design" / "release_inputs" / "INPUT_MANIFEST.json"
+    hashes = {path.name: sha(path) for path in sources if path.is_file()}
+    manifest = data_path(project, "release_inputs", "INPUT_MANIFEST.json")
     mismatches = []
     manifest_status = "missing"
     if manifest.is_file():
@@ -353,7 +352,7 @@ def show_status(project: Path, *, json_mode: bool = False, verbose: bool = False
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Jessie v4.1 project tools. Use an action followed by --help for its arguments."
+            "AutoPCB project tools. Use an action followed by --help for its arguments."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples (from scripts):
@@ -372,7 +371,7 @@ def build_parser() -> argparse.ArgumentParser:
 Use an action followed by --help for its arguments, for example:
   python run.py pcb move --help
 
-The current v4.1 source paths are supplied automatically. PCB operations use
+Choose a native project file with --project when a directory has multiple designs. PCB operations use
 KiCad's bundled Python; set KICAD_PYTHON or pass --kicad-python if needed.
 Review rasterization needs Pillow and either pypdfium2 or Poppler.
 Campaign JSON files live in config/campaigns. Applying one requires the source
@@ -391,12 +390,12 @@ on hold until reviewed; a status check or image is not a fabrication approval.
         "--project",
         type=Path,
         default=DEFAULT_PROJECT,
-        help="native KiCad project directory (defaults to the parent of autopcb)",
+        help="native KiCad project file or directory",
     )
     parser.add_argument(
         "--kicad-python",
         type=Path,
-        default=Path(os.environ.get("KICAD_PYTHON", str(DEFAULT_KICAD_PYTHON))),
+        default=default_kicad_python(),
         help="KiCad bundled Python, used for PCB-dependent operations",
     )
     groups = parser.add_subparsers(dest="group", required=True)
@@ -453,7 +452,7 @@ def _caller_relative_configs(arguments: list[str], caller: Path) -> list[str]:
     return result
 
 
-def command_for(args: argparse.Namespace, forwarded: list[str]) -> list[str]:
+def command_for(args: argparse.Namespace, forwarded: list[str], *, env: dict | None = None) -> list[str]:
     group = "schematic" if args.group == "sch" else args.group
     action = ACTIONS[group][args.action]
     module, runtime, mode = action.module, action.runtime, action.mode
@@ -480,6 +479,8 @@ def command_for(args: argparse.Namespace, forwarded: list[str]) -> list[str]:
     if not selected_project.is_absolute():
         selected_project = Path.cwd() / selected_project
     paths = ProjectPaths(selected_project)
+    if env is not None:
+        env[ENTRY_ENV] = str(paths.entry)
     project = paths.root
     board = str(paths.board)
     schematic = str(paths.schematic)
@@ -579,10 +580,15 @@ def run_test_suite(command: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args, rest = parser.parse_known_args(argv)
+    env = subprocess_env()
     if args.group == "status":
         if rest:
             parser.error("status takes no additional arguments")
-        return show_status(args.project.resolve(), json_mode=args.json, verbose=args.verbose)
+        try:
+            return show_status(args.project.resolve(), json_mode=args.json, verbose=args.verbose)
+        except (ValueError, OSError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
     if args.group == "test":
         if rest:
             parser.error("test takes no additional arguments")
@@ -600,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
     else:
         try:
-            command = command_for(args, rest)
+            command = command_for(args, rest, env=env)
         except ValueError as error:
             parser.error(str(error))
     if not Path(command[0]).is_file():
@@ -641,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
             ]
         )
     try:
-        return subprocess.run(command, cwd=SCRIPTS, env=subprocess_env()).returncode
+        return subprocess.run(command, cwd=SCRIPTS, env=env).returncode
     except KeyboardInterrupt:
         print("AutoPCB stopped.", file=sys.stderr)
         return 130

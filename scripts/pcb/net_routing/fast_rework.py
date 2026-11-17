@@ -6,6 +6,8 @@ improvement, and it does not certify electrical or manufacturing readiness.
 
 from __future__ import annotations
 
+from core.project import native_path
+
 import argparse
 from collections import Counter
 from collections.abc import Callable
@@ -22,7 +24,7 @@ from pathlib import Path
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import parse
-from core.paths import asset_root
+from core.paths import asset_root, config_path, results_path
 from core.pcb_io import copper_width, enabled_copper_layers, quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import Trace, Via, filter_proposal, read_copper, router_class
@@ -144,7 +146,7 @@ def compile_tree_renewal(directory: Path, targets: tuple[str, ...], allowed: tup
         raise ValueError("A tree-renewal batch must contain 1 to 64 nets")
     if not isinstance(include_connected, bool):
         raise ValueError("Connected-neighbor selection must be boolean")
-    board = pcbnew.LoadBoard(str(directory / "v4.1.kicad_pcb"))
+    board = pcbnew.LoadBoard(str(native_path(directory, ".kicad_pcb")))
     if board is None:
         raise RuntimeError("Cannot load the private tree-renewal board")
     requested = set(_class_names(allowed))
@@ -218,7 +220,7 @@ def restore_unimproved_trees(directory: Path, prior: Path, names: tuple[str, ...
     if not isinstance(force, bool) or not isinstance(keep_neutral, bool):
         raise ValueError("Tree restoration options must be boolean")
 
-    source = directory / "v4.1.kicad_pcb"
+    source = native_path(directory, ".kicad_pcb")
     # Both inputs were independently refilled by their native batch checks.
     # Keep those fills: the prior file has a different stem and no project file.
     original = pcbnew.LoadBoard(str(prior))
@@ -266,7 +268,7 @@ def prepare_ground_access(directory: Path, policy: dict) -> dict:
     if not isinstance(scope, dict) or scope.get("kind") != "connectivity":
         raise ValueError("Ground-first repair requires an explicit working-connectivity scope")
     classes = frozenset(name.upper() for name in scope.get("classes", ()))
-    path = directory / "v4.1.kicad_pcb"
+    path = native_path(directory, ".kicad_pcb")
     board = load_board(path, refill_zones=True)
     net = board.FindNet("GND")
     if net is None or str(net.GetNetClassName()).upper() not in classes:
@@ -314,7 +316,7 @@ def checked_tree_fallback(directory: Path, prior: Path, names: tuple[str, ...],
     for _ in range(min(4, len(names))):
         if interim_drc_acceptable(baseline, measured["drc"]):
             break
-        conflicts = run_native(conflicting_replacement_nets, directory / "v4.1.kicad_pcb",
+        conflicts = run_native(conflicting_replacement_nets, native_path(directory, ".kicad_pcb"),
                                baseline, measured["drc"], tuple(sorted(set(names) - restored)))
         if not conflicts:
             break
@@ -694,7 +696,7 @@ def compile_candidate(directory: Path, queue: list, policy: dict, targets: tuple
     if (isinstance(target_offset, bool) or not isinstance(target_offset, int) or target_offset < 0
             or isinstance(target_limit, bool) or not isinstance(target_limit, int) or target_limit < 1):
         raise ValueError("Placement target window must have a nonnegative offset and positive size")
-    board = pcbnew.LoadBoard(str(directory / "v4.1.kicad_pcb"))
+    board = pcbnew.LoadBoard(str(native_path(directory, ".kicad_pcb")))
     if board is None:
         raise RuntimeError("KiCad could not load the private repair board")
     policy = rework_policy(policy, bottom_placement=bottom_placement,
@@ -811,7 +813,7 @@ def compile_candidate(directory: Path, queue: list, policy: dict, targets: tuple
                 floors[name] = (width, size, drill)
             changes = copper_removal_changes(board, set(ids))
             if poses:
-                changes.extend(native_pose_change(directory / "v4.1.kicad_pcb", ref, x, y, angle)
+                changes.extend(native_pose_change(native_path(directory, ".kicad_pcb"), ref, x, y, angle)
                                for ref, x, y, angle in poses)
             modified = CampaignPlanner(directory).plan("pcb", changes).after
             if poses:
@@ -920,7 +922,7 @@ def _candidate_batch_owned(directory: Path, router: Path, timeout: int, cleanup:
             with tempfile.TemporaryDirectory(prefix="autopcb-krt-rework-") as scratch:
                 candidate = Path(scratch) / "candidate.kicad_pcb"
                 candidate.write_bytes(raw["board"])
-                result = filtered(directory / "v4.1.kicad_pcb", candidate)
+                result = filtered(native_path(directory, ".kicad_pcb"), candidate)
             return {**result, "router_fingerprint": expected_tool}
         if engine not in {"fastroute", "Freerouting"}:
             raise ValueError("Unsupported coordinated-repair router")
@@ -936,7 +938,7 @@ def _candidate_batch_owned(directory: Path, router: Path, timeout: int, cleanup:
         if engine == "Freerouting" and (not expected_tool or raw.get("freerouting_jar_sha256") != expected_tool):
             raise RuntimeError("The router installation changed during the coordinated repair")
         trial = Path(raw["trial_board"]).parent
-        comparison = run_native(_roundtrip, directory / "v4.1.kicad_pcb", trial,
+        comparison = run_native(_roundtrip, native_path(directory, ".kicad_pcb"), trial,
                                 router, "auto", min(timeout, 120), engine)
         return filtered(comparison, Path(raw["trial_board"]))
     except RuntimeError as error:
@@ -1001,7 +1003,7 @@ def preparation_key(inputs: dict, tools: dict, policy: str, board: bytes,
 def prepare_repair(directory: Path, state: dict, focus: tuple[str, ...], key: tuple,
                    cache: RepairPreparationCache | None, progress) -> RepairPreparation:
     """Reuse a refilled private baseline only for identical sources and scope."""
-    board = directory / "v4.1.kicad_pcb"
+    board = native_path(directory, ".kicad_pcb")
     if cache is not None and cache.key == key and cache.value is not None:
         board.write_bytes(cache.value.board)
         progress("Reusing the source-matched checked baseline")
@@ -1067,8 +1069,8 @@ def run_one(project: Path, run_id: str, *, ordinal: int, timeout: int, cleanup: 
         raise ValueError("Choose at least one focus class")
     project, run_id = project.resolve(), _run_id(run_id)
     assets = asset_root(project)
-    policy, policy_hash = read_config(assets / "config" / "autopcb.json")
-    state_path = assets / "results" / "autoroute" / f"{run_id}.json"
+    policy, policy_hash = read_config(config_path(project, "autopcb.json"))
+    state_path = results_path(project, "autoroute") / f"{run_id}.json"
     state_bytes = state_path.read_bytes()
     state = json.loads(state_bytes)
     if state.get("schema") != 1 or state.get("run_id") != run_id:
@@ -1088,7 +1090,7 @@ def run_one(project: Path, run_id: str, *, ordinal: int, timeout: int, cleanup: 
     if "Freerouting" in {engine, followup_engine}:
         fingerprints["Freerouting"] = hashlib.sha256(routers["Freerouting"].read_bytes()).hexdigest()
     stages = []
-    with Snapshot(project / "v4.1.kicad_pcb") as snapshot:
+    with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         inputs = _source_hashes(snapshot, project, assets)
         retained = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                      policy_hash, allow_tool_changes=True)
@@ -1116,7 +1118,7 @@ def run_one(project: Path, run_id: str, *, ordinal: int, timeout: int, cleanup: 
                     "reason": "The bounded failed-plan history is full; search remains unresolved"}
         if tried_plans:
             progress(f"Skipping {len(tried_plans)} prior failed repair plans on unchanged inputs")
-        schematic = (snapshot.directory / "v4.1.kicad_sch").read_bytes()
+        schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
         protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=not bottom_placement)
         if protected.differences(retained, schematic):
             raise RuntimeError("The retained preview changed protected design items")

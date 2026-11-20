@@ -60,6 +60,11 @@ def parser() -> argparse.ArgumentParser:
     compare_bench.add_argument("--rounds", type=int, default=3)
     compare_bench.add_argument("--seconds", type=int, default=30)
     compare_bench.add_argument("--memory-gib", type=float, default=3)
+    study = commands.add_parser("placement-study", help="compare fixed placement with permitted moves under one budget")
+    study.add_argument("--rounds", type=int, default=10)
+    study.add_argument("--seconds", type=int, default=30)
+    study.add_argument("--memory-gib", type=float, default=3)
+    study.add_argument("--output", type=Path)
     export = commands.add_parser("export", help="generate a local manufacturing package")
     export.add_argument("--output", type=Path, help="defaults to results/exports")
     export.add_argument("--draft", action="store_true", help="label package as draft and include blockers")
@@ -149,6 +154,13 @@ def _run(args) -> dict:
         from autopcb.benchmark import benchmark
         return benchmark(native, project, args.baseline, rounds=args.rounds, seconds=args.seconds,
                          memory_gib=args.memory_gib, storage=storage)
+    if args.action == "placement-study":
+        from autopcb.placement_study import placement_study
+        report = placement_study(native, project, rounds=args.rounds, seconds=args.seconds,
+                                 memory_gib=args.memory_gib, storage=storage)
+        if args.output:
+            jobs.write_json(args.output, report)
+        return report
     target = args.output or workspace.export_output(project, args.draft)
     return {**jobs.export(native, project, target, draft=args.draft, storage=storage), "package": str(target.resolve())}
 

@@ -1,156 +1,176 @@
-"""Compare fixed placement with permitted placement moves under one search budget.
-
-Each arm routes a private copy of the same saved design with identical rounds,
-seconds per batch and memory. A winning preview is applied only to that copy,
-then read back through KiCad verification and geometry inspection, so the
-verdict never rests on the router's own opens count.
-"""
+"""Compare fixed placement with permitted moves under one search budget."""
 
 from __future__ import annotations
 
 import math
 import shutil
+import time
+from dataclasses import dataclass, field
 
 from autopcb import jobs, layout
 from autopcb.native import Native
-from core.export_helpers import sha
 from core.paths import ProjectStorage
 from core.project import ProjectPaths, SourceSnapshot
 
-ARMS = ("fixed", "moves")
 MOVE_TOLERANCE_MM = 1e-3
 
 
-def board_metrics(geometry: dict) -> dict:
-    """Reduce an inspect geometry record to the numbers the study compares."""
-    (x0, y0), (x1, y1) = geometry["bounds"]
-    tracks = geometry["tracks"]
-    return {
-        "board_area_mm2": round(abs(x1 - x0) * abs(y1 - y0), 6),
-        "track_length_mm": round(sum(item["length_mm"] for item in tracks if not item["via"]), 6),
-        "via_count": sum(1 for item in tracks if item["via"]),
-        "poses": {fp["ref"]: (fp["at"][0], fp["at"][1], fp["layer"]) for fp in geometry["footprints"]},
-    }
+@dataclass(frozen=True)
+class Budget:
+    rounds: int
+    seconds: int
+    memory_gib: float
+
+    def as_dict(self) -> dict:
+        return {"rounds": self.rounds, "seconds_per_batch": self.seconds, "memory_gib": self.memory_gib}
 
 
-def moved_parts(before: dict, after: dict) -> list[dict]:
-    """List parts whose position or side changed between two metric records."""
-    moved = []
-    for ref, (x, y, layer) in sorted(after["poses"].items()):
-        old = before["poses"].get(ref)
-        if old is None:
-            continue
-        shift = math.hypot(x - old[0], y - old[1])
-        if shift > MOVE_TOLERANCE_MM or layer != old[2]:
-            moved.append({"ref": ref, "shift_mm": round(shift, 6), "side_changed": layer != old[2]})
-    return moved
+@dataclass(frozen=True)
+class BoardMetrics:
+    area_mm2: float
+    track_length_mm: float
+    via_count: int
+    poses: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_geometry(cls, geometry: dict) -> BoardMetrics:
+        (x0, y0), (x1, y1) = geometry["bounds"]
+        tracks = geometry["tracks"]
+        return cls(round(abs(x1 - x0) * abs(y1 - y0), 6),
+                   round(sum(t["length_mm"] for t in tracks if not t["via"]), 6),
+                   sum(1 for t in tracks if t["via"]),
+                   {f["ref"]: (f["at"][0], f["at"][1], f["layer"]) for f in geometry["footprints"]})
+
+    def moved_from(self, before: BoardMetrics) -> list[dict]:
+        moved = []
+        for ref, (x, y, layer) in sorted(self.poses.items()):
+            old = before.poses.get(ref)
+            if old is None:
+                continue
+            shift = math.hypot(x - old[0], y - old[1])
+            if shift > MOVE_TOLERANCE_MM or layer != old[2]:
+                moved.append({"ref": ref, "shift_mm": round(shift, 6), "side_changed": layer != old[2]})
+        return moved
+
+    def as_dict(self) -> dict:
+        return {"board_area_mm2": self.area_mm2, "track_length_mm": self.track_length_mm,
+                "via_count": self.via_count}
 
 
-def arm_record(name: str, original: dict, final: dict | None, *, preview: dict, verification: dict | None,
-               applied: bool, wall_seconds: float) -> dict:
-    """Describe one arm. `final` is None when nothing was applied."""
-    record = {"arm": name, "status": preview.get("status"), "run_id": preview.get("run_id"),
-              "preview_opens": preview.get("best_preview_opens"), "applied": applied,
-              "wall_seconds": round(wall_seconds, 3)}
-    measured = final or original
-    record.update({key: measured[key] for key in ("board_area_mm2", "track_length_mm", "via_count")})
-    record["moved_parts"] = moved_parts(original, final) if final else []
-    if verification is None:
-        record.update(verified_opens=None, native_passed=False)
-    else:
-        native = verification["native"]
-        record.update(verified_opens=native["open_connections"], native_passed=bool(native["passed"]))
-    return record
+@dataclass(frozen=True)
+class ArmResult:
+    name: str
+    preview: dict
+    metrics: BoardMetrics
+    moved_parts: list
+    applied: bool
+    verified_opens: int | None
+    native_passed: bool
+    wall_seconds: float
+
+    @property
+    def passes(self) -> bool:
+        return self.applied and self.verified_opens == 0 and self.native_passed
+
+    @property
+    def rank(self) -> tuple:
+        return (self.metrics.area_mm2, len(self.moved_parts), self.metrics.track_length_mm,
+                self.metrics.via_count)
+
+    def added_to(self, base: BoardMetrics) -> dict:
+        return {"track_length_mm": round(self.metrics.track_length_mm - base.track_length_mm, 6),
+                "via_count": self.metrics.via_count - base.via_count, "moved_parts": len(self.moved_parts)}
+
+    def as_dict(self) -> dict:
+        return {"arm": self.name, "status": self.preview.get("status"), "run_id": self.preview.get("run_id"),
+                "preview_opens": self.preview.get("best_preview_opens"), "applied": self.applied,
+                "apply_error": self.preview.get("apply_error"), "verified_opens": self.verified_opens,
+                "native_passed": self.native_passed, "wall_seconds": round(self.wall_seconds, 3),
+                "moved_parts": self.moved_parts, **self.metrics.as_dict()}
 
 
-def _passes(arm: dict) -> bool:
-    return bool(arm["applied"] and arm["verified_opens"] == 0 and arm["native_passed"])
+class Verdict:
+    """Keep the smallest verified board and measure what moving cost."""
+
+    def __init__(self, fixed: ArmResult, moves: ArmResult, original: BoardMetrics):
+        self.fixed, self.moves, self.original = fixed, moves, original
+
+    @property
+    def fixed_stalled(self) -> bool:
+        opens = self.fixed.verified_opens or self.fixed.preview.get("best_preview_opens") or 0
+        return not self.fixed.passes and opens > 0
+
+    @property
+    def kept(self) -> ArmResult | None:
+        return min((arm for arm in (self.fixed, self.moves) if arm.passes), key=lambda a: a.rank, default=None)
+
+    def as_dict(self) -> dict:
+        kept = self.kept
+        both = self.fixed.passes and self.moves.passes
+        return {"kept": kept.name if kept else None, "fixed_stalled": self.fixed_stalled,
+                "moves_reached_zero_opens": self.moves.passes,
+                "criterion_met": self.fixed_stalled and self.moves.passes,
+                "moves_added_vs_original": self.moves.added_to(self.original) if self.moves.passes else None,
+                "moves_vs_fixed": self.moves.added_to(self.fixed.metrics) if both else None}
 
 
-def decide(fixed: dict, moves: dict, original: dict) -> dict:
-    """Choose the smallest fully routed verified board and measure what moving cost."""
-    passing = [arm for arm in (fixed, moves) if _passes(arm)]
-    keep = min(passing, key=lambda arm: (arm["board_area_mm2"], len(arm["moved_parts"]),
-                                         arm["track_length_mm"], arm["via_count"]),
-               default=None)
-    stalled = not _passes(fixed) and (fixed["verified_opens"] or fixed["preview_opens"] or 0) > 0
+class StudyArm:
+    """Route one private copy, apply the result there, then read it back through KiCad."""
 
-    def delta(arm: dict, base: dict) -> dict:
-        return {"track_length_mm": round(arm["track_length_mm"] - base["track_length_mm"], 6),
-                "via_count": arm["via_count"] - base["via_count"], "moved_parts": len(arm["moved_parts"])}
+    def __init__(self, native: Native, project: ProjectPaths, snapshot: SourceSnapshot,
+                 storage: ProjectStorage, budget: Budget, *, allow_placement: bool):
+        self.native, self.project, self.snapshot = native, project, snapshot
+        self.storage, self.budget, self.allow_placement = storage, budget, allow_placement
+        self.name = "moves" if allow_placement else "fixed"
 
-    return {
-        "kept": keep["arm"] if keep else None,
-        "fixed_stalled": stalled,
-        "moves_reached_zero_opens": _passes(moves),
-        "criterion_met": stalled and _passes(moves),
-        # Copper added relative to the saved board, whichever arm completed.
-        "moves_added_vs_original": delta(moves, original) if _passes(moves) else None,
-        # A direct comparison needs both arms to have finished routing.
-        "moves_vs_fixed": delta(moves, fixed) if _passes(fixed) and _passes(moves) else None,
-    }
+    def measure(self, working: ProjectPaths) -> BoardMetrics:
+        return BoardMetrics.from_geometry(jobs.inspect(self.native, working)["geometry"])
 
+    def copy_policy(self, working: ProjectPaths) -> None:
+        caller = self.storage.legacy.relative_to(self.project.root)
+        for target, source in {caller / "config/autopcb.json": self.storage.config_file("autopcb.json"),
+                               **{caller / "design" / n: self.storage.data_file(n)
+                                  for n in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json")}}.items():
+            if source.is_file():
+                (working.root / target).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, working.root / target)
 
-def _copy_evidence(project: ProjectPaths, storage: ProjectStorage, working: ProjectPaths) -> dict:
-    caller = storage.legacy.relative_to(project.root)
-    sources = {caller / "config/autopcb.json": storage.config_file("autopcb.json"),
-               **{caller / "design" / name: storage.data_file(name)
-                  for name in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json")}}
-    if not sources[caller / "config/autopcb.json"].is_file():
-        raise ValueError("Create and review the project routing policy before the placement study.")
-    copied = {}
-    for name, source in sources.items():
-        if source.is_file():
-            target = working.root / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            copied[name] = (source, sha(source))
-    return copied
-
-
-def run_arm(native: Native, project: ProjectPaths, snapshot: SourceSnapshot, storage: ProjectStorage,
-            name: str, *, rounds: int, seconds: int, memory_gib: float, original: dict | None = None) -> dict:
-    import time
-
-    with jobs.isolated(project, snapshot) as working:
-        _copy_evidence(project, storage, working)
-        inner = ProjectStorage(working.root)
-        before = original or board_metrics(jobs.inspect(native, working)["geometry"])
-        start = time.perf_counter()
-        preview = layout.preview(native, working, rounds=rounds, seconds=seconds, memory_gib=memory_gib,
-                                 allow_placement=name == "moves", storage=inner)
-        applied = False
-        if isinstance(preview.get("run_id"), str) and preview.get("best_preview_opens") is not None:
-            try:
-                layout.apply(native, working, preview["run_id"], storage=inner)
-                applied = True
-            except RuntimeError as error:
-                preview = {**preview, "apply_error": str(error)}
-        wall = time.perf_counter() - start
-        final = verification = None
-        if applied:
-            final = board_metrics(jobs.inspect(native, working)["geometry"])
-            verification = jobs.verify(native, working, storage=inner)
-    record = arm_record(name, before, final, preview=preview, verification=verification,
-                        applied=applied, wall_seconds=wall)
-    if "apply_error" in preview:
-        record["apply_error"] = preview["apply_error"]
-    return record
+    def __call__(self, original: BoardMetrics) -> ArmResult:
+        with jobs.isolated(self.project, self.snapshot) as working:
+            self.copy_policy(working)
+            inner = ProjectStorage(working.root)
+            start = time.perf_counter()
+            preview = layout.preview(self.native, working, rounds=self.budget.rounds,
+                                     seconds=self.budget.seconds, memory_gib=self.budget.memory_gib,
+                                     allow_placement=self.allow_placement, storage=inner)
+            applied = isinstance(preview.get("run_id"), str) and preview.get("best_preview_opens") is not None
+            if applied:
+                try:
+                    layout.apply(self.native, working, preview["run_id"], storage=inner)
+                except RuntimeError as error:
+                    applied, preview = False, {**preview, "apply_error": str(error)}
+            wall = time.perf_counter() - start
+            metrics, opens, passed = original, None, False
+            if applied:
+                metrics = self.measure(working)
+                native = jobs.verify(self.native, working, storage=inner)["native"]
+                opens, passed = native["open_connections"], bool(native["passed"])
+        return ArmResult(self.name, preview, metrics, metrics.moved_from(original) if applied else [],
+                         applied, opens, passed, wall)
 
 
-def placement_study(native: Native, project: ProjectPaths, *, rounds: int, seconds: int, memory_gib: float,
-                    storage: ProjectStorage | None = None) -> dict:
-    if not 1 <= rounds <= 500 or not 1 <= seconds <= 1800:
-        raise ValueError("Study rounds or seconds are outside the supported range")
-    storage = storage or ProjectStorage(project.root)
-    snapshot = SourceSnapshot.capture(project)
-    original = board_metrics(jobs.inspect(native, project)["geometry"])
-    arms = {name: run_arm(native, project, snapshot, storage, name, rounds=rounds, seconds=seconds,
-                          memory_gib=memory_gib, original=original) for name in ARMS}
-    snapshot.verify_unchanged()
-    return {"schema_version": 1, "kind": "placement_study",
-            "same_input_sha256": snapshot.hashes,
-            "budget": {"rounds": rounds, "seconds_per_batch": seconds, "memory_gib": memory_gib},
-            "original": {key: original[key] for key in ("board_area_mm2", "track_length_mm", "via_count")},
-            "arms": arms, "verdict": decide(arms["fixed"], arms["moves"], original),
-            "toolchain": native.status()}
+class PlacementStudy:
+    def __init__(self, native: Native, project: ProjectPaths, budget: Budget,
+                 storage: ProjectStorage | None = None):
+        self.native, self.project, self.budget = native, project, budget
+        self.storage = storage or ProjectStorage(project.root)
+
+    def run(self) -> dict:
+        snapshot = SourceSnapshot.capture(self.project)
+        original = BoardMetrics.from_geometry(jobs.inspect(self.native, self.project)["geometry"])
+        fixed, moves = (StudyArm(self.native, self.project, snapshot, self.storage, self.budget,
+                                 allow_placement=allow)(original) for allow in (False, True))
+        return {"schema_version": 1, "kind": "placement_study", "same_input_sha256": snapshot.hashes,
+                "budget": self.budget.as_dict(), "original": original.as_dict(),
+                "arms": {"fixed": fixed.as_dict(), "moves": moves.as_dict()},
+                "verdict": Verdict(fixed, moves, original).as_dict(), "toolchain": self.native.status()}

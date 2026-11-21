@@ -155,9 +155,9 @@ def _run(args) -> dict:
         return benchmark(native, project, args.baseline, rounds=args.rounds, seconds=args.seconds,
                          memory_gib=args.memory_gib, storage=storage)
     if args.action == "placement-study":
-        from autopcb.placement_study import placement_study
-        report = placement_study(native, project, rounds=args.rounds, seconds=args.seconds,
-                                 memory_gib=args.memory_gib, storage=storage)
+        from autopcb.placement_study import Budget, PlacementStudy
+        report = PlacementStudy(native, project, Budget(args.rounds, args.seconds, args.memory_gib),
+                                storage).run()
         if args.output:
             jobs.write_json(args.output, report)
         return report

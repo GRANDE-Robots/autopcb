@@ -69,19 +69,19 @@ class ArmTests(unittest.TestCase):
     def run_arms(self, apply_error=None):
         calls = []
 
-        def preview(native, project, **kwargs):
+        def preview(self, **kwargs):
             calls.append(kwargs)
             return {"status": "preview", "run_id": "a" * 32,
                     "best_preview_opens": 0 if kwargs["allow_placement"] else 4}
 
-        def apply(*args, **kwargs):
+        def apply(self, run_id):
             if apply_error and not calls[-1]["allow_placement"]:
                 raise RuntimeError(apply_error)
 
         original = study.BoardMetrics.from_geometry(geometry())
         with (patch.object(study.jobs, "isolated", lambda *a: contextlib.nullcontext(SimpleNamespace(root="/x"))),
               patch.object(study.StudyArm, "copy_policy"),
-              patch.object(study.layout, "preview", preview), patch.object(study.layout, "apply", apply),
+              patch.object(study.Layout, "preview", preview), patch.object(study.Layout, "apply", apply),
               patch.object(study.jobs, "inspect", lambda *a: {"geometry": geometry(lengths=(7.0,))}),
               patch.object(study.jobs, "verify", lambda *a, **k: {"native": {"open_connections": 0, "passed": True}})):
             results = [study.StudyArm(None, SimpleNamespace(root="/x"), None, SimpleNamespace(),

@@ -7,7 +7,8 @@ import shutil
 import time
 from dataclasses import dataclass, field
 
-from autopcb import jobs, layout
+from autopcb import jobs
+from autopcb.layout import Layout
 from autopcb.native import Native
 from core.paths import ProjectStorage
 from core.project import ProjectPaths, SourceSnapshot
@@ -140,13 +141,14 @@ class StudyArm:
             self.copy_policy(working)
             inner = ProjectStorage(working.root)
             start = time.perf_counter()
-            preview = layout.preview(self.native, working, rounds=self.budget.rounds,
-                                     seconds=self.budget.seconds, memory_gib=self.budget.memory_gib,
-                                     allow_placement=self.allow_placement, storage=inner)
+            routing = Layout(self.native, working, inner)
+            preview = routing.preview(rounds=self.budget.rounds, seconds=self.budget.seconds,
+                                      memory_gib=self.budget.memory_gib,
+                                      allow_placement=self.allow_placement)
             applied = isinstance(preview.get("run_id"), str) and preview.get("best_preview_opens") is not None
             if applied:
                 try:
-                    layout.apply(self.native, working, preview["run_id"], storage=inner)
+                    routing.apply(preview["run_id"])
                 except RuntimeError as error:
                     applied, preview = False, {**preview, "apply_error": str(error)}
             wall = time.perf_counter() - start
@@ -170,7 +172,7 @@ class PlacementStudy:
         original = BoardMetrics.from_geometry(jobs.inspect(self.native, self.project)["geometry"])
         fixed, moves = (StudyArm(self.native, self.project, snapshot, self.storage, self.budget,
                                  allow_placement=allow)(original) for allow in (False, True))
-        return {"schema_version": 1, "kind": "placement_study", "same_input_sha256": snapshot.hashes,
+        return {"schema_version": 1, "kind": "placement_study", "status": "measured", "same_input_sha256": snapshot.hashes,
                 "budget": self.budget.as_dict(), "original": original.as_dict(),
                 "arms": {"fixed": fixed.as_dict(), "moves": moves.as_dict()},
                 "verdict": Verdict(fixed, moves, original).as_dict(), "toolchain": self.native.status()}

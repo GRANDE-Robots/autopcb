@@ -6,7 +6,8 @@ import math
 from pathlib import Path
 import platform
 
-from autopcb import design, jobs, layout
+from autopcb import design, jobs
+from autopcb.layout import Layout
 from autopcb.native import Native
 from autopcb.workspace import Workspace
 from core.export_helpers import sha
@@ -21,7 +22,7 @@ REFERENCE_PROJECTS = (
 
 def _refuse_apply(native, project, storage, run_id, reason: str) -> None:
     try:
-        layout.apply(native, project, run_id, storage=storage)
+        Layout(native, project, storage).apply(run_id)
     except RuntimeError as error:
         if reason.casefold() in str(error).casefold():
             return
@@ -46,7 +47,7 @@ def _exercise_apply(native, project, storage, run_id, original: SourceSnapshot) 
     finally:
         project.rules.write_bytes(original_rules)
     original.verify_unchanged()
-    applied = layout.apply(native, project, run_id, storage=storage)
+    applied = Layout(native, project, storage).apply(run_id)
     current = SourceSnapshot.capture(project).hashes
     expected = dict(original.hashes)
     expected[project.board.name] = current[project.board.name]
@@ -91,13 +92,13 @@ def _exercise_design(native: Native, workspace: Workspace, case: dict, requireme
     case["stage"] = "route"
     case["applied"] = None
     if case["initial_opens"]:
-        preview = layout.preview(native, project, rounds=rounds, seconds=seconds,
-                                 memory_gib=memory_gib, storage=storage)
+        routing = Layout(native, project, storage)
+        preview = routing.preview(rounds=rounds, seconds=seconds, memory_gib=memory_gib)
         baseline.verify_unchanged()
         case["preview"] = {key: preview.get(key) for key in (
             "status", "run_id", "best_preview_opens", "blocked_nets", "attempted_rounds")}
         if preview["best_preview_opens"] < case["initial_opens"]:
-            compared = layout.compare(native, project, preview["run_id"], storage=storage)
+            compared = routing.compare(preview["run_id"])
             if compared["before"]["tracks"] == compared["after"]["tracks"]:
                 raise RuntimeError("The improved preview has no visible copper changes.")
             case["applied"] = _exercise_apply(native, project, storage, preview["run_id"], baseline)

@@ -210,7 +210,7 @@ def reference_screen(entry: Path) -> dict:
 
 
 def compare(entry: Path, run_id: str) -> dict:
-    from autopcb.layout import _check_id
+    from autopcb.layout import Layout
     from core.paths import asset_root, config_path, stored_result
     from core.project import ProjectPaths
     from pcb.checkpoints import read_config
@@ -220,7 +220,7 @@ def compare(entry: Path, run_id: str) -> dict:
 
     paths = ProjectPaths(entry)
     assets = asset_root(paths.root)
-    state_path = stored_result(paths.root, "autoroute", f"{_check_id(run_id)}.json")
+    state_path = stored_result(paths.root, "autoroute", f"{Layout.check_id(run_id)}.json")
     state = json.loads(state_path.read_text(encoding="utf-8"))
     if state.get("schema") != 1 or state.get("run_id") != run_id:
         raise ValueError("Invalid layout preview record")
@@ -255,13 +255,13 @@ def main() -> int:
         elif args.operation == "compare":
             args.record.write_text(json.dumps(compare(args.board, args.argument), allow_nan=False), encoding="utf-8")
         elif args.operation == "apply":
-            from autopcb.layout import _check_id
+            from autopcb.layout import Layout
             from core.project import ENTRY_ENV, ProjectPaths
             from pcb.net_routing.working_save import save_working
 
             paths = ProjectPaths(args.board)
             os.environ[ENTRY_ENV] = str(paths.entry)
-            result = save_working(paths.root, _check_id(args.argument), apply=True, progress=lambda _message: None)
+            result = save_working(paths.root, Layout.check_id(args.argument), apply=True, progress=lambda _message: None)
             args.record.write_text(json.dumps(result, allow_nan=False), encoding="utf-8")
         else:
             generate(args.board, json.loads(args.record.read_text(encoding="utf-8")))

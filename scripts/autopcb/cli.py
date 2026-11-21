@@ -7,7 +7,8 @@ import json
 import os
 from pathlib import Path
 
-from autopcb import design, jobs, layout
+from autopcb import design, jobs
+from autopcb.layout import Layout
 from autopcb.native import Native
 from autopcb.workspace import Workspace
 from core.project import project_entries
@@ -141,15 +142,15 @@ def _run(args) -> dict:
         jobs.publish_report(target, report)
         return {**report, "report": str(target)}
     if args.action == "configure-layout":
-        return layout.route_policy(native, project, defaults=defaults, storage=storage)
+        return Layout(native, project, storage).policy(defaults=defaults)
     if args.action == "route":
-        return layout.preview(native, project, rounds=args.rounds, seconds=args.seconds,
-                              memory_gib=args.memory_gib, resume=args.resume, renew=args.renew,
-                              allow_placement=args.allow_placement, storage=storage)
+        return Layout(native, project, storage).preview(
+            rounds=args.rounds, seconds=args.seconds, memory_gib=args.memory_gib, resume=args.resume,
+            renew=args.renew, allow_placement=args.allow_placement)
     if args.action == "compare":
-        return layout.compare(native, project, args.run_id, storage=storage)
+        return Layout(native, project, storage).compare(args.run_id)
     if args.action == "apply":
-        return layout.apply(native, project, args.run_id, storage=storage)
+        return Layout(native, project, storage).apply(args.run_id)
     if args.action == "benchmark":
         from autopcb.benchmark import benchmark
         return benchmark(native, project, args.baseline, rounds=args.rounds, seconds=args.seconds,

@@ -19,16 +19,32 @@ from core.project import ENTRY_ENV, ProjectPaths
 
 
 class Benchmark:
-    """Run a baseline checkout and the current engine under one budget on identical copies."""
+    """Run two routing arms under one budget on identical private copies."""
 
-    def __init__(self, native: Native, project: ProjectPaths, baseline: Path, budget: Budget,
+    # One pass per net: no stage escalation, copper rip-up or placement repair.
+    GREEDY = {"stages": 0, "rip_up_candidates": 0, "placement_candidates": 0, "early_rework": False}
+
+    def __init__(self, native: Native, project: ProjectPaths, budget: Budget, arms: tuple,
                  storage: ProjectStorage | None = None):
+        self.native, self.budget, self.arms = native, budget, arms
+        self.copy = PrivateCopy(project, storage or ProjectStorage(project.root))
+
+    @classmethod
+    def versions(cls, native: Native, project: ProjectPaths, baseline: Path, budget: Budget,
+                 storage: ProjectStorage | None = None) -> Benchmark:
+        """Compare a baseline checkout with the current engine."""
         baseline = baseline.resolve()
         if not (baseline / "scripts/run.py").is_file():
             raise ValueError("Select an AutoPCB baseline checkout with scripts/run.py")
-        self.native, self.budget = native, budget
-        self.runners = (("baseline", baseline / "scripts"), ("current", engine_path()))
-        self.copy = PrivateCopy(project, storage or ProjectStorage(project.root))
+        return cls(native, project, budget, (("baseline", baseline / "scripts", None),
+                                             ("current", engine_path(), None)), storage)
+
+    @classmethod
+    def refinement(cls, native: Native, project: ProjectPaths, budget: Budget,
+                   storage: ProjectStorage | None = None) -> Benchmark:
+        """Compare greedy routing with the project's recovery and rework."""
+        return cls(native, project, budget, (("greedy", engine_path(), cls.GREEDY),
+                                             ("refined", engine_path(), None)), storage)
 
     @staticmethod
     def _peak_rss(process: subprocess.Popen) -> int:
@@ -48,8 +64,8 @@ class Benchmark:
             process.wait()
         return peak
 
-    def _measure(self, label: str, scripts: Path) -> dict:
-        with self.copy.open() as (working, _), tempfile.TemporaryFile() as output, \
+    def _measure(self, label: str, scripts: Path, recovery: dict | None) -> dict:
+        with self.copy.open(recovery) as (working, _), tempfile.TemporaryFile() as output, \
                 tempfile.TemporaryFile() as errors:
             env = {**os.environ, "PYTHONPATH": str(scripts), ENTRY_ENV: str(working.entry),
                    "KICAD_CLI": str(self.native.cli)}
@@ -83,7 +99,7 @@ class Benchmark:
                 "last_check": result.get("drc") or result.get("last_result", {}).get("validation")}
 
     def run(self) -> dict:
-        results = [self._measure(label, scripts) for label, scripts in self.runners]
+        results = [self._measure(*arm) for arm in self.arms]
         return {"schema_version": 1, "kind": "routing_benchmark",
                 "status": "measured" if all(item["preview_opens"] is not None for item in results) else "blocked",
                 "same_input_sha256": self.copy.fingerprint, **self.budget.as_dict(),

@@ -518,9 +518,9 @@ class CheckpointTests(unittest.TestCase):
         removed = {"kind": "segment", "uuid": track.m_Uuid.AsString()}
         pcbnew.SaveBoard(str(self.board), board)
         self.before = self.board.read_bytes()
-        a, middle, b = (Point.from_mm(value) for value in ([2, 7], [5, 7], [8, 7]))
+        # Same geometry under new copper: open count unchanged, style clean.
         candidate = Route(
-            (Segment(a, middle, "F.Cu"), Segment(middle, b, "F.Cu")), (), (), 6, 0, 0, 0
+            (Segment(Point.from_mm([2, 7]), Point.from_mm([8, 7]), "F.Cu"),), (), (), 6, 0, 0, 0
         )
         seed = {
             "schema": 1,

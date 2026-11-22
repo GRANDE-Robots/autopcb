@@ -142,6 +142,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         for executable in (old_java, new_java):
             executable.parent.mkdir(parents=True)
             executable.write_bytes(b"")
+            executable.chmod(0o755)
         with (
             patch.object(freeroute_preview, "_java_candidates", return_value=[str(old_java), str(new_java)]),
             patch.object(freeroute_preview, "_java_version", side_effect=[21, 25]),

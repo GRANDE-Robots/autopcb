@@ -14,6 +14,7 @@ import pcbnew
 from pcb.route_optimizer import mm
 from verification import test_net_routing as net_fixtures
 from verification import test_route_optimizer as route_fixtures
+from core.toolchain import kicad_cli
 
 
 class CombinedBatchTests(unittest.TestCase):
@@ -100,7 +101,6 @@ class CombinedBatchTests(unittest.TestCase):
                     self.assertFalse(modeled)
 
     def test_native_drc_agrees_with_diagonal_capsule_clearance(self):
-        import sys
 
         from pcb.route_batch import _previous_obstacles
         from pcb.route_cli import _obstacle
@@ -133,7 +133,7 @@ class CombinedBatchTests(unittest.TestCase):
                 tracks[1].SetStart(pcbnew.VECTOR2I(mm(1), mm(y)))
                 tracks[1].SetEnd(pcbnew.VECTOR2I(mm(1), mm(round(y + .1, 6))))
                 pcbnew.SaveBoard(str(source), board)
-                report = _drc(Path(sys.executable).with_name("kicad-cli.exe"),
+                report = _drc(kicad_cli(),
                               source, root / f"drc_{index}.json")
                 ids = {track.m_Uuid.AsString() for track in tracks}
                 native_collision = any(

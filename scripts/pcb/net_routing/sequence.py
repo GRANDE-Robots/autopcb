@@ -191,6 +191,9 @@ def _stage_replay(
     check_style: bool = False,
 ) -> dict[str, Any]:
     changes, contracts = _parse_replay(replay)
+    if check_style:
+        # Reject seed geometry precisely and cheaply before native validation.
+        _check_seed_geometry(shadow, CampaignPlanner(shadow).plan("pcb", changes).after, changes)
     evidence = validate_routes(board_path, sha(board_path), changes, contracts)
     if (
         evidence["status"] != "no_new_drc_violations"
@@ -209,8 +212,6 @@ def _stage_replay(
     )
     if candidate.result_sha256 != evidence["candidate_sha256"]:
         raise RuntimeError("Replayed preview differs from the validated candidate")
-    if check_style:
-        _check_seed_geometry(shadow, candidate.after, changes)
     board_path.write_bytes(candidate.after)
     if sha(board_path) != candidate.result_sha256:
         raise RuntimeError("Replayed temporary board failed readback")

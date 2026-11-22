@@ -5,11 +5,11 @@ from pathlib import Path
 import tempfile
 
 from pcb.branch_widths import bounded_leaves, check_unchanged_other_rules, compile_widths
+from core.toolchain import kicad_cli
 
 
 class BranchWidthTests(unittest.TestCase):
     def test_terminal_selector_survives_native_units_without_matching_another_trace(self):
-        import sys
         import pcbnew
         from pcb.branch_widths import tap_selector
         from pcb.route_validation import _drc
@@ -40,7 +40,7 @@ class BranchWidthTests(unittest.TestCase):
                 f'(rule "tap" (condition "{condition}") (constraint track_width (min 0.30mm)))\n',
                 encoding='utf-8',
             )
-            report = _drc(Path(sys.executable).with_name('kicad-cli.exe'), source, Path(folder)/'native.json')
+            report = _drc(kicad_cli(), source, Path(folder)/'native.json')
             self.assertEqual(required_widths(report), {trunk.m_Uuid.AsString(): 600000})
 
     def test_multiple_upstream_items_at_one_exact_port_are_one_branch_junction(self):
@@ -199,7 +199,6 @@ class BranchWidthTests(unittest.TestCase):
                                         {'sense': .001}, {'wide'}), {})
 
     def test_native_drc_applies_the_last_net_specific_width_minimum(self):
-        import sys
         import pcbnew
         from core.pcb_io import quiet_duplicate_image_handlers
         from pcb.route_validation import _drc
@@ -221,7 +220,7 @@ class BranchWidthTests(unittest.TestCase):
             rules = source.with_suffix('.kicad_dru')
             base = '(version 1)\n(rule "main" (condition "A.Type == \'Track\'") (constraint track_width (min 0.50mm)))\n'
             rules.write_text(base, encoding='utf-8')
-            cli = Path(sys.executable).with_name('kicad-cli.exe')
+            cli = kicad_cli()
             before = _drc(cli, source, project / 'before.json')
             rules.write_text(base + '(rule "branch" (condition "A.NetName == \'SIGNAL\'") '
                              '(constraint track_width (min 0.20mm)))\n', encoding='utf-8')

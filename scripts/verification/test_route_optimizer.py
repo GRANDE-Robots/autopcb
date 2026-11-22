@@ -17,6 +17,8 @@ from core.campaign_cli import main as campaign_main
 from core.kicad_campaign import CampaignFile, CampaignPlanner, digest
 from pcb.route_cli import main as route_main, plan, save_validated_campaign
 from pcb.route_batch import main as batch_main, plan_batch
+from core.pcb_io import ProjectSettings
+from core.toolchain import kicad_cli
 from pcb.route_native import read_native_obstacles
 from pcb.route_validation import (
     RouteContract,
@@ -61,7 +63,6 @@ def router(**changes) -> GridRouter:
 
 class RouteOptimizerTests(unittest.TestCase):
     def test_centered_plated_oval_and_rectangular_pads_do_not_double_count_hole_clearance(self):
-        import sys
         import pcbnew
         from pcb.route_native import _pad_obstacle
         from core.pcb_io import quiet_duplicate_image_handlers
@@ -69,7 +70,8 @@ class RouteOptimizerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, quiet_duplicate_image_handlers():
             for shape in (pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_RECT, pcbnew.PAD_SHAPE_ROUNDRECT):
                 with self.subTest(shape=shape):
-                    project = Path(folder)
+                    project = Path(folder) / str(shape)
+                    project.mkdir()
                     source = self.make_board(project)
                     board = pcbnew.LoadBoard(str(source))
                     board.GetDesignSettings().m_HoleClearance = mm(.25)
@@ -110,7 +112,7 @@ class RouteOptimizerTests(unittest.TestCase):
                         '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}', encoding='utf-8')
                     report_path = project / 'drc.json'
                     report_path.unlink(missing_ok=True)
-                    report = _drc(Path(sys.executable).with_name('kicad-cli.exe'), source, report_path)
+                    report = _drc(kicad_cli(), source, report_path)
                     self.assertFalse([v for v in report['violations'] if v['type'] in {'clearance', 'hole_clearance'}])
                     pad = pads[0]
                     pad.SetOffset(pcbnew.VECTOR2I(mm(.1), 0))
@@ -126,7 +128,6 @@ class RouteOptimizerTests(unittest.TestCase):
                     self.assertGreaterEqual(_pad_obstacle(board, pad, ('F.Cu',)).min_track_clearance, mm(.25))
 
     def test_plated_pad_hole_margin_is_measured_from_the_drill_not_the_copper_edge(self):
-        import sys
         import pcbnew
         from pcb.route_native import _pad_obstacle
         from core.pcb_io import quiet_duplicate_image_handlers
@@ -170,7 +171,7 @@ class RouteOptimizerTests(unittest.TestCase):
             source.with_suffix('.kicad_pro').write_text('{"board":{"design_settings":{"rules":'
                 '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}', encoding='utf-8')
             from pcb.route_validation import _drc
-            report = _drc(Path(sys.executable).with_name('kicad-cli.exe'), source, project / 'drc.json')
+            report = _drc(kicad_cli(), source, project / 'drc.json')
             self.assertFalse([v for v in report['violations'] if v['type'] in {'clearance', 'hole_clearance'}])
 
     def test_fast_warm_start_can_form_a_complete_standard_dogleg(self):
@@ -909,7 +910,6 @@ class RouteOptimizerTests(unittest.TestCase):
             self.assertTrue(GridRouter._intersects_box(too_close, too_close, obstacle, mm(.5)))
             self.assertEqual(set(obstacle.layers), set(("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")))
             from pcb.route_validation import _drc
-            import sys
 
             via = pcbnew.PCB_VIA(board)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
@@ -917,7 +917,7 @@ class RouteOptimizerTests(unittest.TestCase):
             via.SetDrill(mm(.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
-            cli = Path(sys.executable).with_name("kicad-cli.exe")
+            cli = kicad_cli()
             for index, (position, expected) in enumerate(((clear, False), (too_close, True))):
                 via.SetPosition(pcbnew.VECTOR2I(position.x, position.y))
                 pcbnew.SaveBoard(str(source), board)
@@ -948,7 +948,6 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_rounded_pad_corners_match_kicad_clearance_on_both_axes(self):
         import pcbnew
-        import sys
         from pcb.route_validation import _drc
 
         with tempfile.TemporaryDirectory() as folder:
@@ -977,7 +976,7 @@ class RouteOptimizerTests(unittest.TestCase):
             via.SetDrill(mm(.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
-            cli = Path(sys.executable).with_name("kicad-cli.exe")
+            cli = kicad_cli()
             cases = (
                 (0, point(5.3, 3.2), point(5.25, 3.25)),
                 (90, point(4.8, 2.7), point(4.75, 2.75)),
@@ -1188,7 +1187,6 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_rectangular_pad_corner_clearance_matches_native_drc(self):
         import pcbnew
-        import sys
         from pcb.route_validation import _drc
 
         with tempfile.TemporaryDirectory() as folder:
@@ -1220,7 +1218,7 @@ class RouteOptimizerTests(unittest.TestCase):
             via.SetDrill(mm(.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
-            cli = Path(sys.executable).with_name("kicad-cli.exe")
+            cli = kicad_cli()
             for index, (position, expected) in enumerate(((point(5.12, 5.12), False),
                                                            (point(5.10, 5.10), True))):
                 self.assertEqual(GridRouter._intersects_box(position, position, obstacle, mm(.5)), expected)
@@ -2119,6 +2117,7 @@ class RouteOptimizerTests(unittest.TestCase):
             trace.SetLayer(pcbnew.F_Cu)
             trace.SetNetCode(other.GetNetCode())
             board.Add(trace)
+        ProjectSettings(source).write()
         pcbnew.SaveBoard(str(source), board)
         text = source.read_text(encoding="utf-8")
         text = text.replace(

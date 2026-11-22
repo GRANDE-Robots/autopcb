@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from verification import test_route_optimizer as route_fixtures
 from pcb.route_validation import _drc
+from core.toolchain import kicad_cli
 
 
 class PrepareTests(unittest.TestCase):
@@ -52,14 +52,14 @@ class PrepareTests(unittest.TestCase):
     def test_native_drc_includes_every_severity(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-all-severities-") as tmp:
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             report = _drc(cli, source, Path(tmp) / "drc.json")
             self.assertTrue({"error", "warning", "exclusion"} <= set(report["included_severities"]))
 
     def test_native_parity_failure_cannot_be_reported_as_zero_findings(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-missing-schematic-") as tmp:
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             # KiCad 10 can exit successfully and emit an empty parity array
             # even though it failed to fetch the schematic netlist.
             with self.assertRaisesRegex(RuntimeError, "(?i)parity|schematic"):
@@ -101,7 +101,7 @@ class PrepareTests(unittest.TestCase):
             (project / "v4.1.kicad_sch").write_text(schematic, encoding="utf-8")
             # The route fixture intentionally writes a partial synthetic stackup;
             # let KiCad normalize it before recording this test's baseline.
-            cli = Path(sys.executable).with_name("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+            cli = kicad_cli()
             _drc(cli, source, project / "fixture-drc.json", save_refill=True)
             before = {p.name: p.read_bytes() for p in project.iterdir() if p.is_file()}
             result = api.prepare_project(project)

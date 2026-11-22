@@ -3,6 +3,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from core.toolchain import kicad_cli
 
 
 class WidthRepairTests(unittest.TestCase):
@@ -47,7 +48,6 @@ class WidthRepairTests(unittest.TestCase):
             self.assertFalse(redundant_terminal_ends(board, {uid}, rules))
 
     def test_interior_shift_widens_without_removing_the_old_junctions(self):
-        import sys
         import pcbnew
         from core.pcb_io import copper_boundary
         from pcb.route_validation import _drc
@@ -82,7 +82,7 @@ class WidthRepairTests(unittest.TestCase):
             candidate = plan_shifted_widening(project, uid, 500000, (0, 125000))
             self.assertIsNotNone(candidate)
             self.assertEqual(path.read_bytes(), original)
-            cli = Path(sys.executable).with_name('kicad-cli.exe')
+            cli = kicad_cli()
             before = _drc(cli, path, project / 'before.json')
             path.write_bytes(candidate)
             after = _drc(cli, path, project / 'after.json')
@@ -91,7 +91,6 @@ class WidthRepairTests(unittest.TestCase):
             self.assertFalse(after['unconnected_items'])
 
     def test_coordinated_widening_releases_an_obstructed_track_without_narrowing_neighbor(self):
-        import sys
         import pcbnew
         from pcb.net_routing.protection import ProtectedState
         from pcb.route_validation import _drc
@@ -127,7 +126,7 @@ class WidthRepairTests(unittest.TestCase):
             original = path.read_bytes()
             protection = ProtectedState.capture(original, b'', preserve_all_placement=True)
             path.write_bytes(width_candidate(project, {target: 600000}))
-            cli = Path(sys.executable).with_name('kicad-cli.exe')
+            cli = kicad_cli()
             direct = _drc(cli, path, project/'obstacles.json')
             self.assertEqual(coupled_neighbors(direct, {target}, {blocker}), {target: (blocker,)})
             self.assertEqual(coupled_neighbors(direct, {target}, set()), {})
@@ -191,7 +190,6 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.route_optimizer import GridRouter, Point, mm
         from pcb.route_validation import _drc
         from verification.test_route_optimizer import RouteOptimizerTests
-        import sys
 
         with tempfile.TemporaryDirectory() as folder:
             source = RouteOptimizerTests.make_board(Path(folder))
@@ -234,7 +232,7 @@ class WidthRepairTests(unittest.TestCase):
                 pcbnew.SaveBoard(str(source), board)
                 result = Path(folder)/'native.json'
                 result.unlink(missing_ok=True)
-                report = _drc(Path(sys.executable).with_name('kicad-cli.exe'), source, result)
+                report = _drc(kicad_cli(), source, result)
                 self.assertEqual(any(v['type'] == 'items_not_allowed' for v in report['violations']),
                                  forbidden)
                 board.Remove(segment)
@@ -478,9 +476,8 @@ class WidthRepairTests(unittest.TestCase):
             source.with_suffix('.kicad_dru').write_text('(version 1)')
             original = source.read_bytes()
             protected = ProtectedState.capture(original,b'',preserve_all_placement=True)
-            import sys
             from pcb.route_validation import _drc
-            cli = Path(sys.executable).with_name('kicad-cli.exe')
+            cli = kicad_cli()
             before_drc = _drc(cli,source,project/'before.json')
             copper = dict(_configured_copper_thicknesses(original))
             a, b = thin.GetStart(), thin.GetEnd()
@@ -845,7 +842,6 @@ class WidthRepairTests(unittest.TestCase):
         self.assertEqual(deferred, {'a', 'b'})
 
     def test_native_width_inventory_exceeds_kicads_199_per_type_reporting_limit(self):
-        import sys
         import pcbnew
         from core.pcb_io import quiet_duplicate_image_handlers
         from pcb.route_validation import _drc
@@ -868,7 +864,7 @@ class WidthRepairTests(unittest.TestCase):
             source.with_suffix('.kicad_dru').write_text('(version 1)\n(rule "power" '
                 '(condition "A.Type == \'Track\'") (constraint track_width (min 0.5mm)))', encoding='utf-8')
             original, rules = source.read_bytes(), source.with_suffix('.kicad_dru').read_bytes()
-            report = _drc(Path(sys.executable).with_name('kicad-cli.exe'), source, project / 'drc.json')
+            report = _drc(kicad_cli(), source, project / 'drc.json')
             self.assertEqual(sum(v['type'] == 'track_width' for v in report['violations']), 210)
             self.assertEqual(source.read_bytes(), original)
             self.assertEqual(source.with_suffix('.kicad_dru').read_bytes(), rules)

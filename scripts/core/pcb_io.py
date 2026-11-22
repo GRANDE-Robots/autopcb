@@ -60,6 +60,40 @@ def net_classes(board: Any) -> dict[str, Any]:
     return {str(name): value for name, value in board.GetAllNetClasses().items()}
 
 
+class ProjectSettings:
+    """Have KiCad write the complete project file beside a board.
+
+    KiCad 10.0.8 saves boards without project settings and will not save them
+    once that board is open, so write them before the board's first save.
+    """
+
+    def __init__(self, board: Path):
+        self.path = str(Path(board).with_suffix(".kicad_pro"))
+
+    @property
+    def complete(self) -> bool:
+        import json
+
+        try:
+            data = json.loads(Path(self.path).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return False
+        return isinstance(data, dict) and "net_settings" in data
+
+    def write(self) -> None:
+        import pcbnew
+
+        if self.complete:
+            return
+        manager = pcbnew.GetSettingsManager()
+        manager.LoadProject(self.path, False)  # False for a new project, which KiCad still creates
+        project = manager.GetProject(self.path)
+        saved = manager.SaveProject(self.path, project)
+        manager.UnloadProject(project, False)
+        if not saved:
+            raise RuntimeError("KiCad failed to write the project settings")
+
+
 def enabled_copper_layers(board: Any) -> tuple[str, ...]:
     """Return only enabled physical copper layers, in stack order."""
     return tuple(str(board.GetLayerName(layer)) for layer in board.GetEnabledLayers().CuStack())

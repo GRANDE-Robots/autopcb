@@ -13,7 +13,7 @@ import itertools
 import math
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pcb.net_routing.checkpoint import route_access_inset, search_window
@@ -25,6 +25,7 @@ from pcb.route_optimizer import (
     GridRouter,
     NoGridRoute,
     Point,
+    Route,
     SearchBudgetExceeded,
     SearchLimitReached,
     Segment,
@@ -34,10 +35,26 @@ from pcb.route_optimizer import (
 
 
 @dataclass(frozen=True, slots=True)
+class Corridor:
+    """A relaxed diagnostic route: where the blocked net wants to pass."""
+
+    route: Route
+    profile: object
+    target: str
+    via_size: int
+    clearance: int
+
+    def blocked_by(self, shapes) -> bool:
+        return bool(obstruction_hits(self.route, {"shapes": tuple(shapes)}, self.profile,
+                                     self.target, self.via_size, self.clearance))
+
+
+@dataclass(frozen=True, slots=True)
 class RepairWitness:
     identifiers: frozenset[str]
     route_cost: float
     change_cost: float
+    corridor: Corridor | None = field(default=None, compare=False)
 
     @property
     def score(self) -> float:
@@ -168,8 +185,12 @@ def local_escape_witnesses(router, anchor, soft, costs, check, *, max_expanded=5
     return sorted(found.values(), key=lambda item: (item.score, sorted(item.identifiers)))
 
 
-def diagnose(board, anchors, records, settings, recovery, critical_nets, weights):
-    """Sample alternate corridors, retaining exact obstructing copper UUIDs."""
+def diagnose(board, anchors, records, settings, recovery, critical_nets, weights, *, movable=None):
+    """Sample alternate corridors, retaining exact obstructing copper UUIDs.
+
+    ``movable`` maps footprint UUIDs to a move cost. Their pads are relaxed
+    like eligible copper, so a witness can name parts as well as copper.
+    """
     import pcbnew
 
     started = time.monotonic()
@@ -183,6 +204,7 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
     physical = enabled_copper_layers(board)
     layers = tuple(settings.get("layers", physical))
     ids = {record.uuid for record in records}
+    movable = movable or {}
     hard, soft, costs = [], {}, {}
     for pad in board.GetPads():
         active = tuple(
@@ -190,8 +212,15 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
         )
         if pad.GetDrillSize().x or pad.GetDrillSize().y:
             active = physical
-        if active:
-            hard.append(_pad_obstacle(board, pad, active))
+        if not active:
+            continue
+        shape = _pad_obstacle(board, pad, active)
+        owner = pad.GetParentFootprint().m_Uuid.AsString()
+        if owner in movable:
+            soft[owner] = (*soft.get(owner, ()), shape)
+            costs[owner] = movable[owner]
+        else:
+            hard.append(shape)
     for item in board.GetTracks():
         active = tuple(
             layer for layer in physical if item.IsOnLayer(board.GetLayerID(layer))
@@ -299,7 +328,8 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
             identity = frozenset(hit)
             if identity:
                 witness = RepairWitness(
-                    identity, route.cost, sum(costs[uid] for uid in identity)
+                    identity, route.cost, sum(costs[uid] for uid in identity),
+                    Corridor(route, profile, target, size, clearance),
                 )
                 found.setdefault(identity, witness)
                 # Keep each expensive obstruction fixed in alternate searches.

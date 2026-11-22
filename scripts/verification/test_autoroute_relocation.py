@@ -534,6 +534,59 @@ class RelocationTests(unittest.TestCase):
                 placement_cost(board, {"R50": (4, 3, 90)}, ReworkWeights()), 2
             )
 
+    def test_routing_diagnosis_moves_the_part_that_blocks_the_only_corridor(self):
+        # Locked walls close the top layer and leave one bottom-layer gap,
+        # which R50 fills. Two nearer bottom parts block nothing.
+        def part(board, reference, at, size, net, *, bottom, locked=False):
+            footprint = fixture.NativeNetRoutingTests.add_pad(
+                board, reference, at, bottom=bottom, net_name=net
+            )
+            pad = next(iter(footprint.Pads()))
+            pad.SetShape(pcbnew.PAD_SHAPE_RECT)
+            pad.SetSize(pcbnew.VECTOR2I(mm(size[0]), mm(size[1])))
+            footprint.Reference().SetVisible(False)
+            footprint.Value().SetVisible(False)
+            footprint.SetLocked(locked)
+            return footprint
+
+        with tempfile.TemporaryDirectory(prefix="autopcb-guided-move-") as folder:
+            project = Path(folder)
+            source = boards.RouteOptimizerTests.make_board(project)
+            board = pcbnew.LoadBoard(str(source))
+            for name in ("WALL", "BACK", "OTHER", "NEAR1", "NEAR2"):
+                board.Add(pcbnew.NETINFO_ITEM(board, name))
+            part(board, "W1", (6, 4), (0.6, 7.0), "WALL", bottom=False, locked=True)
+            part(board, "W2", (6, 3.05), (0.6, 5.1), "BACK", bottom=True, locked=True)
+            part(board, "R50", (6, 6.7), (0.6, 1.6), "OTHER", bottom=True)
+            part(board, "R51", (1, 3.5), (0.5, 0.5), "NEAR1", bottom=True)
+            part(board, "R52", (9, 3), (0.5, 0.5), "NEAR2", bottom=True)
+            pcbnew.SaveBoard(str(source), board)
+            (project / "v4.1.kicad_sch").write_text("(kicad_sch (lib_symbols))")
+            request = fixture.NativeNetRoutingTests.config()
+            request["shared"].update(layers=["F.Cu", "B.Cu"], step_mm=0.25)
+            request.update(max_islands=2, recovery_stage=4)
+            policy = {"route": request["shared"], "max_pins": 2}
+            anchors = (Site(Point.from_mm((2, 2)), "F.Cu"), Site(Point.from_mm((8, 5)), "F.Cu"))
+            candidates, descriptions = placement_requests(
+                pcbnew.LoadBoard(str(source)), request, policy, RecoveryPolicy(), anchors, ()
+            )
+            self.assertEqual(descriptions[0]["selection"], "path_obstruction_move", descriptions)
+            self.assertEqual(descriptions[0]["references"], ["R50"])
+            self.assertTrue(descriptions[0]["clears_corridor"])
+            before = source.read_bytes()
+            fixed = dict(request, search={**request["search"], "seconds": 20})
+            self.assertNotEqual(preview_round(project, [fixed], workers=1)["status"], "validated_preview")
+            for candidate in candidates:
+                candidate["search"].update(seconds=40, path_calls=100, net_path_calls=80)
+                result = preview_round(project, [candidate], workers=1)
+                if result["status"] == "validated_preview":
+                    break
+            self.assertEqual(result["status"], "validated_preview",
+                             {key: result.get(key) for key in ("status", "reason")})
+            self.assertEqual(result["validation"]["bottom_footprint_moves"], ["R50"])
+            self.assertEqual(result["validation"]["candidate_unconnected"], 0)
+            self.assertEqual(source.read_bytes(), before)
+
     def test_placement_generator_skips_new_courtyard_overlap(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-courtyard-pose-") as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))

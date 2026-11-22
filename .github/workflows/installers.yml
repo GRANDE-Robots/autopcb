@@ -1,0 +1,30 @@
+name: Installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: |
+          python -m pip install ".[desktop-build]"
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Build installer
+        run: |
+          python packaging/build_desktop.py --output "$env:RUNNER_TEMP\installer"
+          Get-FileHash "$env:RUNNER_TEMP\installer\*.exe" -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autopcb-windows-installer
+          path: ${{ runner.temp }}/installer/*.exe
+          if-no-files-found: error

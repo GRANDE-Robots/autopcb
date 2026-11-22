@@ -17,7 +17,7 @@ from pcb.footprint_pose import native_pose_change
 from pcb.move_scope import MoveScope
 from pcb.route_constraints import ExistingVia
 from pcb.route_native import read_native_obstacles
-from pcb.route_optimizer import Point, Segment, mm
+from pcb.route_optimizer import PadCopper, Point, Segment, mm
 from pcb.route_validation import (
     RouteContract,
     _copy_inputs,
@@ -227,6 +227,44 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
     )
 
 
+class PadCore:
+    """Rectangles that lie inside a pad's copper, one per routing layer.
+
+    A track end inside one is anchored on the pad, as the saved-board style
+    check treats it. Rotated, offset or custom pads give none.
+    """
+
+    def __call__(self, pad, layers: dict[str, int]) -> tuple[tuple[str, int, int, int, int], ...]:
+        import pcbnew
+
+        angle = pad.GetOrientationDegrees() % 180
+        if angle not in (0, 90):
+            return ()
+        at, result = pad.GetPosition(), []
+        for name, layer in layers.items():
+            offset, size, shape = pad.GetOffset(layer), pad.GetSize(layer), pad.GetShape(layer)
+            if not pad.IsOnLayer(layer) or offset.x or offset.y:
+                continue
+            width, height = (int(size.y), int(size.x)) if angle else (int(size.x), int(size.y))
+            if shape == pcbnew.PAD_SHAPE_RECT:
+                dx, dy = width // 2, height // 2
+            elif shape == pcbnew.PAD_SHAPE_ROUNDRECT:
+                radius = int(pad.GetRoundRectCornerRadius(layer))
+                dx, dy = width // 2 - radius, height // 2 - radius
+            elif shape == pcbnew.PAD_SHAPE_OVAL:
+                dx, dy = ((width - height) // 2, height // 2) if width >= height else (width // 2, (height - width) // 2)
+            elif shape == pcbnew.PAD_SHAPE_CIRCLE:
+                dx = dy = int(width / 2 / math.sqrt(2))
+            else:
+                continue
+            if dx >= 0 and dy >= 0:
+                result.append((name, int(at.x) - dx, int(at.y) - dy, int(at.x) + dx, int(at.y) + dy))
+        return tuple(result)
+
+
+pad_core = PadCore()
+
+
 def discover(board, name: str, layers: tuple[str, ...], budget: Budget,
              *, include_zone_access: bool = False, zone_via_margin: int = 0) -> NativeNet:
     import pcbnew
@@ -346,7 +384,9 @@ def discover(board, name: str, layers: tuple[str, ...], budget: Budget,
         islands = list(_zone_access_sites(
             board, name, layers, islands, pad_sites, budget, zone_via_margin
         ))
-    net = Net(name, tuple(islands), tuple(s for s, _ in tracks), pad_sites)
+    routing = {layer: layer_ids[layer] for layer in layers}
+    copper = PadCopper(tuple(box for pad in pads.values() for box in pad_core(pad, routing)))
+    net = Net(name, tuple(islands), tuple(s for s, _ in tracks), pad_sites, copper)
     return NativeNet(net, tuple(tracks), tuple(vias), unsupported)
 
 

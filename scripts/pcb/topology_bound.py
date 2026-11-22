@@ -134,6 +134,7 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
         goal_id = glayer * area + gy * nx + gx
         distance[goal_id] = 0
         queue.append((0.0, goal_id))
+    heapq.heapify(queue)
     edge = router.clearance + math.ceil(router.width / 2)
     via_edge = router.clearance + math.ceil(router.via_size / 2)
     xmin, ymin, xmax, ymax = grid_bounds(router, edge)

@@ -44,6 +44,7 @@ from pcb.net_routing.protection import ProtectedState
 from pcb.net_routing.reference import high_speed_nets, reference_conflicts, sample_reference
 from pcb.net_routing.style import audit_style, normalize_segment_identities
 from pcb.route_validation import _drc, _segment_identities
+from core.toolchain import RouterCache
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,8 +203,7 @@ def probe(project: Path, *, seconds: int = 45, progress=None, engine: str = "fas
             progress({"event": "stage", "message": message})
 
     project = project.resolve()
-    exe = Path.home() / ".kicad-mcp" / "fastroute-0.1.14" / "fastroute.exe"
-    krt_root = Path.home() / ".kicad-mcp" / "kicad-routing-tools-0.23.7"
+    exe, krt_root = RouterCache.fastroute(), RouterCache.krt()
     if engine == "fastroute":
         if not exe.is_file() or hashlib.sha256(exe.read_bytes()).hexdigest() != FASTROUTE_014_SHA256:
             raise RuntimeError("The verified fastroute binary is unavailable or changed")

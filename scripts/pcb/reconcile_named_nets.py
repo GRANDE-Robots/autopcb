@@ -28,9 +28,7 @@ retagged without moving any geometry.
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
-import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -39,18 +37,7 @@ from pathlib import Path
 import pcbnew
 
 from core.pcb_io import BoardSaveGuard
-
-
-def find_kicad_cli() -> str:
-    """Prefer the CLI installed beside KiCad's bundled Python."""
-
-    adjacent = Path(sys.executable).with_name("kicad-cli.exe")
-    if adjacent.is_file():
-        return str(adjacent)
-    cli = shutil.which("kicad-cli")
-    if cli:
-        return cli
-    raise RuntimeError("Could not locate kicad-cli next to KiCad Python or on PATH.")
+from core.toolchain import kicad_cli
 
 
 def export_schematic_data(
@@ -62,7 +49,7 @@ def export_schematic_data(
         netlist = Path(temp_dir) / "schematic.net.xml"
         subprocess.run(
             [
-                find_kicad_cli(),
+                str(kicad_cli()),
                 "sch",
                 "export",
                 "netlist",

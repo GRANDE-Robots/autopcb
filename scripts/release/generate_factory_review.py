@@ -11,7 +11,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -38,6 +37,7 @@ from core.export_helpers import (
 )
 from core.factory_scope import export_factory_scope
 from core.pcb_io import copper_width
+from core.toolchain import kicad_cli
 
 
 def main():
@@ -58,10 +58,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for n in ["gerbers", "assembly", "evidence", "sourcing", "views"]:
         (M / n).mkdir(parents=True, exist_ok=True)
-    CLI = str((a.cli or Path(sys.executable).with_name("kicad-cli.exe")).resolve())
-    require(
-        Path(CLI).is_file(), "Pass --cli for the KiCad CLI installed with this Python"
-    )
+    CLI = str(kicad_cli(a.cli))
     boards = list(P.glob("*.kicad_pcb"))
     schematics = list(P.glob("*.kicad_sch"))
     require(

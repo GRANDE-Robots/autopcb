@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from core.project import ProjectPaths, SourceSnapshot
+from core.toolchain import kicad_cli
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,24 +47,6 @@ class ErcAudit:
                 "qualification are separate."
             ),
         }
-
-
-def find_cli(requested: Path | None = None) -> Path:
-    """Use an explicitly selected CLI, an environment override, or KiCad 10."""
-    candidate = requested or (
-        Path(os.environ["KICAD_CLI"]) if os.environ.get("KICAD_CLI") else None
-    )
-    if candidate is None:
-        found = shutil.which("kicad-cli")
-        candidate = (
-            Path(found)
-            if found
-            else Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe")
-        )
-    candidate = candidate.resolve()
-    if not candidate.is_file():
-        raise FileNotFoundError(f"KiCad CLI was not found: {candidate}")
-    return candidate
 
 
 def audit(project: ProjectPaths, cli: Path) -> ErcAudit:
@@ -150,7 +132,7 @@ def main() -> int:
             parser.error("--out must be a new file in an existing directory")
 
     try:
-        result = audit(project, find_cli(args.cli))
+        result = audit(project, kicad_cli(args.cli))
     except (OSError, ValueError, RuntimeError) as error:
         print(f"ERC audit failed: {error}", file=sys.stderr)
         return 2

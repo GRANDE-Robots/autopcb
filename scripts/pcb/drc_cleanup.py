@@ -12,11 +12,11 @@ from itertools import combinations
 import hashlib
 import json
 from pathlib import Path
-import sys
 import time
 
 from core.kicad_campaign import CampaignPlanner
 from core.paths import asset_root
+from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, copper_boundary, quiet_duplicate_image_handlers
 
 
@@ -275,7 +275,7 @@ def repair(project: Path, *, apply: bool = False, keepouts: bool = False) -> dic
     policy_bytes = policy.read_bytes()
     policy_hash = hashlib.sha256(policy_bytes).hexdigest()
     config = json.loads(policy_bytes)
-    cli = Path(sys.executable).with_name('kicad-cli.exe')
+    cli = kicad_cli()
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
         with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             guard = BoardSaveGuard(snapshot.source, tuple(snapshot.fingerprints.items()) + ((policy, policy_hash),))

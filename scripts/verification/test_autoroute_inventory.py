@@ -127,11 +127,11 @@ class BoardInventoryTests(unittest.TestCase):
             orphan.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(orphan)
             pcbnew.SaveBoard(str(source), board)
-            point = lambda x, y: Point.from_mm([x, y])
-            segments = (Segment(point(2, 2), point(5, 2), "F.Cu"), Segment(point(5, 2), point(8, 5), "F.Cu"))
+            a, bend, b = (Point.from_mm(value) for value in ([2, 2], [5, 2], [8, 5]))
+            segments = (Segment(a, bend, "F.Cu"), Segment(bend, b, "F.Cu"))
             candidate = Route(segments, (), (), 0, 0, 0, 0)
             changes = campaign_changes(candidate, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
-            contract = RouteContract("SIGNAL", point(2, 2), "F.Cu", point(8, 5), "F.Cu")
+            contract = RouteContract("SIGNAL", a, "F.Cu", b, "F.Cu")
             with self.assertRaisesRegex(RuntimeError, "copper.*island"):
                 validate_routes(source, hashlib.sha256(source.read_bytes()).hexdigest(), changes, [contract], require_full_nets=True)
 

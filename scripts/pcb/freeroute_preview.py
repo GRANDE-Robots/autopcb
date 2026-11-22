@@ -31,6 +31,7 @@ from typing import Any
 from core.kicad_sexpr import parse, quote
 from pcb.net_routing.prepare import summarize_drc
 from pcb.route_validation import _copy_inputs, _drc as _native_drc
+from core.toolchain import RouterCache
 
 FASTROUTE_014_SHA256 = "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714ddae23f1e5"
 
@@ -38,7 +39,7 @@ FASTROUTE_014_SHA256 = "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714dd
 def _java_executable(value: str) -> str:
     resolved = shutil.which(value)
     if not resolved:
-        raise ValueError("Java was not found; supply the path to java.exe")
+        raise ValueError("Java was not found; supply the path to the java executable")
     path = Path(resolved)
     if path.suffix.lower() in {".cmd", ".bat"}:
         # A common Windows shim is just an executable path followed by %*.
@@ -48,7 +49,7 @@ def _java_executable(value: str) -> str:
             r'\s*@echo\s+off\s*\r?\n\s*"([^"\r\n]+)"\s+%\*\s*', text, re.I
         )
         if not match or not Path(match.group(1)).is_file():
-            raise ValueError("Java is a batch wrapper; supply the path to java.exe")
+            raise ValueError("Java is a batch wrapper; supply the path to the java executable")
         path = Path(match.group(1))
     return str(path)
 
@@ -81,9 +82,10 @@ def _java_candidates() -> list[str]:
         candidates.append(str(Path(os.environ["JAVA_HOME"]) / "bin" / ("java.exe" if os.name == "nt" else "java")))
     if shutil.which("java"):
         candidates.append("java")
-    private = Path.home() / ".kicad-mcp"
+    private = RouterCache.root()
     if private.is_dir():
-        candidates.extend(str(path) for path in private.glob("java*/**/bin/java.exe"))
+        name = "java.exe" if os.name == "nt" else "java"
+        candidates.extend(str(path) for path in private.glob(f"java*/**/bin/{name}"))
     return list(dict.fromkeys(candidates))
 
 
@@ -909,10 +911,9 @@ def preview(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
-    router_cache = Path.home() / ".kicad-mcp"
-    newest = router_cache / "freerouting-2.5.0.jar"
+    newest = RouterCache.freerouting()
     parser.add_argument(
-        "--jar", type=Path, default=newest if newest.is_file() else router_cache / "freerouting.jar"
+        "--jar", type=Path, default=newest if newest.is_file() else RouterCache.root() / "freerouting.jar"
     )
     parser.add_argument("--java", default="auto", help="Java executable, or auto to find a compatible runtime")
     parser.add_argument("--passes", type=int, default=1)

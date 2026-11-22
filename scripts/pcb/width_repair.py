@@ -13,13 +13,13 @@ import json
 import math
 from pathlib import Path
 import re
-import sys
 import tempfile
 import time
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import parse
 from core.paths import asset_root, data_path
+from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, copper_boundary, file_sha256, quiet_duplicate_image_handlers, typed_copper
 
 
@@ -1110,9 +1110,7 @@ def repair(project: Path, *, apply: bool = False, max_checks: int = 16,
     policy = json.loads(policy_bytes)
     if policy.get('electrically_verified') is not False:
         raise ValueError('Width targets must retain their unqualified electrical status')
-    cli = Path(sys.executable).with_name('kicad-cli.exe')
-    if not cli.is_file():
-        raise ValueError('Native KiCad validation tool not found')
+    cli = kicad_cli()
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
         with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             dependencies = dict(snapshot.fingerprints)

@@ -31,6 +31,7 @@ from core.paths import long_path
 from pcb.route_validation import _copy_inputs, _drc, _inputs
 from review.geometry_metrics import GeometryMetrics, measure_board
 from review.refresh_gallery import ReviewSnapshot
+from core.toolchain import kicad_cli
 
 CSV_NAME = "routing_progress.csv"
 PNG_NAME = "routing_progress.png"
@@ -219,11 +220,8 @@ def check_saved_board(
     project = long_path(project)
     files, before, signature = _fingerprint(project)
     board = native_path(project, ".kicad_pcb")
-    cli = kicad_python.parent / (
-        "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
-    )
-    if not cli.is_file():
-        raise ValueError("KiCad CLI was not found beside KiCad Python")
+    adjacent = kicad_python.parent / ("kicad-cli.exe" if os.name == "nt" else "kicad-cli")
+    cli = kicad_cli(adjacent if adjacent.is_file() else None)
     with tempfile.TemporaryDirectory(prefix="jessie-progress-drc-") as directory:
         scratch = Path(directory)
         _copy_inputs(

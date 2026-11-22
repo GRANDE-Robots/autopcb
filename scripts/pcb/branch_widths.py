@@ -16,10 +16,10 @@ import json
 import math
 import os
 from pathlib import Path
-import sys
 import tempfile
 
 from core.paths import asset_root
+from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, file_sha256, quiet_duplicate_image_handlers, typed_copper
 from pcb.net_routing.native import Snapshot
 from pcb.route_validation import _drc
@@ -461,9 +461,7 @@ def main(argv=None) -> int:
         if candidate == original:
             print('Branch-width rules already match the current terminal topology')
             return 0
-        cli = Path(sys.executable).with_name('kicad-cli.exe')
-        if not cli.is_file():
-            raise ValueError('Native KiCad validation tool not found')
+        cli = kicad_cli()
         print('Checking original and terminal-aware rules on the same private PCB', flush=True)
         before = _drc(cli, snapshot.board_path, snapshot.directory / 'before.json', schematic_parity=True)
         snapshot.board_path.with_suffix('.kicad_dru').write_text(candidate, encoding='utf-8')

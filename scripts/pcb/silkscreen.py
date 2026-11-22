@@ -12,12 +12,12 @@ import math
 import os
 from pathlib import Path
 import re
-import sys
 import tempfile
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import Form, parse, quote
 from core.paths import asset_root
+from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, file_sha256, quiet_duplicate_image_handlers
 from pcb.route_validation import _canonical, _drc
 
@@ -488,7 +488,7 @@ def cleanup(project: Path, *, apply: bool = False, top_alignment: bool = False) 
     assets = asset_root(project)
     policy_path = assets / 'config' / 'silkscreen.json'
     config = json.loads(policy_path.read_bytes())
-    cli = Path(sys.executable).with_name('kicad-cli.exe')
+    cli = kicad_cli()
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
         with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             dependencies = dict(snapshot.fingerprints)

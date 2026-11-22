@@ -50,6 +50,7 @@ from pcb.net_routing.runner import (
 )
 from pcb.net_routing.via_prune import copper_removal_changes
 from pcb.route_validation import stable_connection_items
+from core.toolchain import RouterCache
 
 
 @dataclass(frozen=True, slots=True)
@@ -1077,11 +1078,9 @@ def run_one(project: Path, run_id: str, *, ordinal: int, timeout: int, cleanup: 
         raise ValueError("Invalid source routing preview")
     started = time.monotonic()
     unchanged_scope = None
-    router_cache = Path.home() / ".kicad-mcp"
-    routers = {"krt": Path(krt_router).resolve() if krt_router else router_cache / "kicad-routing-tools-0.23.7",
-               "fastroute": router_cache / "fastroute-0.1.14" / "fastroute.exe",
-               "Freerouting": Path(freerouting_jar).resolve() if freerouting_jar else
-               router_cache / "freerouting-2.5.0.jar"}
+    routers = {"krt": Path(krt_router).resolve() if krt_router else RouterCache.krt(),
+               "fastroute": RouterCache.fastroute(),
+               "Freerouting": Path(freerouting_jar).resolve() if freerouting_jar else RouterCache.freerouting()}
     fingerprints: dict[str, str] = {}
     if "krt" in {engine, followup_engine}:
         from pcb.net_routing import krt_adapter

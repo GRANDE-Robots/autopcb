@@ -3,34 +3,13 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
 from core.kicad_campaign import Plan
 from core.kicad_sexpr import parse
-
-
-def find_cli(requested: Path | None = None) -> Path:
-    """Resolve an explicit CLI or the one next to the current KiCad Python."""
-    if requested is not None:
-        candidate = requested
-    elif os.environ.get("KICAD_CLI"):
-        candidate = Path(os.environ["KICAD_CLI"])
-    else:
-        adjacent = Path(sys.executable).parent / (
-            "kicad-cli.exe" if os.name == "nt" else "kicad-cli"
-        )
-        found = shutil.which("kicad-cli")
-        candidate = (
-            adjacent if adjacent.is_file() else Path(found) if found else adjacent
-        )
-    candidate = candidate.resolve()
-    if not candidate.is_file():
-        raise FileNotFoundError(f"KiCad CLI was not found: {candidate}")
-    return candidate
+from core.toolchain import kicad_cli
 
 
 def _run_export(
@@ -72,7 +51,7 @@ def validate_library(plan: Plan, cli: Path, *, timeout: int = 60) -> None:
     """Require KiCad to export each candidate symbol or footprint in isolation."""
     if timeout < 1:
         raise ValueError("Validation timeout must be positive")
-    cli = find_cli(cli)
+    cli = kicad_cli(cli)
     temp_root = Path(tempfile.gettempdir()).resolve()
     with tempfile.TemporaryDirectory(
         prefix="jessie-library-validate-", dir=temp_root

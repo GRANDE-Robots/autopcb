@@ -43,6 +43,7 @@ from pcb.net_routing.runner import (
     _save,
     _source_hashes,
 )
+from core.toolchain import RouterCache
 
 
 def focus_open_nets(members: set[str], classes: dict[str, str], opens: dict[str, int],
@@ -621,7 +622,7 @@ def run_batches(project: Path, run_id: str, *, batches: int, items: int, timeout
     run_id = _run_id(run_id)
     if engine not in {"auto", "Freerouting", "fastroute", "krt"}:
         raise ValueError("Unsupported routing engine")
-    rust_binary = Path.home() / ".kicad-mcp" / "fastroute-0.1.14" / "fastroute.exe"
+    rust_binary = RouterCache.fastroute()
     if engine == "auto":
         engine = ("fastroute" if (jar.suffix.lower() != ".jar" if jar else rust_binary.is_file())
                   else "Freerouting")
@@ -641,8 +642,8 @@ def run_batches(project: Path, run_id: str, *, batches: int, items: int, timeout
             or not isinstance(router_grid_mm, (float, int)) or not math.isfinite(router_grid_mm)
             or router_grid_mm <= 0)):
         raise ValueError("The router grid must be a positive finite number of millimetres")
-    default = (Path.home() / ".kicad-mcp" / "freerouting-2.5.0.jar" if engine == "Freerouting" else
-               Path.home() / ".kicad-mcp" / "kicad-routing-tools-0.23.7" if engine == "krt" else rust_binary)
+    default = (RouterCache.freerouting() if engine == "Freerouting" else
+               RouterCache.krt() if engine == "krt" else rust_binary)
     jar = (jar or default).resolve()
     if progress:
         progress(f"Routing engine: {engine}")

@@ -31,6 +31,7 @@ from typing import Any
 
 from core.kicad_campaign import CampaignFile, CampaignPlanner, Plan, digest
 from core.pcb_io import BoardSaveGuard
+from core.toolchain import kicad_cli
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -178,11 +179,7 @@ def _dependencies(project: Path, source: Path) -> list[Path]:
 
 
 def _schematic_validation(plan: Plan, project: Path) -> None:
-    cli = Path(sys.executable).parent / (
-        "kicad-cli.exe" if os.name == "nt" else "kicad-cli"
-    )
-    if not cli.is_file():
-        raise RuntimeError(f"KiCad CLI is required to validate the schematic: {cli}")
+    cli = kicad_cli()
     with tempfile.TemporaryDirectory(prefix="jessie-campaign-sch-") as directory:
         temporary = Path(directory)
         source = temporary / plan.source.name

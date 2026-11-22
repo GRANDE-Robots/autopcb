@@ -41,6 +41,11 @@ def inspect(source: Path) -> dict:
 
 
 def generate(path: Path, spec: dict) -> None:
+    # SaveBoard does not write project settings in every KiCad 10 release, and
+    # KiCad refuses to save them once a board is open. Complete them first.
+    manager, project = pcb.GetSettingsManager(), str(path.with_suffix(".kicad_pro"))
+    if not manager.LoadProject(project) or not manager.SaveProject(project, manager.GetProject(project)):
+        raise RuntimeError("KiCad failed to write the project settings")
     xml = ET.parse(spec["netlist"])
     board = pcb.BOARD()
     board.SetFileName(str(path))

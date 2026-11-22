@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.resources
 import json
+import math
 from pathlib import Path
 import re
 from uuid import UUID, uuid5
@@ -41,8 +42,24 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
     for token, count in (("two", 2), ("four", 4), ("six", 6), ("eight", 8)):
         if re.search(rf"\b{token}[ -]*layers?\b", normalized):
             limits["layers"].add(count)
-    dimensions = re.findall(r"\b(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*mm\b", normalized)
+    number = r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))"
+    unit = r"(mm|cm|inch(?:es)?|in|mils?)"
+    rectangles = re.finditer(rf"(?<![\w.]){number}\s*{unit}?\s*(?:[x×]|\bby\b)\s*{number}"
+                             rf"(?:\s*{unit}\b)?(?!\w)", normalized)
+    scales = {"mm": 1, "cm": 10, "in": 25.4, "inch": 25.4, "inches": 25.4, "mil": 0.0254, "mils": 0.0254}
     unresolved = []
+    dimensions = []
+    maximum_requested = False
+    for match in rectangles:
+        w, u, h, v = match.groups()
+        if u or v:
+            dimensions.append([float(w) * scales[u or v], float(h) * scales[v or u]])
+            maximum_requested = bool(
+                re.search(r"\b(?:at most|up to|no larger than|within|max(?:imum)?(?: board size)?)"
+                          r"\s*(?:is |of |a |[:=]\s*)?$", normalized[:match.start()])
+                or re.match(r"\s*(?:max(?:imum)?\b|or smaller\b)", normalized[match.end():]))
+        elif not re.fullmatch(r"0x[\da-f]+", match.group()):
+            unresolved.append("Give board dimensions in mm, cm, inches or mils.")
     if len(matches) != 1:
         unresolved.append("Choose one supported circuit function or supply a catalog for this design.")
     if len(limits["supply_v"]) != 1:
@@ -57,8 +74,14 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
             unresolved.append("The requested supply is outside the characterized circuit range.")
         if len(limits["layers"]) == 1 and next(iter(limits["layers"])) not in recipe["layers"]:
             unresolved.append(f"The characterized layout supports layer counts {recipe['layers']}.")
-        size = [float(n) for n in dimensions[0]] if dimensions else recipe["size_mm"]
-        if not all(upper >= low for upper, low in strict_zip(size, recipe["minimum_mm"])):
+        size = dimensions[0] if dimensions else recipe["size_mm"]
+        fixed = re.search(r"\b(?:fixed|existing|nominal|catalog|default) (?:board size|outline|board dimensions)\b",
+                          normalized)
+        compact = "compact_outline" in recipe and not fixed and (not dimensions or maximum_requested)
+        if compact and maximum_requested:
+            size = [min(limit, nominal) for limit, nominal in strict_zip(size, recipe["size_mm"])]
+        if not all(math.isfinite(upper) and 0 < low <= upper
+                   for upper, low in strict_zip(size, recipe["minimum_mm"])):
             unresolved.append("The requested outline is smaller than the catalog layout envelope.")
         if key == "usb" and re.search(r"\b(high[ -]speed|super[ -]speed|usb\s*3|480\s*m)", normalized):
             unresolved.append("This reference circuit covers full-speed USB 2.0 only.")
@@ -73,6 +96,20 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
                                   for ref, values in recipe["parts"].items()})
         if "pair_layout" in recipe:
             result["pair_layout"] = recipe["pair_layout"]
+        if compact:
+            outline = recipe["compact_outline"]
+            if not isinstance(outline, dict):
+                raise ValueError("Expected a compact outline configuration in the catalog.")
+            groups = outline.get("movable_groups")
+            margin = outline.get("margin_mm")
+            if (type(margin) not in (int, float) or not math.isfinite(margin) or margin <= 0
+                    or not isinstance(groups, list)
+                    or any(not isinstance(g, list) or not g or
+                           any(not isinstance(ref, str) or ref not in recipe["parts"] for ref in g) for g in groups)
+                    or len({ref for g in groups for ref in g}) != sum(map(len, groups))):
+                raise ValueError("The catalog needs a positive edge margin and disjoint groups of known parts.")
+            result["compact_outline"] = {"minimum_mm": recipe["minimum_mm"], "margin_mm": margin,
+                                         "movable_groups": groups}
     result["status"] = "blocked" if unresolved else "proposed"
     result["proposal_id"] = digest(result)
     return result

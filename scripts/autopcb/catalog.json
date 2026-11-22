@@ -160,6 +160,10 @@
         28,
         20
       ],
+      "compact_outline": {
+        "margin_mm": 1.0,
+        "movable_groups": [["U1", "C1", "R1", "R2"]]
+      },
       "assumptions": [
         "The host supplies regulated power and is the I2C controller.",
         "The design uses address 0x18, 4.7 kΩ pull-ups and leaves ALERT open. Check bus capacitance and any existing pull-ups."
@@ -260,6 +264,10 @@
         30,
         25
       ],
+      "compact_outline": {
+        "margin_mm": 1.0,
+        "movable_groups": []
+      },
       "assumptions": [
         "The connector breaks out USB signals to the attached device. This circuit contains no USB controller or bus termination.",
         "The host supplies VBUS, and the connector shield is tied to the board return. Review the enclosure grounding.",

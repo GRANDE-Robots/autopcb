@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import math
+from itertools import groupby
 from dataclasses import asdict, dataclass
 
 import pcbnew
@@ -53,6 +54,14 @@ class ReferenceConflict:
 
 
 @dataclass(frozen=True)
+class ReferenceGap:
+    first_station: int
+    last_station: int
+    position: tuple[int, int]
+    missing_samples: int
+
+
+@dataclass(frozen=True)
 class TrackReference:
     item_id: str
     net: str
@@ -62,6 +71,22 @@ class TrackReference:
     samples: tuple[tuple[int, int, bool], ...]
     missing_samples: int
     continuous_polygon: bool
+
+
+    def missing_runs(self) -> tuple[ReferenceGap, ...]:
+        """Locate contiguous gaps using the two edges and center at each station."""
+        runs = []
+        stations = range(0, len(self.samples), 3)
+        for covered, offsets in groupby(stations, lambda i: all(s[2] for s in self.samples[i:i + 3])):
+            if covered:
+                continue
+            group = list(offsets)
+            middle = group[len(group) // 2]
+            left, center, right = self.samples[middle:middle + 3]
+            x, y, _ = next(s for s in (center, left, right) if not s[2])
+            count = sum(not s[2] for s in self.samples[group[0]:group[-1] + 3])
+            runs.append(ReferenceGap(group[0] // 3, group[-1] // 3, (x, y), count))
+        return tuple(runs)
 
 
 @dataclass(frozen=True)

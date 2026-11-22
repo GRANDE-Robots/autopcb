@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 
 from autopcb import design, jobs
 from autopcb.layout import Budget, Layout
@@ -14,9 +15,25 @@ from autopcb.workspace import Workspace
 from core.project import project_entries
 
 
+class DesktopWorkspace:
+    @staticmethod
+    def select(requested: Path | None) -> Path:
+        if requested is not None:
+            return requested
+        if sys.platform != "win32" or not getattr(sys, "frozen", False):
+            return Path(".")
+        local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        workspace = local / "AutoPCB" / "Workspace"
+        try:
+            workspace.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise ValueError(f"Could not create the AutoPCB workspace at {workspace}: {error}") from error
+        return workspace
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="autopcb", description="Plan, check, and export native KiCad designs")
-    root.add_argument("--workspace", type=Path, default=Path("."), help="root for config, data and results")
+    root.add_argument("--workspace", type=Path, help="root for config, data and results")
     root.add_argument("--project", type=Path, help="KiCad file or project directory")
     root.add_argument("--kicad-cli", type=Path)
     root.add_argument("--kicad-python", type=Path)
@@ -27,6 +44,8 @@ def parser() -> argparse.ArgumentParser:
     qualification.add_argument("--rounds", type=int, default=20)
     qualification.add_argument("--seconds", type=int, default=10)
     qualification.add_argument("--memory-gib", type=float)
+    qualification.add_argument("--fixed-outlines", action="store_true",
+                               help="qualify the nominal catalog sizes as a control for compact placement")
     commands.add_parser("discover", help="list native project entries")
     propose = commands.add_parser("propose", help="design from a requirements text file")
     propose.add_argument("requirements", type=Path, nargs="?", help="defaults to data/requirements.txt")
@@ -84,12 +103,12 @@ def parser() -> argparse.ArgumentParser:
 
 
 def _run(args) -> dict:
-    workspace = Workspace(args.workspace)
+    workspace = Workspace(args.workspace or Path("."))
     if args.action == "qualify":
         from autopcb.qualification import qualify
 
         return qualify(args.output, cli=args.kicad_cli, python=args.kicad_python, rounds=args.rounds,
-                       seconds=args.seconds, memory_gib=args.memory_gib)
+                       seconds=args.seconds, memory_gib=args.memory_gib, fixed_outlines=args.fixed_outlines)
     if args.action == "discover":
         entries = workspace.entries() if args.project is None else project_entries(
             args.project if args.project.is_dir() else args.project.parent
@@ -181,7 +200,21 @@ def main(argv: list[str] | None = None) -> int:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop)
-    args = parser().parse_args(argv)
+    command = parser()
+    args = command.parse_args(argv)
+    if args.action == "desktop":
+        from autopcb.desktop import main as launch
+
+        try:
+            workspace = DesktopWorkspace.select(args.workspace)
+        except ValueError as error:
+            command.error(str(error))
+        return launch(args.project or workspace, args.kicad_cli, args.kicad_python, workspace=workspace)
+    try:
+        Native.prepare_windows_cli()
+    except OSError as error:
+        command.error(f"Could not restore Windows library search paths: {error}")
+    args.workspace = args.workspace or Path(".")
     if args.action == "campaign":
         from core.launcher import main as legacy
 
@@ -226,9 +259,6 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             pass
         return 0
-    if args.action == "desktop":
-        from autopcb.desktop import main as launch
-        return launch(args.project or args.workspace, args.kicad_cli, args.kicad_python, workspace=args.workspace)
     try:
         report = _run(args)
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
@@ -236,7 +266,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         report = {"schema_version": 1, "kind": args.action, "status": "cancelled"}
     print(json.dumps(report, ensure_ascii=True, indent=2, allow_nan=False))
-    return {"blocked": 2, "qualification_incomplete": 2, "cancelled": 130}.get(report["status"], 0)
+    return {"blocked": 2, "stalled": 2, "interrupted": 2, "failed": 2,
+            "qualification_incomplete": 2, "cancelled": 130}.get(report["status"], 0)
 
 
 def desktop_main() -> int:

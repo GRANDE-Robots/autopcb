@@ -52,6 +52,15 @@ from pcb.route_validation import (
 from core.compat import strict_zip
 
 
+class PreviewStatus:
+    @staticmethod
+    def stopped(state: dict) -> str:
+        if state["queue"]:
+            return "paused"
+        opens = state.get("best_preview_opens")
+        return "preview_zero_opens" if type(opens) is int and opens == 0 else "stalled"
+
+
 def _source_hashes(snapshot: Snapshot, project: Path, assets: Path) -> dict[str, str]:
     result = {snapshot.input_name(path).as_posix(): digest for path, digest in snapshot.fingerprints.items()}
     for name in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json"):
@@ -419,6 +428,10 @@ def read_status(project: Path, run_id: str) -> dict:
         else:
             state["status"] = "interrupted"
             state["failure"] = "No active routing lock; the last saved checkpoint was retained."
+    if state.get("status") == "stalled" and state.get("queue") == [] and not state.get("failure"):
+        # Older runs used "stalled" for every empty queue. Interpret the saved
+        # measurement for display without rewriting the historical checkpoint.
+        state["status"] = PreviewStatus.stopped(state)
     result = {key: value for key, value in state.items() if key not in {"checkpoint", "queue", "reference", "island_counts"}}
     result["resume_action"] = _resume_action_for_project(project, state)
     reference = state.get("reference", {})
@@ -1557,10 +1570,8 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
                                   "remaining_rounds": len(state["queue"]),
                                   "round_seconds": time.monotonic() - round_started,
                                   "preview_opens": state["best_preview_opens"], "saved_opens": state["saved_board_opens"]})
-            state["status"] = "paused" if state["queue"] else "stalled"
-            state["blockers"] = ["Electrical validation and paired USB/Ethernet routing are not implemented.",
-                                 "Reference-plane sampling is not a complete signal-integrity verification.",
-                                 "Preview candidates cannot be published to the saved PCB."]
+            state["status"] = PreviewStatus.stopped(state)
+            state["blockers"] = ["Checked manufacturing export requires independent design checks and a source-bound electrical review."]
             _check_sources(snapshot, project, assets, inputs, policy_path, policy_hash)
             _progress_elapsed(state, sha(snapshot.board_path))
             _publish_progress(project, inputs, state, progress)

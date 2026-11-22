@@ -16,7 +16,7 @@ tbody tr:last-child td{background:#e4f1ee}
 
 <div class="priority">
 <strong>Open connections → Channel symmetry → Layout cost</strong>
-Candidates must meet clearance, electrical limits, and protected geometry rules.
+Board-level ranking follows feasibility. Connectivity previews use measured open counts and native checks.
 </div>
 
 ## Board score
@@ -32,7 +32,7 @@ $$
 
 ## Placement
 
-Component $i$ has pose $x_i$, with position $p_i$, rotation $\theta_i$, and side $b_i$. For net $n$, the pin bounding box has width $W_n$, height $H_n$, and net weight $w_n$. The placement score $\widehat C_{\mathrm{place}}$ adds half-perimeter wirelength to estimates for congestion $C_{\mathrm{cong}}$, spacing $C_{\mathrm{prox}}$, and movement.
+Component $i$ has pose $x_i$, with position $p_i$, rotation $\theta_i$, and side $b_i$. For net $n$, its pin bounding box has width $W_n$, height $H_n$, and weight $w_n$. A joint placement model can combine these spans with estimated congestion $C_{\mathrm{cong}}$, spacing $C_{\mathrm{prox}}$, and movement. The current catalog fitter uses the area objective below.
 
 $$
 x_i=(p_i,\theta_i,b_i),\qquad
@@ -41,6 +41,8 @@ x_i=(p_i,\theta_i,b_i),\qquad
 $$
 
 **Recovery.** Route a blocked net with the pads of movable parts relaxed. By default that is every part not locked in KiCad; the placement policy can limit it to one side or to SMD parts. Move the parts that relaxed route crosses first, with poses that clear it before the rest, then the nearest parts. Each move is tried on a copy, affected nets are rerouted, and native checks decide.
+
+**Flexible outline.** For new catalog boards, minimize rectangular area $A=WH$ within the approved width and height limits. Fit the original poses and try sliding authorized groups in both axis orders. Keep each group's geometry, the edge margin and corridor spacing. Equal areas favor less movement. Measure the finished outline on the native edge centerlines. Routing and verification then establish connectivity. Recovery on an existing board reroutes eligible moves within its fixed outline.
 
 ## Checkpoints and search
 
@@ -117,7 +119,7 @@ $$
 | Step | Required evidence |
 | --- | --- |
 | Preview | Refill zones. Check native rules, protected geometry, and retained connectivity. At budget exhaustion, keep the best checked preview and report opens. |
-| Apply | Match saved inputs and policy. Check the editor lock and keep a recoverable board copy. |
+| Apply | Connectivity runs require fewer opens. Dedicated cleanup modes can prove an equal-open improvement. Match saved inputs and policy, check the editor lock and keep a recoverable board copy. |
 | **Checked export** | **Zero opens and clean DRC, ERC, and schematic parity.** Bind electrical review and reference findings to the exact sources. Track hardware and production approval separately. |
 
 Resume with matching inputs. Renew after tool changes. Start a fresh preview after a source or policy change.

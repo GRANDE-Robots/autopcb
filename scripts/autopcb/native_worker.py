@@ -29,24 +29,60 @@ class BoardGeometry:
     def point(item) -> list[float]:
         return [pcb.ToMM(item.x), pcb.ToMM(item.y)]
 
+    def contours(self, polygons) -> list:
+        rings = []
+        for index in range(polygons.OutlineCount()):
+            outline = polygons.Outline(index)
+            rings.append([self.point(outline.CPoint(i)) for i in range(outline.PointCount())])
+            for hole in range(polygons.HoleCount(index)):
+                inner = polygons.CHole(index, hole)
+                rings.append([self.point(inner.CPoint(i)) for i in range(inner.PointCount())])
+        return rings
+
+    def pad(self, pad, stack) -> dict:
+        layer = next((layer for layer in stack if pad.IsOnLayer(layer)), None)
+        result = {"number": pad.GetNumber(), "net": pad.GetNetname(), "at": self.point(pad.GetPosition()),
+                  "size": self.point(pad.GetSize()),
+                  "contours": self.contours(pad.GetEffectivePolygon(layer)) if layer is not None else []}
+        if pad.GetDrillSize().x > 0:
+            hole = pad.GetEffectiveHoleShape()
+            result["hole"] = {"start": self.point(hole.GetStart()), "end": self.point(hole.GetEnd()), "width_mm": pcb.ToMM(hole.GetWidth())}
+        return result
+
+    def drawn(self, item, layer: int) -> list:
+        shape = pcb.SHAPE_POLY_SET()
+        item.TransformShapeToPolygon(shape, layer, 0, pcb.FromMM(0.01), pcb.ERROR_INSIDE)
+        return self.contours(shape)
+
+    def track(self, track) -> dict:
+        layer = track.GetLayer()
+        result = {"net": track.GetNetname(), "layer": self.board.GetLayerName(layer),
+                  "start": self.point(track.GetStart()), "end": self.point(track.GetEnd()),
+                  "via": isinstance(track, pcb.PCB_VIA), "arc": isinstance(track, pcb.PCB_ARC),
+                  "width_mm": pcb.ToMM(copper_width(track, layer=layer)), "length_mm": pcb.ToMM(track.GetLength())}
+        if result["via"]:
+            result["drill_mm"] = pcb.ToMM(track.GetDrillValue())
+        elif result["arc"]:
+            result["contours"] = self.drawn(track, layer)
+        return result
+
     def as_dict(self) -> dict:
-        board, point = self.board, self.point
+        board = self.board
         edges = board.GetBoardEdgesBoundingBox()
+        outline = pcb.SHAPE_POLY_SET()
+        closed_outline = board.GetBoardPolygonOutlines(outline, False)
+        stack = tuple(board.GetEnabledLayers().CuStack())
         return {
-            "copper_layers": enabled_copper_layers(board),
-            "thickness_mm": pcb.ToMM(board.GetDesignSettings().GetBoardThickness()),
-            "bounds": [point(edges.GetOrigin()), point(edges.GetEnd())],
-            "footprints": [{"ref": fp.GetReference(), "at": point(fp.GetPosition()), "locked": fp.IsLocked(),
-                            "layer": board.GetLayerName(fp.GetLayer()),
-                            "pads": [{"number": pad.GetNumber(), "net": pad.GetNetname(),
-                                      "at": point(pad.GetPosition()), "size": point(pad.GetSize())}
-                                     for pad in fp.Pads()]}
+            "copper_layers": enabled_copper_layers(board), "thickness_mm": pcb.ToMM(board.GetDesignSettings().GetBoardThickness()),
+            "bounds": [self.point(edges.GetOrigin()), self.point(edges.GetEnd())],
+            "outline": self.contours(outline) if closed_outline else [],
+            "footprints": [{"ref": fp.GetReference(), "at": self.point(fp.GetPosition()), "locked": fp.IsLocked(),
+                            "layer": board.GetLayerName(fp.GetLayer()), "label_at": self.point(fp.Reference().GetPosition()),
+                            "front_silk": [self.drawn(item, pcb.F_SilkS) for item in fp.GraphicalItems()
+                                           if item.GetLayer() == pcb.F_SilkS and isinstance(item, pcb.PCB_SHAPE)],
+                            "pads": [self.pad(pad, stack) for pad in fp.Pads()]}
                            for fp in sorted(board.GetFootprints(), key=lambda fp: fp.GetReference())],
-            "tracks": [{"net": tr.GetNetname(), "layer": board.GetLayerName(tr.GetLayer()),
-                        "start": point(tr.GetStart()), "end": point(tr.GetEnd()),
-                        "via": isinstance(tr, pcb.PCB_VIA), "arc": isinstance(tr, pcb.PCB_ARC),
-                        "width_mm": pcb.ToMM(copper_width(tr, layer=tr.GetLayer())),
-                        "length_mm": pcb.ToMM(tr.GetLength())} for tr in board.GetTracks()],
+            "tracks": [self.track(track) for track in board.GetTracks()],
         }
 
 
@@ -120,8 +156,37 @@ class BoardGenerator:
         if not set(component["pins"]) <= pads:
             raise ValueError(f"Missing footprint pads for {reference}: {sorted(set(component['pins']) - pads)}")
 
+    def _fit_outline(self, board, outline):
+        from autopcb.placement import Envelope, OutlineFitter
+
+        origin = pcb.FromMM(self.OFFSET_MM)
+        envelopes = {}
+        for fp in board.GetFootprints():
+            # Body drawings, pads and courtyards plus the markings physically printed on the board.
+            box = fp.GetBoundingBox(False, False)
+            for item in (*fp.GetFields(), *fp.GraphicalItems()):
+                if (item.GetLayer() in (pcb.F_SilkS, pcb.B_SilkS)
+                        and (not isinstance(item, pcb.PCB_FIELD) or item.IsVisible())):
+                    box.Merge(item.GetBoundingBox())
+            for pad in fp.Pads():
+                if pad.GetDrillSize().x > 0:
+                    box.Merge(pad.GetEffectiveHoleShape().BBox())
+            envelopes[fp.GetReference()] = Envelope((box.GetLeft() - origin, box.GetTop() - origin),
+                                                    (box.GetRight() - origin, box.GetBottom() - origin))
+        size, offsets = OutlineFitter(envelopes, outline["movable_groups"],
+                                    tuple(map(pcb.FromMM, outline["minimum_mm"])),
+                                    tuple(map(pcb.FromMM, self.spec["size_mm"])),
+                                    max(pcb.FromMM(outline["margin_mm"]), board.GetDesignSettings().m_CopperEdgeClearance)).fit()
+        width, height = map(pcb.ToMM, size)
+        for fp in board.GetFootprints():
+            if fp.GetReference() in offsets:
+                fp.Move(pcb.VECTOR2I(*offsets[fp.GetReference()]))
+        return width, height
+
     def _outline(self, board) -> None:
-        width, height, low = *self.spec["size_mm"], self.OFFSET_MM
+        outline = self.spec.get("compact_outline")
+        width, height = self._fit_outline(board, outline) if outline else self.spec["size_mm"]
+        low = self.OFFSET_MM
         corners = [(low, low), (low + width, low), (low + width, low + height), (low, low + height)]
         for start, end in strict_zip(corners, corners[1:] + corners[:1]):
             line = pcb.PCB_SHAPE()
@@ -188,17 +253,44 @@ class ReferenceScreen:
             raise ValueError("Reference net is missing, ambiguous, or assigned to a signal pair.")
         return pairs, matches.pop()
 
-    def _gap(self, track, net: str) -> dict:
-        """Measure the unreferenced length and the pad the trace launches from."""
-        x0, y0, x1, y1, _width = track.geometry
-        stations = [track.samples[index:index + 3] for index in range(0, len(track.samples), 3)]
-        spacing = math.hypot(x1 - x0, y1 - y0) / max(1, len(stations) - 1) / 1e6
-        missing = [index for index, station in enumerate(stations) if not all(point[2] for point in station)]
-        end = (x0, y0) if missing and sum(missing) / len(missing) < (len(stations) - 1) / 2 else (x1, y1)
-        launch = next((f"{pad.GetParentFootprint().GetReference()}.{pad.GetNumber()}"
-                       for pad in self.board.GetPads()
-                       if pad.GetNetname() == net and pad.HitTest(pcb.VECTOR2I(*end))), None)
-        return {"unreferenced_mm": round(len(missing) * spacing, 3), "launch": launch}
+    @staticmethod
+    def gap_spans(track, through_pads, signal_layer: int, reference_layer: int) -> list[dict]:
+        x0, y0, x1, y1, _ = track.geometry
+        last_station = len(track.samples) // 3 - 1
+        spacing = math.hypot(pcb.ToMM(x1 - x0), pcb.ToMM(y1 - y0)) / max(1, last_station)
+        spans = []
+        for run in track.missing_runs():
+            terminals = set()
+            for station, point in ((0, pcb.VECTOR2I(x0, y0)), (last_station, pcb.VECTOR2I(x1, y1))):
+                if not run.first_station <= station <= run.last_station:
+                    continue
+                for pad in through_pads:
+                    if (pad.IsOnLayer(signal_layer) and pad.IsOnLayer(reference_layer)
+                            and pad.GetBoundingBox().Contains(point)
+                            and pad.GetEffectivePolygon(signal_layer).Contains(point)):
+                        terminals.add((pad.GetParentFootprint().GetReference(), pad.GetNumber()))
+            x, y = run.position
+            spans.append({"first_sample_mm": round(run.first_station * spacing, 6),
+                          "last_sample_mm": round(run.last_station * spacing, 6),
+                          "position_mm": {"x": pcb.ToMM(x), "y": pcb.ToMM(y)},
+                          "missing_samples": run.missing_samples,
+                          "endpoint_pads": [{"reference": ref, "pad": pin} for ref, pin in sorted(terminals)]})
+        return spans
+
+    @classmethod
+    def _gap(cls, track, pads, signal_layer, reference_layer):
+        spans = cls.gap_spans(track, pads, signal_layer, reference_layer)
+        x0, y0, x1, y1, _ = track.geometry
+        length = math.hypot(pcb.ToMM(x1 - x0), pcb.ToMM(y1 - y0))
+        last = len(track.samples) // 3 - 1
+        spacing = length / max(1, last)
+        # End stations represent half a sample interval inside the trace.
+        sampled_length = sum(min(length, span["last_sample_mm"] + spacing / 2)
+                             - max(0.0, span["first_sample_mm"] - spacing / 2) for span in spans)
+        launches = {pad["reference"] + "." + pad["pad"] for span in spans for pad in span["endpoint_pads"]}
+        return {"unreferenced_mm": round(sampled_length, 3),
+                "launch": next(iter(launches)) if len(launches) == 1 else None,
+                "gap_spans": spans, "positions_mm": [span["position_mm"] for span in spans]}
 
     def run(self) -> dict:
         from pcb.net_routing.reference import sample_reference
@@ -220,6 +312,10 @@ class ReferenceScreen:
         with_reference = {track.net for track in sample.tracks if any(value[2] for value in track.samples)}
         metrics = {name: {"net": name, "trace_length_mm": 0.0, "widths_mm_by_layer": defaultdict(set),
                           "segments": 0, "vias": 0} for name in critical}
+        through_pads = defaultdict(list)
+        for pad in board.GetPads():
+            if pad.GetNetname() in critical and pad.GetAttribute() == pcb.PAD_ATTRIB_PTH:
+                through_pads[pad.GetNetname()].append(pad)
         for item in board.GetTracks():
             name = str(item.GetNetname())
             if name not in critical:
@@ -248,7 +344,8 @@ class ReferenceScreen:
                 "missing_samples": covered.missing_samples if covered else None,
                 "continuous_polygon": covered.continuous_polygon if covered else None,
                 "positions_mm": [{"x": position[0], "y": position[1]}],
-                **(self._gap(covered, name) if kind == "sampled_reference_gap" else {}),
+                **(self._gap(covered, through_pads[name], item.GetLayer(), board.GetLayerID(covered.reference_layer))
+                   if kind == "sampled_reference_gap" else {}),
             })
         for row in metrics.values():
             row["trace_length_mm"] = round(row["trace_length_mm"], 6)

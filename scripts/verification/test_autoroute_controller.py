@@ -307,12 +307,12 @@ class AutoControllerTests(unittest.TestCase):
             self.assertFalse(initialized["publication_enabled"])
             self.assertEqual(source.read_bytes(), before)
             result = run_project(project, max_rounds=1, workers=1)
-            self.assertIn(result["status"], {"paused", "stalled"})
+            self.assertIn(result["status"], {"paused", "preview_zero_opens" if result["best_preview_opens"] == 0 else "stalled"})
             self.assertFalse(result["publication_enabled"])
             self.assertEqual(source.read_bytes(), before)
             self.assertTrue((project / "results" / "autoroute" / (result["run_id"] + ".json")).is_file())
             resumed = run_project(project, resume=result["run_id"], max_rounds=1, workers=1)
-            self.assertIn(resumed["status"], {"paused", "stalled"})
+            self.assertIn(resumed["status"], {"paused", "preview_zero_opens" if resumed["best_preview_opens"] == 0 else "stalled"})
             self.assertEqual(source.read_bytes(), before)
             # A changed native source must invalidate resumption before any search.
             (project / "v4.1.kicad_sch").write_text("changed", encoding="utf-8")
@@ -1047,6 +1047,29 @@ class AutoControllerTests(unittest.TestCase):
             verify_resume_reports(baseline, report(9, [["error", ["a"]]]), expected_opens=9)
         previous = report(10, [["warning", ["a"]], ["warning", ["b"]]])
         verify_resume_reports(previous, report(9, [["warning", ["a", "b"]]]), expected_opens=9)
+
+    def test_empty_work_queue_reports_measured_opens_and_retains_historical_checkpoint(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from pcb.net_routing.runner import PreviewStatus, read_status
+
+        self.assertEqual(PreviewStatus.stopped({"queue": ["reference-repair"], "best_preview_opens": 0}), "paused")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = root / "results" / "autoroute" / ("a" * 32 + ".json")
+            record.parent.mkdir(parents=True)
+            for opens, expected in ((0, "preview_zero_opens"), (2, "stalled"), (None, "stalled"), (False, "stalled")):
+                with self.subTest(opens=opens):
+                    state = {"schema": 1, "run_id": record.stem, "status": "stalled", "queue": [],
+                             "publication_enabled": False, "best_preview_opens": opens}
+                    original = json.dumps(state).encode()
+                    record.write_bytes(original)
+                    report = read_status(root, record.stem)
+                    self.assertEqual(PreviewStatus.stopped(state), expected)
+                    self.assertEqual(report["status"], expected)
+                    self.assertFalse(report["publication_enabled"])
+                    self.assertEqual(record.read_bytes(), original)
 
     def test_stalled_checkpoint_can_be_resumed_with_a_new_plan(self):
         from pcb.net_routing.runner import resume_stalled

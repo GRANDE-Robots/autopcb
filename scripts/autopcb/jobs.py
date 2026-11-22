@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 import hashlib
 from pathlib import Path
+
+from core.compat import strict_zip
 import json
 import os
 import re
@@ -18,6 +20,67 @@ from core.export_helpers import sha
 from core.kicad_sexpr import quote
 from core.paths import ProjectStorage
 from core.project import PROFILE_NAME, ProjectPaths, SourceSnapshot, read_profile
+
+
+class DraftPlacement:
+    @staticmethod
+    def run(native, paths, scratch, spec, compact, pair_layout, drc_checks, erc_checks):
+        trials = [("fixed", None)] if compact is None else [
+            ("compact", compact),
+            ("catalog_fallback", {**compact, "minimum_mm": spec["size_mm"], "movable_groups": []}),
+        ]
+        fallback_reason = None
+        for mode, outline in trials:
+            trial = scratch / mode
+            trial.mkdir()
+            model = trial / "board.json"
+            write_json(model, {**spec, "compact_outline": outline})
+            native.worker("generate", paths.board, model, output=paths.board)
+            settings = json.loads(paths.settings.read_text(encoding="utf-8-sig"))
+            settings.setdefault("board", {}).setdefault("design_settings", {}).setdefault(
+                "rule_severities", {}).update(dict.fromkeys(drc_checks, "warning"))
+            settings.setdefault("erc", {}).setdefault("rule_severities", {}).update(dict.fromkeys(erc_checks, "warning"))
+            paths.settings.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+            normalized = trial / "normalize.json"
+            drc = native.report(("pcb", "drc", "--refill-zones", "--save-board", "--schematic-parity"),
+                                paths.board, normalized)
+            findings = _issues(drc, "violations") + _issues(drc, "schematic_parity")
+            if compact is not None and (findings or drc.get("ignored_checks")):
+                reason = ", ".join(str(item.get("description", item.get("type"))) for item in findings[:3])
+                fallback_reason = "Placement DRC: " + (reason or "ignored checks")
+                if mode != "compact":
+                    raise ValueError(fallback_reason)
+                paths.board.unlink()  # Only the rejected, private generation trial.
+                continue
+            pair_result = None
+            if pair_layout is not None:
+                request = trial / "pair-request.json"
+                result = trial / "pair-result.json"
+                write_json(request, {"pair_layout": pair_layout, "baseline_drc": str(normalized)})
+                native.worker("pair-seed", paths.entry, result, request, output=result)
+                pair_result = json.loads(result.read_text(encoding="utf-8"))
+                if mode == "compact" and pair_result["status"] == "deferred":
+                    fallback_reason = pair_result["reason"]
+                    paths.board.unlink()
+                    continue
+            report = trial / "inspect.json"
+            native.worker("inspect", paths.board, report, output=report)
+            geometry = json.loads(report.read_text(encoding="utf-8"))
+            # Edge.Cuts centerlines define the finished size. The display bounds also include the line stroke.
+            if len(geometry["outline"]) != 1 or len(geometry["outline"][0]) < 4:
+                raise ValueError("KiCad could not measure the generated rectangular outline.")
+            axes = list(strict_zip(*geometry["outline"][0]))
+            lower = tuple(map(min, axes))
+            upper = tuple(map(max, axes))
+            size = [round(b - a, 6) for a, b in strict_zip(lower, upper)]
+            moved = sorted(fp["ref"] for fp in geometry["footprints"] if any(
+                abs(fp["at"][axis] - lower[axis] - spec["components"][fp["ref"]]["position"][axis]) > 0.000001
+                for axis in (0, 1)))
+            receipt = {"mode": mode, "size_mm": size, "area_mm2": round(size[0] * size[1], 6),
+                       "maximum_size_mm": spec["size_mm"], "moved_footprints": moved}
+            if fallback_reason:
+                receipt["fallback_reason"] = fallback_reason
+            return receipt, pair_result
 
 
 def write_json(path: Path, record: dict) -> None:
@@ -223,7 +286,6 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
     critical = ["/" + net for pair in body["differential_pairs"] for net in pair]
     pair_layout = body.get("pair_layout")
     policy = routing_policy(layers, defaults=defaults, excluded=critical, refill=bool(pair_layout))
-    pair_result = None
     final_policy = (storage.config if storage else output / "config") / "autopcb.json"
     if final_policy.exists():
         raise FileExistsError(f"A routing policy already exists: {final_policy}")
@@ -274,26 +336,12 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
                 if findings:
                     raise RuntimeError("Generated schematic did not pass native ERC: "
                                        + "; ".join(str(item.get("description")) for item in findings[:6]))
-                spec = scratch / "board.json"
-                write_json(spec, {"netlist": str(xml), "links": links, "footprints": str(native.footprints()),
-                                  **{key: body[key] for key in ("layers", "size_mm", "components")}})
-                native.worker("generate", paths.board, spec, output=paths.board)
-                settings = json.loads(paths.settings.read_text(encoding="utf-8-sig"))
-                settings.setdefault("board", {}).setdefault("design_settings", {}).setdefault(
-                    "rule_severities", {}).update(dict.fromkeys(drc_checks, "warning"))
-                settings.setdefault("erc", {}).setdefault("rule_severities", {}).update(dict.fromkeys(erc_checks, "warning"))
-                paths.settings.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-                normalized = scratch / "normalize.json"
-                native.report(("pcb", "drc", "--refill-zones", "--save-board", "--schematic-parity"),
-                              paths.board, normalized)
-                if pair_layout is not None:
-                    request = scratch / "pair-request.json"
-                    result = scratch / "pair-result.json"
-                    write_json(request, {"pair_layout": pair_layout, "baseline_drc": str(normalized)})
-                    native.worker("pair-seed", paths.entry, result, request, output=result)
-                    pair_result = json.loads(result.read_text(encoding="utf-8"))
-                report = scratch / "inspect.json"
-                native.worker("inspect", paths.board, report, output=report)
+                spec = {"netlist": str(xml), "links": links, "footprints": str(native.footprints()),
+                        **{key: body[key] for key in ("layers", "size_mm", "components")}}
+                placed, pair_result = DraftPlacement.run(native, paths, scratch, spec, body.get("compact_outline"),
+                                                    pair_layout, drc_checks, erc_checks)
+                if "compact_outline" in body:
+                    publish_report(stage / PROFILE_NAME, {**profile, "initial_outline": placed})
             target = final_policy if storage else stage / "config" / final_policy.name
             target.parent.mkdir(parents=True, exist_ok=True)
             write_json(target, policy)
@@ -303,7 +351,7 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
         rollback.pop_all()
     return {"schema_version": 1, "kind": "design_build", "status": "created",
             "project": str(output.resolve() / f"{title}.kicad_pro"), "proposal_id": approval,
-            "policy": str(final_policy.resolve()), "pair_layout": pair_result}
+            "policy": str(final_policy.resolve()), "pair_layout": pair_result, "outline": placed}
 
 
 def _check_gerbers(directory: Path, layer_count: int) -> None:

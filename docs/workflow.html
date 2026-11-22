@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AutoPCB · Placement, routing and verification</title>
+  <style>
+    :root { color-scheme: light; --ink:#18343d; --muted:#4b646b; --green:#17665d; --line:#d2deda; --paper:#fbfaf7; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.55 "Inter","Segoe UI",Arial,sans-serif; }
+    main { width:min(1260px,100%); margin:auto; padding:32px clamp(14px,3vw,40px) 48px; }
+    h1,h2,h3,p,figure { margin:0; }
+    h1,h2 { font-family:"Georgia",serif; font-weight:normal; line-height:1.13; }
+    h1 { font-size:clamp(34px,4vw,54px); letter-spacing:-.035em; }
+    h2 { margin:2.25rem 0 .75rem; font-size:30px; }
+    h3 { margin-bottom:.35rem; font-size:17px; }
+    a { color:var(--green); text-underline-offset:.18em; }
+    a:focus-visible { outline:2px solid var(--green); outline-offset:3px; }
+    header { padding-bottom:1rem; }
+    header p { color:var(--muted); margin-top:.55rem; max-width:82ch; }
+    .diagram { margin-top:1rem; border:1px solid var(--line); border-radius:10px; background:white; overflow-x:auto; }
+    svg { display:block; width:100%; min-width:780px; height:auto; }
+    .decisions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 2.8rem; }
+    article { border-top:1px solid var(--line); padding:.9rem 0; }
+    article p { max-width:66ch; }
+    .measurements { overflow-x:auto; margin-top:.75rem; }
+    table { border-collapse:collapse; font-variant-numeric:tabular-nums; width:100%; }
+    th,td { text-align:left; vertical-align:top; padding:.5rem .7rem; border-bottom:1px solid var(--line); }
+    thead { background:#edf3f0; } caption { text-align:left; padding-bottom:.6rem; color:var(--muted); }
+    .next { max-width:88ch; }
+    .sources { margin-top:1.8rem; padding-top:1rem; border-top:1px solid var(--line); }
+    .sources a { display:inline-block; margin:0 1.3rem .3rem 0; }
+    @media(max-width:720px) { .decisions { grid-template-columns:1fr; } main { padding-top:20px; } }
+    @media print { main { padding:0; } .diagram { overflow:visible; break-inside:avoid; } svg { min-width:0; } article { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>How AutoPCB makes a board</h1>
+    <p>Follow a circuit from its pin and net definitions to the evidence needed for a manufacturing handoff.</p>
+  </header>
+  <figure class="diagram" aria-label="AutoPCB workflow" tabindex="0">
+    <svg xmlns="http://www.w3.org/2000/svg" id="workflow-map" viewBox="0 0 1200 450" role="img" aria-labelledby="workflow-title workflow-desc">
+      <title id="workflow-title">AutoPCB workflow from circuit intake through checked export</title>
+      <desc id="workflow-desc">Intake, placement, private routing, guarded save and independent verification form the main path. A blocked route can return through repair. Budget exhaustion retains the best checked preview. Draft exports include open findings. A checked export requires clean native checks and current electrical evidence. The placement inset shows how physical margins bound board area.</desc>
+      <defs>
+        <marker id="workflow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#35545d" stroke-width="1.7"/></marker>
+        <marker id="workflow-retry" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#96502e" stroke-width="1.7"/></marker>
+        <style>
+          text { font-family:'Inter','Segoe UI',Arial,sans-serif; fill:#18343d; }
+          .stage { fill:#f6f9f8; stroke:#a5bbb7; stroke-width:1.4; }
+          .stage-title { font-size:21px; font-weight:650; }
+          .stage-copy { font-size:15px; fill:#425d65; }
+          .band { font-size:13px; font-weight:700; letter-spacing:1.4px; fill:#46656b; }
+          .event { font-size:14px; fill:#35545d; }
+          .flow { fill:none; stroke:#35545d; stroke-width:1.8; marker-end:url(#workflow-arrow); }
+          .retry-flow { fill:none; stroke:#96502e; stroke-width:1.8; marker-end:url(#workflow-retry); }
+          .retry-label { font-size:14px; fill:#854729; }
+        </style>
+      </defs>
+      <rect width="1200" height="450" rx="10" fill="white"/>
+      <text x="30" y="41" class="band">FROM REQUIREMENTS TO SAVED COPPER</text>
+      <path d="M30 57 H1170" stroke="#d2deda"/>
+
+      <g id="workflow-intake">
+        <rect class="stage" x="30" y="88" width="180" height="100" rx="8"/>
+        <text x="46" y="121" class="stage-title">Circuit intake</text>
+        <text x="46" y="147" class="stage-copy">Approve a circuit or</text><text x="46" y="168" class="stage-copy">import a KiCad board.</text>
+      </g>
+      <g id="workflow-place">
+        <rect class="stage" x="268" y="88" width="180" height="100" rx="8"/>
+        <text x="284" y="121" class="stage-title">Place &amp; size</text>
+        <text x="284" y="147" class="stage-copy">Fit a new outline or</text><text x="284" y="168" class="stage-copy">keep the existing one.</text>
+      </g>
+      <g id="workflow-route">
+        <rect class="stage" x="506" y="88" width="180" height="100" rx="8"/>
+        <text x="522" y="121" class="stage-title">Route</text>
+        <text x="522" y="147" class="stage-copy">Connect copper islands</text><text x="522" y="168" class="stage-copy">on a private board.</text>
+      </g>
+      <g id="workflow-save">
+        <rect class="stage" x="744" y="88" width="180" height="100" rx="8"/>
+        <text x="760" y="121" class="stage-title">Save the PCB</text>
+        <text x="760" y="147" class="stage-copy">Compare the preview.</text><text x="760" y="168" class="stage-copy">Check edits and locks.</text>
+      </g>
+      <g id="workflow-verify">
+        <rect x="982" y="88" width="188" height="100" rx="8" fill="#e6f2ee" stroke="#28786b" stroke-width="1.8"/>
+        <text x="998" y="121" class="stage-title">Verify</text>
+        <text x="998" y="147" class="stage-copy">Reopen the saved files.</text><text x="998" y="168" class="stage-copy">Check copper and nets.</text>
+      </g>
+      <g class="flow"><path d="M212 140 H263"/><path d="M450 140 H501"/><path d="M688 140 H739"/><path d="M926 140 H977"/></g>
+      <g text-anchor="middle" class="event"><text x="239" y="126">limits</text><text x="478" y="126">poses</text><text x="715" y="107">fewer</text><text x="715" y="126">opens</text><text x="952" y="126">reread</text></g>
+
+      <g id="workflow-fit-note">
+        <text x="30" y="251" class="band">WHAT PLACEMENT MINIMIZES</text>
+        <rect x="31" y="279" width="106" height="69" rx="2" fill="#f0f6f3" stroke="#17665d" stroke-width="2"/>
+        <rect x="42" y="290" width="84" height="47" rx="1" fill="none" stroke="#90a9a0" stroke-dasharray="4 4"/>
+        <rect x="47" y="296" width="28" height="17" rx="2" fill="#71968c"/><rect x="99" y="308" width="20" height="19" rx="2" fill="#71968c"/>
+        <text x="152" y="302" font-size="23" font-weight="650">Area = width × height</text>
+        <text x="152" y="328" class="stage-copy">Keep fixed parts and margins.</text>
+        <text x="30" y="380" class="stage-copy">Use the smallest tested legal rectangle.</text>
+        <text x="30" y="401" class="stage-copy">Routing decides whether its connections fit.</text>
+      </g>
+      <g id="workflow-repair">
+        <path class="retry-flow" d="M546 190 V262"/><path class="retry-flow" d="M645 265 V193"/>
+        <text x="534" y="228" text-anchor="end" class="retry-label">blocked</text><text x="658" y="228" class="retry-label">retry</text>
+        <rect x="470" y="268" width="250" height="82" rx="8" fill="#fff5ed" stroke="#c89273" stroke-width="1.4"/>
+        <text x="487" y="298" class="stage-title">Repair the route</text>
+        <text x="487" y="325" class="stage-copy">Try a new path, order or pose.</text>
+        <text x="470" y="380" class="stage-copy">At the search limit, keep the best</text><text x="470" y="401" class="stage-copy">checked preview and record blockers.</text>
+      </g>
+      <g id="workflow-export">
+        <path class="flow" d="M1022 190 V201 Q1022 209 1014 209 H897 Q889 209 889 217 V262"/>
+        <path class="flow" d="M1114 190 V262"/>
+        <text x="903" y="244" class="event">for review</text><text x="1102" y="244" text-anchor="end" class="event">checks pass</text>
+        <rect x="801" y="268" width="173" height="82" rx="8" fill="#fafaf7" stroke="#a5b4b0" stroke-width="1.4"/>
+        <text x="816" y="298" class="stage-title">Draft export</text>
+        <text x="816" y="325" class="stage-copy">Includes findings.</text>
+        <rect x="989" y="268" width="181" height="82" rx="8" fill="#e6f2ee" stroke="#28786b" stroke-width="1.6"/>
+        <text x="1003" y="298" class="stage-title">Checked export</text>
+        <text x="1003" y="325" class="stage-copy">Requires review.</text>
+        <text x="801" y="380" class="stage-copy">Electrical evidence must match the saved board.</text>
+        <text x="801" y="401" class="stage-copy">Hardware bring-up follows fabrication.</text>
+      </g>
+    </svg>
+  </figure>
+  <section aria-labelledby="decisions-heading">
+    <h2 id="decisions-heading">What the solver actually decides</h2>
+    <div class="decisions">
+      <article><h3>Circuit and mechanical constraints</h3><p>A new design starts with an approved catalog pin-and-net map, footprints and size limits. A fixed size sets the outline directly. A maximum size lets the fitter test smaller rectangles. Imported projects start from their saved outline, copper and placement permissions.</p></article>
+      <article><h3>Area and placement</h3><p>The compact fitter tests the original poses and translations of permitted groups in two axis orders. It ranks candidates by compliance with the size limits, then area, then total movement. Bodies, pads, drills, courtyards and visible markings contribute to the envelope. The catalog floor bounds how small a successful board can get.</p></article>
+      <article><h3>Routes and differential pairs</h3><p>Heading-aware A* searches position and layer. Default local cost counts 1 unit per millimetre, an extra unit per diagonal millimetre, 10 per via and 1 per bend. Policy can add guide or layer costs. The catalog USB generator tries both members of a two-terminal pair together and checks launch geometry, spacing and length difference.</p></article>
+      <article><h3>Repairs and protected geometry</h3><p>Routing can try another checkpoint order, replace eligible copper or try an authorized bottom-side move within a private candidate. Connectivity runs require fewer opens. Dedicated cleanup modes can instead prove an angle correction, via reduction or dangling-copper repair at equal opens. Apply checks protected items, concurrent edits and editor locks.</p></article>
+      <article><h3>Board score and electrical evidence</h3><p>The board-level score orders eligible candidates by opens, symmetry and cost. Corresponding channels can be compared by route displacement, via alignment, bends and branching. The live connectivity loop publishes by verified open reduction. A tree model sums downstream currents and estimates voltage drop from supplied values. Ampacity, USB impedance and return-path exceptions need design-specific evidence.</p></article>
+      <article><h3>Verification and handoff</h3><p>Independent verification runs KiCad DRC, ERC and schematic parity and samples reference copper for declared differential pairs. Drafts include Gerbers, drills, BOM, placements, PDFs and findings. A checked package needs clean native checks and a source-bound electrical review that addresses the reference findings.</p></article>
+    </div>
+  </section>
+  <section aria-labelledby="circuits-heading">
+    <h2 id="circuits-heading">Inside the two reference circuits</h2>
+    <div class="decisions">
+      <article><h3>I²C temperature sensor</h3><p>The four header pins carry 3.3 V, ground, SDA and SCL, in that order. SDA and SCL each have a 4.7 kΩ pull-up. A 100 nF capacitor bypasses the MCP9808 supply. The sensor’s three address pins connect to ground and ALERT is intentionally open.</p></article>
+      <article><h3>Full-speed USB Type-B breakout</h3><p>The connector and header use the same pin order. Pins 1 through 4 carry VBUS, D−, D+ and ground. Both connector-shell tabs connect to ground. The compact board routes both data traces on the front over In1.Cu, with no signal vias. The return-copper screen flags all four data-pad launches.</p></article>
+    </div>
+    <div class="measurements">
+      <table>
+        <caption>Matched KiCad 10.0.6 runs on 18 November 2026. Each outline received up to 65 rounds at 24 seconds per batch and a 2 GiB search budget.</caption>
+        <thead><tr><th scope="col">Circuit</th><th scope="col">Nominal → compact</th><th scope="col">Area saved</th><th scope="col">Track length at either size</th><th scope="col">Vias at either size</th><th scope="col">Saved opens</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Temperature sensor</th><td>35 × 25 → 28 × 20 mm</td><td>36.0%</td><td>97.132 mm</td><td>4</td><td>0</td></tr>
+          <tr><th scope="row">USB breakout</th><td>35 × 28 → 30 × 25 mm</td><td>23.5%</td><td>47.556 mm</td><td>0</td><td>0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="next" aria-labelledby="next-heading">
+    <h2 id="next-heading">Where to take placement next</h2>
+    <p>Both compact designs reach their catalog size floor with the original component positions. A separate KiCad placement test starts the sensor and its three passives 11 mm farther right. AutoPCB translates the four together, keeps the header fixed and fits the 28 × 20 mm outline. The next case should require moving a group to open a routing corridor. Compare several permitted placements and keep the smallest fully routed candidate that passes the same checks.</p>
+  </section>
+  <nav class="sources" aria-label="Project references">
+    <a href="algorithm.pdf">Mathematical formulation (PDF)</a>
+    <a href="../README.md">Commands and release evidence</a>
+    <a href="../scripts/autopcb/placement.py">Placement implementation</a>
+    <a href="../scripts/autopcb/qualification.py">Reference qualification</a>
+  </nav>
+</main>
+</body>
+</html>

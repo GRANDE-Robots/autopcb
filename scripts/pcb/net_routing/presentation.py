@@ -214,7 +214,9 @@ def _attempts(console: Console, attempts: list[dict]) -> None:
 
 
 def show_run(console: Console, report: dict) -> None:
-    console.heading("AutoPCB | Routing preview " + report["status"].replace("_", " "))
+    status = report["status"]
+    heading = "Routing preview has zero opens" if status == "preview_zero_opens" else "Routing preview " + status.replace("_", " ")
+    console.heading("AutoPCB | " + heading)
     console.rows(
         [
             ("Saved board opens", report.get("saved_board_opens")),
@@ -265,6 +267,8 @@ def show_run(console: Console, report: dict) -> None:
         elif action == "restart":
             console.line("Saved inputs or policy changed; start a new preview:")
             console.command(f"python run.py pcb autoroute run{memory_option}")
+        elif status == "preview_zero_opens":
+            console.line("Verify the saved board after applying a routing improvement.")
         else:
             console.line("Resume this preview:")
             console.command(f"python run.py pcb autoroute run --{action} {report['run_id']}{memory_option}")

@@ -194,6 +194,7 @@ ACTIONS = {
     },
     "pcb": {
         "branch-widths": ActionSpec("pcb.branch_widths", "kicad", "project"),
+        "impedance": ActionSpec("pcb.impedance", "kicad", "project"),
         "repair-widths": ActionSpec("pcb.width_repair", "kicad", "project"),
         "clean-silkscreen": ActionSpec("pcb.silkscreen", "kicad", "project"),
         "repair-drc": ActionSpec("pcb.drc_cleanup", "kicad", "project"),

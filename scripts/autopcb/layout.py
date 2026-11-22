@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,18 @@ from autopcb.native import Native, engine_path
 from autopcb.policy import routing_policy
 from core.paths import ProjectStorage
 from core.project import ENTRY_ENV, ProjectPaths
+
+
+@dataclass(frozen=True)
+class Budget:
+    """The routing search budget shared by every arm of a comparison."""
+
+    rounds: int
+    seconds: int
+    memory_gib: float
+
+    def as_dict(self) -> dict:
+        return {"rounds": self.rounds, "seconds_per_batch": self.seconds, "memory_gib": self.memory_gib}
 
 
 class Layout:

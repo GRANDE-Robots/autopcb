@@ -3,27 +3,17 @@
 from __future__ import annotations
 
 import math
-import shutil
 import time
 from dataclasses import dataclass, field
 
 from autopcb import jobs
-from autopcb.layout import Layout
+from autopcb.layout import Budget, Layout
 from autopcb.native import Native
+from autopcb.private_copy import PrivateCopy
 from core.paths import ProjectStorage
-from core.project import ProjectPaths, SourceSnapshot
+from core.project import ProjectPaths
 
 MOVE_TOLERANCE_MM = 1e-3
-
-
-@dataclass(frozen=True)
-class Budget:
-    rounds: int
-    seconds: int
-    memory_gib: float
-
-    def as_dict(self) -> dict:
-        return {"rounds": self.rounds, "seconds_per_batch": self.seconds, "memory_gib": self.memory_gib}
 
 
 @dataclass(frozen=True)
@@ -118,28 +108,15 @@ class Verdict:
 class StudyArm:
     """Route one private copy, apply the result there, then read it back through KiCad."""
 
-    def __init__(self, native: Native, project: ProjectPaths, snapshot: SourceSnapshot,
-                 storage: ProjectStorage, budget: Budget, *, allow_placement: bool):
-        self.native, self.project, self.snapshot = native, project, snapshot
-        self.storage, self.budget, self.allow_placement = storage, budget, allow_placement
+    def __init__(self, native: Native, copy: PrivateCopy, budget: Budget, *, allow_placement: bool):
+        self.native, self.copy, self.budget, self.allow_placement = native, copy, budget, allow_placement
         self.name = "moves" if allow_placement else "fixed"
 
     def measure(self, working: ProjectPaths) -> BoardMetrics:
         return BoardMetrics.from_geometry(jobs.inspect(self.native, working)["geometry"])
 
-    def copy_policy(self, working: ProjectPaths) -> None:
-        caller = self.storage.legacy.relative_to(self.project.root)
-        for target, source in {caller / "config/autopcb.json": self.storage.config_file("autopcb.json"),
-                               **{caller / "design" / n: self.storage.data_file(n)
-                                  for n in ("POWER_LOAD_BUDGET.csv", "STACKUP_CURRENT.json")}}.items():
-            if source.is_file():
-                (working.root / target).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, working.root / target)
-
     def __call__(self, original: BoardMetrics) -> ArmResult:
-        with jobs.isolated(self.project, self.snapshot) as working:
-            self.copy_policy(working)
-            inner = ProjectStorage(working.root)
+        with self.copy.open() as (working, inner):
             start = time.perf_counter()
             routing = Layout(self.native, working, inner)
             preview = routing.preview(rounds=self.budget.rounds, seconds=self.budget.seconds,
@@ -168,11 +145,12 @@ class PlacementStudy:
         self.storage = storage or ProjectStorage(project.root)
 
     def run(self) -> dict:
-        snapshot = SourceSnapshot.capture(self.project)
+        copy = PrivateCopy(self.project, self.storage)
         original = BoardMetrics.from_geometry(jobs.inspect(self.native, self.project)["geometry"])
-        fixed, moves = (StudyArm(self.native, self.project, snapshot, self.storage, self.budget,
-                                 allow_placement=allow)(original) for allow in (False, True))
-        return {"schema_version": 1, "kind": "placement_study", "status": "measured", "same_input_sha256": snapshot.hashes,
+        fixed, moves = (StudyArm(self.native, copy, self.budget, allow_placement=allow)(original)
+                        for allow in (False, True))
+        return {"schema_version": 1, "kind": "placement_study", "status": "measured",
+                "same_input_sha256": copy.fingerprint,
                 "budget": self.budget.as_dict(), "original": original.as_dict(),
                 "arms": {"fixed": fixed.as_dict(), "moves": moves.as_dict()},
                 "verdict": Verdict(fixed, moves, original).as_dict(), "toolchain": self.native.status()}

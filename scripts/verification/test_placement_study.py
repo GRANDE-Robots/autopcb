@@ -79,13 +79,11 @@ class ArmTests(unittest.TestCase):
                 raise RuntimeError(apply_error)
 
         original = study.BoardMetrics.from_geometry(geometry())
-        with (patch.object(study.jobs, "isolated", lambda *a: contextlib.nullcontext(SimpleNamespace(root="/x"))),
-              patch.object(study.StudyArm, "copy_policy"),
-              patch.object(study.Layout, "preview", preview), patch.object(study.Layout, "apply", apply),
+        copy = SimpleNamespace(open=lambda: contextlib.nullcontext((SimpleNamespace(root="/x"), SimpleNamespace())))
+        with (patch.object(study.Layout, "preview", preview), patch.object(study.Layout, "apply", apply),
               patch.object(study.jobs, "inspect", lambda *a: {"geometry": geometry(lengths=(7.0,))}),
               patch.object(study.jobs, "verify", lambda *a, **k: {"native": {"open_connections": 0, "passed": True}})):
-            results = [study.StudyArm(None, SimpleNamespace(root="/x"), None, SimpleNamespace(),
-                                      study.Budget(7, 11, 2.5), allow_placement=allow)(original)
+            results = [study.StudyArm(None, copy, study.Budget(7, 11, 2.5), allow_placement=allow)(original)
                        for allow in (False, True)]
         return calls, results
 

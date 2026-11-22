@@ -22,7 +22,7 @@ Install KiCad 10 with a matching Python that can import `pcbnew`. Use `KICAD_CLI
 | `docs/` | Product documentation. |
 | `scripts/` | Shared jobs, KiCad adapters, and verification tools. |
 
-Requirements default to `data/requirements.txt`. Use [the example requirements](data/requirements.example.txt) or supply a text file. A custom catalog can go in `data/catalog.json`. See [project inputs](data/README.md) for the expected engineering files and migration from `design/`. Generated results and local campaigns are Git-ignored.
+Requirements default to `data/requirements.txt`. Use [the example requirements](data/requirements.example.txt) or supply a text file. A custom catalog can go in `data/catalog.json`; a catalog part placed with `"side": "bottom"` is generated on the bottom layer. See [project inputs](data/README.md) for the expected engineering files and migration from `design/`. Generated results and local campaigns are Git-ignored.
 
 ### Start from requirements
 
@@ -43,11 +43,14 @@ autopcb --project "path/to/board.kicad_pro" configure-layout
 autopcb --project "path/to/board.kicad_pro" route --rounds 10
 autopcb --project "path/to/board.kicad_pro" compare RUN_ID
 autopcb --project "path/to/board.kicad_pro" apply RUN_ID
+autopcb --project "path/to/board.kicad_pro" placement-study --rounds 20 --seconds 20
 autopcb --project "path/to/board.kicad_pro" verify
 autopcb --project "path/to/board.kicad_pro" export --draft
 ```
 
 Use `configure-layout` to create or copy a reviewed policy into `config/projects/<project>/autopcb.json`. AutoPCB combines workspace defaults with native limits when it creates a policy. It can read an existing project-local policy for compatibility. Use `autopcb campaign new --name "Layout review"` to start an edit campaign. Use `--resume RUN_ID` for matching sources or `--renew RUN_ID` to recheck after tool changes. Preview runs against a private copy. Apply checks the files, protected geometry, and editor state before saving a validated improvement.
+
+Top-side footprints and front silkscreen stay fixed; only unlocked bottom-side SMD parts can move. `placement-study` routes two private copies of the saved design under the same rounds, time and memory, one with fixed placement and one with permitted moves. It applies each result to its copy, verifies it with KiCad, keeps the smallest verified board and reports opens, trace length, vias and moved parts. A slow escalation can spend the whole budget before recovery reaches placement; `"recovery": {"early_rework": true}` in the policy tries copper and placement repairs after a net's first failure.
 
 The ordinary router preserves declared differential copper. Pair seeding currently covers a single two-terminal pair on a new catalog board with parallel pad rows. Existing boards can be routed and reviewed with their saved pair geometry.
 

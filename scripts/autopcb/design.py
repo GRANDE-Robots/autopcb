@@ -67,7 +67,8 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
                       size_mm=size, assumptions=recipe["assumptions"], power_flags=recipe["power_flags"],
                       differential_pairs=recipe.get("differential_pairs", []),
                       components={ref: {**data["parts"][values["part"]], "symbol": values["part"],
-                                        "nets": values["pins"], "position": values["position"]}
+                                        "nets": values["pins"], "position": values["position"],
+                                        **({"side": values["side"]} if "side" in values else {})}
                                   for ref, values in recipe["parts"].items()})
         if "pair_layout" in recipe:
             result["pair_layout"] = recipe["pair_layout"]

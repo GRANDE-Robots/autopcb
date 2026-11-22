@@ -647,6 +647,7 @@ def draw_review_chart(history: list[ProgressPoint], review: Path, output: Path) 
 
 def publish_preview(project: Path, inputs: dict, run_id: str, samples: list[dict]) -> None:
     """Publish already validated candidate measurements as a distinct preview series."""
+    project = project.resolve()
     review = project / "deliverables" / "review"
     if not samples or not (review / CSV_NAME).is_file():
         return

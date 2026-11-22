@@ -1199,7 +1199,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         from pcb.net_routing import krt_adapter
 
         with tempfile.TemporaryDirectory() as folder:
-            directory = Path(folder)
+            directory = Path(folder).resolve()
             baseline = directory / "v4.1.kicad_pcb"
             baseline.write_bytes(b"private baseline")
             fingerprint = "a" * 64

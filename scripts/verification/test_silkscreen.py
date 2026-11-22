@@ -172,7 +172,7 @@ class SilkscreenTests(unittest.TestCase):
         before += b'(property "Reference" "D31") (fp_line (start -3.66 -2.15) (end 2.15 -2.15) (layer "B.SilkS"))))'
         after = before.replace(b'-2.15', b'-1.99')
         with tempfile.TemporaryDirectory() as directory:
-            project = Path(directory)
+            project = Path(directory).resolve()
             library = project / 'stock.kicad_mod'
             pad = '(pad "1" smd rect (at 1 0) (size 2 2) (layers "F.Cu" "F.Mask"))'
             source = '(footprint "D_SMB" ' + pad + ' (fp_line (start -3.66 2.15) (end 2.15 2.15) (layer "F.SilkS")))'

@@ -86,7 +86,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_managed_families_isolate_roles_and_keep_old_runs_readable(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             workspace = Workspace(root)
             title = "Control Board"
             entry = workspace.project_output(title) / (title + ".kicad_pro")
@@ -110,7 +110,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_project_data_precedes_matching_historical_input(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             support = root / 'autopcb'
             legacy = support / 'design'
             current = support / 'data'
@@ -125,7 +125,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_current_release_input_folder_owns_its_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             historical = root / "design" / "release_inputs"
             historical.mkdir(parents=True)
             manifest = historical / "INPUT_MANIFEST.json"

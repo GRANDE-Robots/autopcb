@@ -131,7 +131,7 @@ class ExportContractTests(unittest.TestCase):
         from release.stage_release_inputs import stage
 
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d)
+            p = Path(d).resolve()
             m = p / "deliverables/jlcpcb"
             (m / "assembly").mkdir(parents=True)
             for name in [

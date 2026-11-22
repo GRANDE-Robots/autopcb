@@ -19,7 +19,7 @@ import tempfile
 import time
 import uuid
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -908,13 +908,16 @@ def _search_alternatives_native(directory: Path, requests: list[dict], workers: 
     arguments = [(str(directory), request) for request in requests]
     if len(arguments) == 1:
         return [_search(arguments[0])]
-    # Recycle workers after one native operation: KiCad's SWIG board wrappers
-    # can retain native allocations between loads.
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
-        max_tasks_per_child=1,
-    ) as executor:
-        return list(executor.map(_search, arguments))
+    # One fresh process per search: KiCad's SWIG board wrappers can retain
+    # native allocations between loads.
+    context = multiprocessing.get_context("spawn")
+    with ExitStack() as stack:
+        futures = [
+            stack.enter_context(concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=context))
+            .submit(_search, argument)
+            for argument in arguments
+        ]
+        return [future.result() for future in futures]
 
 
 def _validate_alternative_native(directory: Path, request: dict, result: dict,

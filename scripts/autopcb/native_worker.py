@@ -146,8 +146,8 @@ class BoardGenerator:
                               ' (material "FR4") (epsilon_r 4.3) (loss_tangent 0.02))')
         text = self.path.read_text(encoding="utf-8")
         marker = parse(text).children("setup")[0].start + len("(setup")
-        self.path.write_text(text[:marker] + "\n\t\t(stackup\n\t\t\t" + "\n\t\t\t".join(layers)
-                             + "\n\t\t)\n" + text[marker:], encoding="utf-8", newline="\n")
+        self.path.write_bytes((text[:marker] + "\n\t\t(stackup\n\t\t\t" + "\n\t\t\t".join(layers)
+                               + "\n\t\t)\n" + text[marker:]).encode("utf-8"))
 
 
 class ReferenceScreen:

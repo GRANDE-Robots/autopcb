@@ -230,7 +230,7 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
     with ExitStack() as rollback:
         with _new_directory(output) as stage:
             paths = ProjectPaths(stage / f"{title}.kicad_pro")
-            paths.schematic.write_text(source, encoding="utf-8", newline="\n")
+            paths.schematic.write_bytes(source.encode("utf-8"))
             drc_checks = ("missing_courtyard", "track_not_centered_on_via", "tuning_profile_track_geometries",
                           "footprint_filters_mismatch", "footprint_type_mismatch")
             erc_checks = ("single_global_label", "four_way_junction", "simulation_model_issue", "footprint_filter")
@@ -241,7 +241,7 @@ def build(native: Native, proposal: dict, approval: str, output: Path, *, defaul
             })
             lib = stage / "libraries"
             lib.mkdir()
-            (lib / "AutoPCB.kicad_sym").write_text(symbols, encoding="utf-8", newline="\n")
+            (lib / "AutoPCB.kicad_sym").write_bytes(symbols.encode("utf-8"))
             (stage / "sym-lib-table").write_text(
                 '(sym_lib_table (version 7) (lib (name "AutoPCB")(type "KiCad")'
                 '(uri "${KIPRJMOD}/libraries/AutoPCB.kicad_sym")(options "")(descr "AutoPCB generated symbols")))\n',

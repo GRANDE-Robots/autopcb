@@ -64,11 +64,13 @@ class ImpedanceTests(unittest.TestCase):
             zone.SetIsFilled(True)
             board.Add(zone)
         p.SaveBoard(str(self.board), board)
-        project = json.loads(self.settings.read_text(encoding="utf-8-sig"))
-        settings = project["net_settings"]
-        default = next(row for row in settings["classes"] if row["name"] == "Default")
-        settings["classes"] = [default, {**default, "name": "Reviewed", "priority": 0}]
-        settings["netclass_patterns"] = [{"netclass": "Reviewed", "pattern": name} for name in ("A", "B")]
+        # SaveBoard only emits a companion project on some KiCad distributions.
+        netclass = {"bus_width": 12, "wire_width": 6, "clearance": 0.2,
+                    "track_width": 0.2, "diff_pair_width": 0.2, "diff_pair_gap": 0.3,
+                    "via_diameter": 0.6, "via_drill": 0.3, "microvia_diameter": 0.3, "microvia_drill": 0.1}
+        project = {"meta": {"filename": self.settings.name, "version": 3}, "net_settings": {
+            "meta": {"version": 5}, "classes": [{**netclass, "name": "Default"}, {**netclass, "name": "Reviewed", "priority": 0}],
+            "netclass_patterns": [{"netclass": "Reviewed", "pattern": name} for name in ("A", "B")]}}
         self.settings.write_text(json.dumps(project), encoding="utf-8")
         # A programmatically created board may omit the physical section on save.
         from core.kicad_sexpr import parse

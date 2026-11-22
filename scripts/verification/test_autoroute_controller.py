@@ -1286,16 +1286,19 @@ class AutoControllerTests(unittest.TestCase):
         self.assertEqual(report["reference_repair_blockers"], reasons)
 
     def test_heartbeat_reports_during_a_long_search_and_stops(self):
-        import time
+        from queue import Queue
+        from threading import current_thread
         from pcb.net_routing.autoroute_cli import progress_heartbeat
-        events = []
-        with progress_heartbeat(events.append, interval=0.01):
-            time.sleep(0.04)
-        self.assertGreaterEqual(len(events), 1)
-        self.assertTrue(all(event["event"] == "heartbeat" for event in events))
-        count = len(events)
-        time.sleep(0.02)
-        self.assertEqual(len(events), count)
+
+        reports = Queue()
+
+        def record(event):
+            reports.put((current_thread(), event))
+
+        with progress_heartbeat(record, interval=0.01):
+            worker, event = reports.get(timeout=5)
+            self.assertEqual(event["event"], "heartbeat")
+        self.assertFalse(worker.is_alive())
 
     def test_cli_enforces_and_records_the_aggregate_memory_limit(self):
         from contextlib import contextmanager, redirect_stdout

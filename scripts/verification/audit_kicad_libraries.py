@@ -10,10 +10,10 @@ from __future__ import annotations
 import argparse
 import collections
 import fnmatch
-import hashlib
 import json
 from pathlib import Path
 
+from core.compat import file_sha256
 from core.paths import library_directories
 from typing import Any
 
@@ -84,10 +84,7 @@ def _fingerprints(project: Path) -> dict[str, str]:
         resolved = path.resolve()
         if not resolved.is_relative_to(project):
             raise ValueError(f"Library input resolves outside the project: {path}")
-        with path.open("rb") as stream:
-            result[path.relative_to(project).as_posix()] = hashlib.file_digest(
-                stream, "sha256"
-            ).hexdigest()
+        result[path.relative_to(project).as_posix()] = file_sha256(path)
     return dict(sorted(result.items()))
 
 

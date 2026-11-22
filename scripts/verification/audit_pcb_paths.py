@@ -231,7 +231,7 @@ def main():
                 if dist(q, r) < 1e-5:
                     on.append((u, list(q)))
             on = sorted({(round(u, 10), tuple(p)) for u, p in on})
-            for (_, a), (_, c) in zip(on, on[1:], strict=False):
+            for (_, a), (_, c) in zip(on, on[1:]):
                 add(
                     key(a, layer),
                     key(c, layer),
@@ -258,7 +258,7 @@ def main():
                             "via_pad",
                             v["uuid"],
                         )
-            for a, c in zip(ls, ls[1:], strict=False):
+            for a, c in zip(ls, ls[1:]):
                 add(key(q, a), key(q, c), 0, "via", v["uuid"])
         for p in pp:
             np = nativepads[(p["ref"], p["pin"])]
@@ -291,7 +291,7 @@ def main():
                             p["ref"] + "." + p["pin"],
                         )
             if p["drill"] != [0, 0]:
-                for a, c in zip(ls, ls[1:], strict=False):
+                for a, c in zip(ls, ls[1:]):
                     add(
                         key(q, a), key(q, c), 0, "plated_pad", p["ref"] + "." + p["pin"]
                     )

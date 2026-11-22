@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -13,6 +12,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.compat import file_sha256
 from core.paths import asset_root, data_path, default_project
 from core.console import Console, add_output_arguments
 from typing import Iterable, Literal, TextIO
@@ -232,9 +232,7 @@ ACTIONS = {
 }
 
 
-def sha(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+sha = file_sha256
 
 
 def matching_hashes(root: Path, values: object) -> bool:

@@ -167,7 +167,7 @@ def main() -> int:
     if args.apply and (remove_wires or remove_labels):
         replacements = [(start, end, "") for start, end in remove_wires + remove_labels]
         replacements.sort()
-        for previous, current in zip(replacements, replacements[1:], strict=False):
+        for previous, current in zip(replacements, replacements[1:]):
             if current[0] < previous[1]:
                 raise ValueError("dead-stub edits overlap")
         result = source

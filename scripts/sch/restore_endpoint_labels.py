@@ -107,7 +107,7 @@ def wire_graph(
         if len(points) < 2:
             raise ValueError("wire lacks endpoints")
         simple = len(points) == 2
-        for first, second in zip(points, points[1:], strict=False):
+        for first, second in zip(points, points[1:]):
             segments.append((first, second, wire_start, wire_end, simple))
             degree[first] += 1
             degree[second] += 1

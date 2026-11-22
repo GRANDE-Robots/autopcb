@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from core.project import native_path
 
-import hashlib
 import itertools
 import math
 import tempfile
@@ -27,12 +26,10 @@ from pcb.route_validation import (
 )
 from pcb.net_routing.geometry import branch_sites
 from pcb.net_routing.model import Budget, Island, Net, Site
-from core.compat import strict_zip
+from core.compat import file_sha256, strict_zip
 
 
-def sha(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+sha = file_sha256
 
 
 class Snapshot:

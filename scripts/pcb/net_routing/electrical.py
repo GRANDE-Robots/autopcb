@@ -7,10 +7,11 @@ This calculation cannot qualify a route. Meshed networks need another model.
 
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
+
+from core.compat import file_sha256
 
 
 @dataclass(frozen=True)
@@ -86,9 +87,7 @@ def _evidence_issue(project: Path, evidence: Evidence) -> str | None:
     source = (root / evidence.source).resolve()
     if not source.is_relative_to(root) or not source.is_file():
         return f"Evidence source is missing or outside the project: {evidence.source}"
-    with source.open("rb") as handle:
-        actual = hashlib.file_digest(handle, "sha256").hexdigest()
-    if actual != evidence.sha256.lower():
+    if file_sha256(source) != evidence.sha256.lower():
         return f"Evidence source changed: {evidence.source}"
     return None
 

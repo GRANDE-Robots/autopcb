@@ -82,7 +82,7 @@ def physical_components(
     wires: list[tuple[tuple[float, float], tuple[float, float]]] = []
     for _start, _end, block in top_level(root, "wire"):
         points = [point_key(*point) for point in top_level_points(block, "wire")]
-        for first, second in zip(points, points[1:], strict=False):
+        for first, second in zip(points, points[1:]):
             wires.append((first, second))
     dsu = DisjointSet()
     for first, second in wires:

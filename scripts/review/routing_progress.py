@@ -32,7 +32,7 @@ from pcb.route_validation import _copy_inputs, _drc, _inputs
 from review.geometry_metrics import GeometryMetrics, measure_board
 from review.refresh_gallery import ReviewSnapshot
 from core.toolchain import kicad_cli
-from core.compat import strict_zip
+from core.compat import file_sha256, strict_zip
 
 CSV_NAME = "routing_progress.csv"
 PNG_NAME = "routing_progress.png"
@@ -92,12 +92,7 @@ class RunMetrics:
     evidence: str
 
 
-def _sha(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+_sha = file_sha256
 
 
 def _fingerprint(project: Path) -> tuple[list[Path], dict[str, str], str]:

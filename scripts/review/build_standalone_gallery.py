@@ -186,7 +186,7 @@ def main():
         r'src="data:image/png;base64,([A-Za-z0-9+/=]+)"', document
     )
     assert len(encoded_images) == len(manifest)
-    for encoded, row in zip(encoded_images, manifest, strict=False):
+    for encoded, row in zip(encoded_images, manifest):
         assert digest(base64.b64decode(encoded, validate=True)) == row["sha256"]
     assert not re.search(
         r'(?:src|href)="(?:https?:|file:|[^#d][^\"]*\.(?:png|json|css|js))', document

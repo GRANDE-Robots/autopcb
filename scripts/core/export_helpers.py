@@ -267,7 +267,6 @@ def group_bom(parts):
                 zip(
                     ["Comment", "Footprint", "LCSC Part #", "Manufacturer", "MPN"],
                     key,
-                    strict=False,
                 ),
                 Designator=",".join(sorted(refs, key=natural)),
                 Quantity=len(refs),

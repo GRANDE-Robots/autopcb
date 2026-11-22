@@ -1204,7 +1204,7 @@ def build_plan(
     for start, end, _block, points in all_wires:
         if (start, end) in removed_wire_spans:
             continue
-        static_segments.extend(zip(points, points[1:], strict=False))
+        static_segments.extend(zip(points, points[1:]))
 
     def point_in_box(
         point: tuple[float, float], left: float, top: float, right: float, bottom: float
@@ -1568,7 +1568,7 @@ def build_plan(
     for start, end, kind in removal_spans:
         replacements.append((start, end, "", f"remove:{kind}"))
     replacements.sort(key=lambda item: (item[0], item[1]))
-    for previous, current in zip(replacements, replacements[1:], strict=False):
+    for previous, current in zip(replacements, replacements[1:]):
         if current[0] < previous[1]:
             raise ValueError(f"overlapping edits: {previous[3]} and {current[3]}")
     for start, end, replacement, _kind in reversed(replacements):

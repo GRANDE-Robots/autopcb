@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,8 +73,10 @@ class PDFBuilderTests(unittest.TestCase):
                 mock.patch.object(pdf, "validate_pdf", side_effect=RuntimeError("bad PDF")),
                 mock.patch.object(pdf, "run", side_effect=render),
             ):
-                with self.assertRaisesRegex(RuntimeError, "browser failed"):
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error), self.assertRaisesRegex(RuntimeError, "browser failed"):
                     pdf.build_pdf(source, output, project=project)
+            self.assertIn("trying Chromium", error.getvalue())
             self.assertEqual(output.read_bytes(), b"old output")
 
     def test_crlf_input_is_normalized_for_math_rendering(self):

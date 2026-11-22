@@ -18,6 +18,7 @@ from pcb.route_cli import campaign_changes
 from pcb.route_optimizer import GridRouter, Obstacle, Point, Segment, mm
 from verification import test_net_routing as fixtures
 from verification import test_autoroute_recovery as recovery_fixture
+from core.toolchain import kicad_cli
 
 
 RULES = """(version 1)
@@ -230,7 +231,6 @@ class RuleConsistencyTests(unittest.TestCase):
 
     def test_native_drc_confirms_scoped_exceptions_to_board_defaults(self):
         import json
-        import sys
         import pcbnew
         from pcb.route_validation import _drc
 
@@ -275,7 +275,7 @@ class RuleConsistencyTests(unittest.TestCase):
               (rule "Outer package spacing"
                 (condition "A.Layer == 'F.Cu' && B.Layer == 'F.Cu' && (A.intersectsCourtyard('U16') || B.intersectsCourtyard('U16'))")
                 (constraint clearance (min 0.15mm)))''')
-            report = _drc(Path(sys.executable).with_name("kicad-cli.exe"), path, root / "drc.json")
+            report = _drc(kicad_cli(), path, root / "drc.json")
             width_ids = {part.get("uuid") for item in report["violations"]
                          if item.get("type") == "track_width" for part in item.get("items", ())}
             self.assertFalse({tracks[5], tracks[5.3]} & width_ids, report)
@@ -969,7 +969,6 @@ class RetryConsistencyTests(unittest.TestCase):
 
 class NativeRuleConsistencyTests(unittest.TestCase):
     def test_native_drc_and_search_both_apply_stricter_crossing_width(self):
-        import sys
         import pcbnew
 
         from pcb.net_routing.native import load_board
@@ -1017,7 +1016,7 @@ class NativeRuleConsistencyTests(unittest.TestCase):
                         segment = Segment(Point.from_mm((.5, y)), Point.from_mm((3.5, y)), layer)
                         self.assertGreaterEqual(profile.width_at(segment), mm(.5))
                     report = _drc(
-                        Path(sys.executable).with_name("kicad-cli.exe"),
+                        kicad_cli(),
                         path, root / f"drc_{selector_index}.json",
                     )
                     violations = {
@@ -1029,7 +1028,6 @@ class NativeRuleConsistencyTests(unittest.TestCase):
                         self.assertIn(track.m_Uuid.AsString(), violations, report)
 
     def test_native_drc_and_search_both_reject_stricter_local_clearance(self):
-        import sys
         import pcbnew
 
         from pcb.net_routing.native import load_board
@@ -1080,7 +1078,7 @@ class NativeRuleConsistencyTests(unittest.TestCase):
             track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(track)
             pcbnew.SaveBoard(str(path), board)
-            report = _drc(Path(sys.executable).with_name("kicad-cli.exe"), path, root / "drc.json")
+            report = _drc(kicad_cli(), path, root / "drc.json")
             for candidate_pad in (pad, outer_pad):
                 ids = {track.m_Uuid.AsString(), candidate_pad.m_Uuid.AsString()}
                 self.assertTrue(any(

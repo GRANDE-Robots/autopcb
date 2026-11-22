@@ -38,6 +38,7 @@ from pcb.route_optimizer import COPPER_LAYERS, Point, Route, Segment, Via, Weigh
 from pcb.route_cli import campaign_changes
 from pcb.route_validation import RouteContract, _drc, validate_routes
 from verification import test_route_optimizer as route_tests
+from core.toolchain import kicad_cli
 
 
 def site(x, y, layer="F.Cu"):
@@ -1525,9 +1526,7 @@ class NativeNetRoutingTests(unittest.TestCase):
                 outline.Append(mm(x), mm(y))
             board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
-            cli = Path(sys.executable).with_name(
-                "kicad-cli.exe" if sys.platform == "win32" else "kicad-cli"
-            )
+            cli = kicad_cli()
             _drc(cli, source, source.parent / "filled.json", save_refill=True)
             before = source.read_bytes()
             raw = pcbnew.LoadBoard(str(source))

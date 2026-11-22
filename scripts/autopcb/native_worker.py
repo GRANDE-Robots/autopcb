@@ -12,7 +12,7 @@ from xml.etree import ElementTree as ET
 import pcbnew as pcb
 
 from core.kicad_sexpr import parse
-from core.pcb_io import copper_width, enabled_copper_layers, quiet_duplicate_image_handlers
+from core.pcb_io import ProjectSettings, copper_width, enabled_copper_layers, quiet_duplicate_image_handlers
 
 
 def _mm(item) -> list[float]:
@@ -41,11 +41,7 @@ def inspect(source: Path) -> dict:
 
 
 def generate(path: Path, spec: dict) -> None:
-    # SaveBoard does not write project settings in every KiCad 10 release, and
-    # KiCad refuses to save them once a board is open. Complete them first.
-    manager, project = pcb.GetSettingsManager(), str(path.with_suffix(".kicad_pro"))
-    if not manager.LoadProject(project) or not manager.SaveProject(project, manager.GetProject(project)):
-        raise RuntimeError("KiCad failed to write the project settings")
+    ProjectSettings(path).write()
     xml = ET.parse(spec["netlist"])
     board = pcb.BOARD()
     board.SetFileName(str(path))

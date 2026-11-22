@@ -1,0 +1,75 @@
+"""The phone page: token on every API call, workspace-only projects, one job per project."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+from autopcb.serve import JobRunner, Server, ServeApp
+from autopcb.workspace import Workspace
+
+
+class HeldRunner(JobRunner):
+    """Record jobs without starting KiCad; finishing is left to the test."""
+
+    def _run(self, job, run_id):
+        self.last = (job, run_id)
+
+
+class ServeTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        root = Path(self.folder.name)
+        board = root / "results" / "projects" / "Board"
+        board.mkdir(parents=True)
+        for suffix in (".kicad_pro", ".kicad_pcb", ".kicad_sch"):
+            (board / f"Board{suffix}").write_text("", encoding="utf-8")
+        self.entry = str((board / "Board.kicad_pro").resolve())
+        workspace = Workspace(root)
+        self.runner = HeldRunner(workspace)
+        self.app = ServeApp(workspace, "secret", self.runner)
+        self.auth = {"Authorization": "Bearer secret"}
+
+    def call(self, method, url, body=None, headers=None):
+        status, _, payload = self.app.handle(method, url, headers if headers is not None else self.auth,
+                                             json.dumps(body).encode() if body is not None else b"")
+        return status, payload
+
+    def test_page_is_public_but_every_api_call_needs_the_token(self):
+        self.assertEqual(self.call("GET", "/", headers={})[0], 200)
+        self.assertEqual(self.call("GET", "/api/projects", headers={})[0], 401)
+        self.assertEqual(self.call("GET", "/api/projects", headers={"Authorization": "Bearer wrong"})[0], 401)
+        status, payload = self.call("GET", "/api/projects?token=secret", headers={})
+        self.assertEqual((status, json.loads(payload)["projects"][0]["path"]), (200, self.entry))
+
+    def test_jobs_are_limited_to_known_actions_workspace_projects_and_one_per_project(self):
+        self.assertEqual(self.call("POST", "/api/jobs", {"action": "rm", "project": self.entry})[0], 400)
+        self.assertEqual(self.call("POST", "/api/jobs", {"action": "verify", "project": "/etc/passwd"})[0], 404)
+        self.assertEqual(self.call("POST", "/api/jobs", {"action": "apply", "project": self.entry})[0], 400)
+        status, payload = self.call("POST", "/api/jobs", {"action": "verify", "project": self.entry})
+        self.assertEqual((status, json.loads(payload)["status"]), (202, "running"))
+        self.assertEqual(self.call("POST", "/api/jobs", {"action": "route", "project": self.entry})[0], 409)
+        job, _ = self.runner.last
+        self.assertEqual(self.runner.command(job, None)[-3:], ["--project", self.entry, "verify"])
+
+    def test_server_answers_over_http_with_the_token(self):
+        server = Server(self.app, "127.0.0.1", 0)
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        self.addCleanup(server.http.shutdown)
+        base = server.url.split("/?")[0]
+        with urllib.request.urlopen(urllib.request.Request(base + "/api/jobs", headers=self.auth)) as response:
+            self.assertEqual(json.loads(response.read()), {"jobs": []})
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(base + "/api/jobs?token=wrong")
+        self.assertEqual(refused.exception.code, 401)
+
+
+if __name__ == "__main__":
+    unittest.main()

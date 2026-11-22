@@ -72,6 +72,10 @@ def parser() -> argparse.ArgumentParser:
     export.add_argument("--output", type=Path, help="defaults to results/exports")
     export.add_argument("--draft", action="store_true", help="label package as draft and include blockers")
     commands.add_parser("desktop", help="start the AutoPCB desktop application")
+    serve = commands.add_parser("serve", help="serve a phone-friendly page that runs jobs on this computer")
+    serve.add_argument("--host", default="127.0.0.1", help="address to listen on; use a LAN or Tailscale address for a phone")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--token", help="access token; a random one is generated when omitted")
     campaign = commands.add_parser("campaign", help="run a campaign in the workspace")
     campaign.add_argument("args", nargs=argparse.REMAINDER)
     legacy = commands.add_parser("legacy", help="delegate to the existing run.py actions")
@@ -206,6 +210,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.kicad_python:
             prefix.extend(("--kicad-python", str(args.kicad_python)))
         return legacy([*prefix, *args.args])
+    if args.action == "serve":
+        import secrets
+
+        from autopcb.serve import JobRunner, ServeApp, Server
+
+        workspace = Workspace(args.workspace)
+        extra = tuple(item for flag, value in (("--kicad-cli", args.kicad_cli), ("--kicad-python", args.kicad_python))
+                      if value for item in (flag, str(value)))
+        server = Server(ServeApp(workspace, args.token or secrets.token_urlsafe(16), JobRunner(workspace, extra),
+                                 args.kicad_cli), args.host, args.port)
+        print(f"AutoPCB is serving {workspace.root}. Open this link on your phone:\n{server.url}", flush=True)
+        try:
+            server.run()
+        except KeyboardInterrupt:
+            pass
+        return 0
     if args.action == "desktop":
         from autopcb.desktop import main as launch
         return launch(args.project or args.workspace, args.kicad_cli, args.kicad_python, workspace=args.workspace)

@@ -26,4 +26,4 @@ where = ["scripts"]
 include = ["autopcb*", "core*", "pcb*", "sch*", "review*", "release*", "verification*", "utils*"]
 
 [tool.setuptools.package-data]
-autopcb = ["catalog.json"]
+autopcb = ["catalog.json", "serve.html"]

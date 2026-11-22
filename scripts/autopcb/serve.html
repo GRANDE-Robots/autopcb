@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AutoPCB</title>
+<style>
+:root { --bg: #f6f7f9; --card: #fff; --ink: #1d2330; --muted: #5d6675; --line: #dde1e7; --accent: #1f6feb; --ok: #1a7f37; --bad: #cf222e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1218; --card: #181c24; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2a303b; --accent: #4c8dff; --ok: #3fb950; --bad: #f85149; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+header { position: sticky; top: 0; padding: 12px 16px calc(12px + env(safe-area-inset-top) * 0); background: var(--card); border-bottom: 1px solid var(--line); font-weight: 600; }
+main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+h2 { margin: 0 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.project { display: block; width: 100%; text-align: left; padding: 12px; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 10px; background: none; color: inherit; font: inherit; }
+.project[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.board { width: 100%; min-height: 120px; border-radius: 8px; background: #101418; display: block; }
+.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+button.act { min-height: 44px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; }
+button.act:disabled { opacity: .5; }
+.job { padding: 10px 0; border-top: 1px solid var(--line); }
+.job:first-child { border-top: 0; }
+.row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pill { font-size: 13px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.pill.ok { color: var(--ok); border-color: var(--ok); } .pill.bad { color: var(--bad); border-color: var(--bad); }
+.detail { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.empty, .error { color: var(--muted); }
+.error { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>AutoPCB</header>
+<main>
+  <section><h2>Projects</h2><div id="projects" class="empty">Loading…</div></section>
+  <section id="selected" hidden>
+    <h2 id="name"></h2>
+    <img id="board" class="board" alt="Board preview">
+    <div class="actions">
+      <button class="act" data-action="verify">Verify</button>
+      <button class="act" data-action="route">Route</button>
+      <button class="act" data-action="export">Export</button>
+    </div>
+  </section>
+  <section><h2>Jobs</h2><div id="jobs" class="empty">No jobs yet.</div></section>
+</main>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+let selected = null;
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options, headers });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || response.statusText);
+  return body;
+}
+
+function text(tag, value, className) {
+  const node = document.createElement(tag);
+  node.textContent = value;
+  if (className) node.className = className;
+  return node;
+}
+
+function summary(job) {
+  const r = job.report || {};
+  if (r.error) return r.error;
+  const parts = [];
+  if (r.native) parts.push(`${r.native.open_connections} open, ${r.native.passed ? "checks pass" : "checks blocked"}`);
+  if (r.best_preview_opens !== undefined) parts.push(`preview ${r.best_preview_opens} open`);
+  if (r.package) parts.push(r.package);
+  return parts.join(" · ");
+}
+
+async function loadProjects() {
+  const box = document.getElementById("projects");
+  try {
+    const { projects } = await api("/api/projects");
+    box.replaceChildren();
+    if (!projects.length) box.append(text("div", "No KiCad projects in this workspace.", "empty"));
+    for (const project of projects) {
+      const button = text("button", project.name, "project");
+      button.setAttribute("aria-pressed", "false");
+      button.onclick = () => choose(project, button);
+      box.append(button);
+    }
+  } catch (error) { box.replaceChildren(text("div", error.message, "error")); }
+}
+
+function choose(project, button) {
+  selected = project;
+  document.querySelectorAll(".project").forEach((node) => node.setAttribute("aria-pressed", String(node === button)));
+  document.getElementById("selected").hidden = false;
+  document.getElementById("name").textContent = project.name;
+  const query = new URLSearchParams({ project: project.path, token, t: Date.now() });
+  document.getElementById("board").src = "/api/board.svg?" + query;
+}
+
+async function start(action, extra = {}, project = selected && selected.path) {
+  if (!project) return;
+  try { await api("/api/jobs", { method: "POST", body: JSON.stringify({ action, project, ...extra }) }); }
+  catch (error) { alert(error.message); }
+  loadJobs();
+}
+
+async function loadJobs() {
+  const box = document.getElementById("jobs");
+  try {
+    const { jobs } = await api("/api/jobs");
+    if (!jobs.length) return;
+    box.replaceChildren();
+    for (const job of jobs) {
+      const item = document.createElement("div");
+      item.className = "job";
+      const row = document.createElement("div");
+      row.className = "row";
+      row.append(text("strong", `${job.action} · ${job.project.split(/[\\/]/).pop()}`));
+      const ok = ["native_passed", "created", "draft", "saved_work_in_progress", "measured"].includes(job.status);
+      row.append(text("span", job.status, "pill " + (job.status === "running" ? "" : ok ? "ok" : "bad")));
+      item.append(row, text("div", summary(job), "detail"));
+      const runId = job.report && job.report.run_id;
+      if (job.action === "route" && runId && job.finished) {
+        const apply = text("button", "Apply this preview", "act");
+        apply.onclick = () => start("apply", { run_id: runId }, job.project);
+        item.append(apply);
+      }
+      box.append(item);
+    }
+  } catch (error) { box.replaceChildren(text("div", error.message, "error")); }
+}
+
+document.querySelectorAll(".actions .act").forEach((button) => button.onclick = () => start(button.dataset.action));
+loadProjects();
+loadJobs();
+setInterval(loadJobs, 3000);
+</script>
+</body>
+</html>

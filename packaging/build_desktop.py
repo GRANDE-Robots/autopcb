@@ -109,7 +109,7 @@ def main() -> int:
         shutil.copytree(ROOT / "scripts", engine, ignore=shutil.ignore_patterns("__pycache__", "desktop.ini", "*.pyc"))
         run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--name", "AutoPCB",
             "--distpath", scratch / "dist", "--workpath", scratch / "work", "--specpath", scratch,
-            "--paths", ROOT / "scripts", "--add-data", str(ROOT / "scripts/autopcb/catalog.json") + os.pathsep + "autopcb", "--add-data", str(engine) + os.pathsep + "engine",
+            "--paths", ROOT / "scripts", "--add-data", str(ROOT / "scripts/autopcb/catalog.json") + os.pathsep + "autopcb", "--add-data", str(ROOT / "scripts/autopcb/serve.html") + os.pathsep + "autopcb", "--add-data", str(engine) + os.pathsep + "engine",
             ROOT / "scripts/autopcb/__main__.py")
         bundle = scratch / "dist" / "AutoPCB"
         executable = bundle / ("AutoPCB.exe" if sys.platform == "win32" else "AutoPCB")

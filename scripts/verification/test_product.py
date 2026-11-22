@@ -219,6 +219,10 @@ class NativeProductTests(unittest.TestCase):
                         self.assertEqual(screen["status"], "needs_review")
                         self.assertEqual(findings["native"]["open_connections"], 1)
                         self.assertTrue(all(item["type"] == "sampled_reference_gap" for item in screen["findings"]))
+                        # Each gap is the In1.Cu clearance ring around a through-hole connector pin.
+                        self.assertEqual(sorted(item["launch"] for item in screen["findings"]),
+                                         ["J1.2", "J1.3", "J2.2", "J2.3"])
+                        self.assertTrue(all(0 < item["unreferenced_mm"] < 1.5 for item in screen["findings"]))
                     else:
                         self.assertEqual(screen["status"], "not_applicable")
                     fabrication = root / (name + " fab")

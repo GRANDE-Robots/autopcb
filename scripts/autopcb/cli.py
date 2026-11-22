@@ -56,8 +56,10 @@ def parser() -> argparse.ArgumentParser:
     for name, description in (("compare", "inspect the saved and previewed board"),
                               ("apply", "explicitly save a validated routing improvement")):
         commands.add_parser(name, help=description).add_argument("run_id")
-    compare_bench = commands.add_parser("benchmark", help="measure a baseline and current runner on identical copies")
-    compare_bench.add_argument("--baseline", type=Path, required=True)
+    compare_bench = commands.add_parser("benchmark", help="measure two routing arms on identical copies")
+    arms = compare_bench.add_mutually_exclusive_group(required=True)
+    arms.add_argument("--baseline", type=Path, help="compare this AutoPCB checkout with the current engine")
+    arms.add_argument("--refinement", action="store_true", help="compare greedy routing with recovery and rework")
     compare_bench.add_argument("--rounds", type=int, default=3)
     compare_bench.add_argument("--seconds", type=int, default=30)
     compare_bench.add_argument("--memory-gib", type=float, default=3)
@@ -153,8 +155,10 @@ def _run(args) -> dict:
         return Layout(native, project, storage).apply(args.run_id)
     if args.action == "benchmark":
         from autopcb.benchmark import Benchmark
-        return Benchmark(native, project, args.baseline, Budget(args.rounds, args.seconds, args.memory_gib),
-                         storage).run()
+        budget = Budget(args.rounds, args.seconds, args.memory_gib)
+        if args.refinement:
+            return Benchmark.refinement(native, project, budget, storage).run()
+        return Benchmark.versions(native, project, args.baseline, budget, storage).run()
     if args.action == "placement-study":
         from autopcb.placement_study import PlacementStudy
         report = PlacementStudy(native, project, Budget(args.rounds, args.seconds, args.memory_gib),

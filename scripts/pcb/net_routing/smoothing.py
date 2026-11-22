@@ -10,6 +10,7 @@ from itertools import combinations
 from pcb.net_routing.geometry import RouteGeometryError, aggregate, intersection, on_segment
 from pcb.net_routing.model import Budget, BudgetExhausted, Net, Site
 from pcb.route_optimizer import GridRouter, Route, Segment
+from core.compat import strict_zip
 
 
 class RefinementNotApplicable(ValueError):
@@ -75,7 +76,7 @@ def _terminal_chains(route: Route, net: Net) -> list[tuple[Site, ...]]:
 
     adjacency: dict[Site, set[Site]] = defaultdict(set)
     edges = set()
-    for segment, points in zip(segments, cuts, strict=True):
+    for segment, points in strict_zip(segments, cuts):
         ordered = sorted(points, key=lambda point: (point.x, point.y))
         for first, last in zip(ordered, ordered[1:]):
             a, b = Site(first, segment.layer), Site(last, segment.layer)
@@ -318,7 +319,7 @@ def simplify_route(
     def measure(points_by_run):
         segments = tuple(
             Segment(a, b, layer)
-            for points, layer in zip(points_by_run, layers, strict=True)
+            for points, layer in strict_zip(points_by_run, layers)
             for a, b in zip(points, points[1:])
         )
         if not segments:

@@ -102,7 +102,7 @@ class GeometryProgressTests(unittest.TestCase):
 
     def test_backfill_uses_only_exact_board_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             project = root / "project"
             review = project / "deliverables" / "review"
             review.mkdir(parents=True)

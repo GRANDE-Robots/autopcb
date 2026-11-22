@@ -37,6 +37,7 @@ from pathlib import Path
 import pcbnew
 
 from core.pcb_io import BoardSaveGuard, copper_width
+from core.compat import strict_zip
 
 
 @dataclass(frozen=True)
@@ -192,7 +193,7 @@ def main() -> int:
         endpoint_attachments: list[tuple[tuple[int, int], int, int, int]] = []
 
         for pad_index, (pad, pad_position) in enumerate(
-            zip(old_pads, old_pad_positions, strict=True)
+            strict_zip(old_pads, old_pad_positions)
         ):
             for item in connectivity.GetConnectedTracks(pad):
                 if isinstance(item, pcbnew.PCB_VIA):
@@ -270,8 +271,8 @@ def main() -> int:
         new_rotation = float(footprint.GetOrientationDegrees())
         if len(old_pads) != len(new_pads):
             raise RuntimeError(f"pad count changed while moving {move.reference}")
-        for _old_pad, new_pad, old_position_key, old_net in zip(
-            old_pads, new_pads, old_pad_positions, old_pad_nets, strict=True
+        for _old_pad, new_pad, old_position_key, old_net in strict_zip(
+            old_pads, new_pads, old_pad_positions, old_pad_nets
         ):
             old_key = point_key(old_position_key)
             if old_net != new_pad.GetNetCode():

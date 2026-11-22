@@ -81,16 +81,13 @@ class BoardView(QGraphicsView):
         event.accept()
 
 
-def _panel(title: str, parent: QLayoutOwner) -> tuple[QWidget, QVBoxLayout]:
+def _panel(title: str, parent: QWidget | None) -> tuple[QWidget, QVBoxLayout]:
     widget = QWidget(parent)
     layout = QVBoxLayout(widget)
     label = QLabel(title)
     label.setProperty("section", True)
     layout.addWidget(label)
     return widget, layout
-
-
-QLayoutOwner = QWidget | None
 
 
 class Desktop(QMainWindow):

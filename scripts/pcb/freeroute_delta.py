@@ -27,9 +27,10 @@ from pcb.net_routing.geometry import RouteGeometryError, intersection, on_segmen
 from pcb.route_optimizer import (
     COPPER_LAYERS, GridRouter, NoGridRoute, Obstacle, Point, SearchBudgetExceeded, SearchLimitReached, Segment, mm,
 )
+from core.compat import strict_zip
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, order=True)
 class Trace:
     net: str
     layer: str
@@ -44,7 +45,7 @@ class Trace:
             object.__setattr__(self, "end", last)
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@dataclass(frozen=True, order=True)
 class Via:
     net: str
     at: tuple[int, int]
@@ -52,7 +53,7 @@ class Via:
     drill: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Delta:
     traces: tuple[Trace, ...]
     vias: tuple[Via, ...]
@@ -2061,7 +2062,7 @@ def style_rejections(before, after, before_identities: dict[str, str],
                 mark((uid,), field)
     for field in ("invalid_bends", "redundant_joints", "staircases"):
         previous = set(getattr(old, field))
-        for raw, normalized in zip(getattr(after, field), getattr(current, field), strict=True):
+        for raw, normalized in strict_zip(getattr(after, field), getattr(current, field)):
             if normalized not in previous:
                 mark(raw.item_ids, field)
     blockers.extend(f"New ambiguous geometry: {item}"
@@ -2414,7 +2415,7 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
             records = [*delta.traces, *delta.vias]
             proposed = {
                 parse(change["expression"]).children("uuid")[0].atoms()[1].value: item
-                for item, change in zip(records, modifications, strict=True)
+                for item, change in strict_zip(records, modifications)
             }
             boardfile.write_bytes(CampaignPlanner(stage).plan("pcb", modifications).after)
             report = _drc(cli, boardfile, stage / f"pass-{index}.json",
@@ -2659,7 +2660,7 @@ def filter_proposal(project: Path, roundtrip: Path, routed: Path, *, max_passes:
                         trial_changes = changes(trial)
                         trial_records = {
                             parse(change["expression"]).children("uuid")[0].atoms()[1].value: item
-                            for item, change in zip((*trial.traces, *trial.vias), trial_changes, strict=True)
+                            for item, change in strict_zip((*trial.traces, *trial.vias), trial_changes)
                         }
                         trial_ids = set(trial_records)
                         boardfile.write_bytes(CampaignPlanner(stage).plan("pcb", trial_changes).after)

@@ -42,6 +42,7 @@ from pcb.net_routing.runner import (
     verify_resume_reports,
 )
 from pcb.route_validation import _drc, stable_connection_items
+from core.toolchain import RouterCache
 
 
 def layer_cost_evidence(engine: str) -> str:
@@ -497,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.engine == "krt":
             from pcb.net_routing.krt_adapter import validate_installation
 
-            root = args.router or Path.home() / ".kicad-mcp" / "kicad-routing-tools-0.23.7"
+            root = args.router or RouterCache.krt()
             fingerprint = validate_installation(root)
         elif args.engine == "TraceMaker":
             if args.router is None or not args.router.is_file():

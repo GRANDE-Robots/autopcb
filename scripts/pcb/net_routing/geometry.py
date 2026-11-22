@@ -21,6 +21,7 @@ from pcb.route_optimizer import (
     is_staircase_triplet, is_standard_dogleg,
 )
 from pcb.net_routing.model import Site
+from core.compat import strict_zip
 
 
 class RouteGeometryError(ValueError):
@@ -159,7 +160,7 @@ def vertices(
             if a.layer == segment.layer and on_segment(a.point, segment)
         )
     result: dict[Site, set[int]] = defaultdict(set)
-    for segment, points in zip(segments, cuts, strict=True):
+    for segment, points in strict_zip(segments, cuts):
         ordered = sorted(points, key=lambda p: (p.x, p.y))
         for a, b in zip(ordered, ordered[1:]):
             direction = GridRouter._direction(a, b)

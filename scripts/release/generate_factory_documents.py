@@ -679,7 +679,6 @@ Use 08_RELEASE_GATES.csv for open acceptance conditions """
                 zip(
                     ["Gate", "Scope", "Required confirmation", "Current state"],
                     r,
-                    strict=False,
                 )
             )
             for r in gates

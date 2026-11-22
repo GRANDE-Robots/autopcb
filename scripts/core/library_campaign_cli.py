@@ -17,12 +17,13 @@ from typing import Any
 
 from core.kicad_campaign import CampaignFile, Plan, digest
 from core.library_edits import LibraryInputs, file_hash, library_path, plan_library
-from core.library_validation import find_cli, validate_library
+from core.library_validation import validate_library
+from core.toolchain import kicad_cli
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PreparedLibraryEdit:
     """A validated candidate bound to exact saved inputs and a campaign."""
 
@@ -107,7 +108,7 @@ def prepare(
     """Plan and validate a library candidate without changing the project."""
     project = project.resolve()
     target = library_path(project, document)
-    cli_path = find_cli(cli)
+    cli_path = kicad_cli(cli)
     cli_hash = file_hash(cli_path)
     inputs = LibraryInputs.capture(project)
     campaign_path, data, original_campaign = CampaignFile(project).read(campaign)

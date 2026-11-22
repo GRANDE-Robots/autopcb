@@ -10,6 +10,7 @@ import re
 from uuid import UUID, uuid5
 
 from core.kicad_sexpr import quote
+from core.compat import strict_zip
 
 
 def digest(record: dict) -> str:
@@ -57,7 +58,7 @@ def propose(text: str, *, catalog_file: Path | None = None) -> dict:
         if len(limits["layers"]) == 1 and next(iter(limits["layers"])) not in recipe["layers"]:
             unresolved.append(f"The characterized layout supports layer counts {recipe['layers']}.")
         size = [float(n) for n in dimensions[0]] if dimensions else recipe["size_mm"]
-        if not all(upper >= low for upper, low in zip(size, recipe["minimum_mm"], strict=True)):
+        if not all(upper >= low for upper, low in strict_zip(size, recipe["minimum_mm"])):
             unresolved.append("The requested outline is smaller than the catalog layout envelope.")
         if key == "usb" and re.search(r"\b(high[ -]speed|super[ -]speed|usb\s*3|480\s*m)", normalized):
             unresolved.append("This reference circuit covers full-speed USB 2.0 only.")

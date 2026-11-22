@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Atom:
     """A quoted or unquoted token in the original text."""
 
@@ -22,7 +22,7 @@ class Atom:
     value: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Form:
     """One complete parenthesized expression and its direct contents."""
 

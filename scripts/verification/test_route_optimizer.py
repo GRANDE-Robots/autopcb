@@ -2666,7 +2666,7 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_cli_saves_only_a_validated_source_bound_campaign(self):
         with tempfile.TemporaryDirectory(prefix="jessie-route-cli-test-") as directory:
-            project = Path(directory)
+            project = Path(directory).resolve()
             source = self.make_board(project)
             original = source.read_bytes()
             data = self.config()

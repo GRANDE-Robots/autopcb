@@ -47,7 +47,7 @@ def strip_native_reservations(path: Path, original: dict, temporary: frozenset[s
         raise RuntimeError("The router changed original zone definitions")
     for start, end in reversed(spans):
         source = source[:start] + source[end:]
-    path.write_text(source, encoding="utf-8", newline="")
+    path.write_bytes(source.encode("utf-8"))
 
 
 def _hull(points):

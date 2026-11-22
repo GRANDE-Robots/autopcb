@@ -43,7 +43,7 @@ from pcb.route_optimizer import COPPER_LAYERS, GridRouter, Point, Segment
 from pcb.route_validation import _drc
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StitchDimensions:
     """Dimensions in KiCad internal units, taken from the board rules."""
 
@@ -63,7 +63,7 @@ class StitchDimensions:
             raise ValueError("Clearances must be nonnegative")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StitchProof:
     """A source-bound calculation for an entire disconnected ground island."""
 
@@ -76,7 +76,7 @@ class StitchProof:
     board_sha256: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StitchAllowance:
     """Maximum stitch length and the exact island covered by its load model."""
 

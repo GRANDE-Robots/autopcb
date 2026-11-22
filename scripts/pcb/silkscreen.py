@@ -12,14 +12,15 @@ import math
 import os
 from pathlib import Path
 import re
-import sys
 import tempfile
 
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import Form, parse, quote
 from core.paths import asset_root
+from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, file_sha256, quiet_duplicate_image_handlers
 from pcb.route_validation import _canonical, _drc
+from core.compat import strict_zip
 
 
 def nonsilkscreen(content: bytes) -> tuple:
@@ -129,7 +130,7 @@ def plan_top_text(project: Path, policy: dict) -> tuple[bytes, dict[str, int]]:
         common_x = max(box.GetRight() for box in boxes) + gap
         first_above = min(box.GetY() for box in boxes) - gap - 500000 - pitch
         first_below = max(box.GetBottom() for box in boxes) + gap + 500000
-        for (ref, caption), box in zip(bank['items'], boxes, strict=True):
+        for (ref, caption), box in strict_zip(bank['items'], boxes):
             title = label(ref)
             role = label(caption, title)
             if mode == 'right':
@@ -180,7 +181,7 @@ def restore_stock_silk(content: bytes, bindings: list[dict]) -> bytes:
         old, new = lines(footprint), lines(parse(text))
         if len(old) != len(new):
             raise ValueError('Stock silk topology differs; review the footprint first')
-        for prior, stock in zip(old, new, strict=True):
+        for prior, stock in strict_zip(old, new):
             uid = prior.children('uuid')[0].atoms()[1].value
             ids = stock.children('uuid')
             if ids:
@@ -223,7 +224,7 @@ def sync_silk_libraries(project: Path, before: bytes, after: bytes, policy: dict
             for name in ('start', 'end'):
                 point = line.children(name)[0]
                 coords = [float(a.value) for a in point.atoms()[1:]]
-                desired = [max(-limit, min(value, limit)) for value, limit in zip(coords, radius, strict=True)]
+                desired = [max(-limit, min(value, limit)) for value, limit in strict_zip(coords, radius)]
                 if desired != coords:
                     edits.append((point.start, point.end, f'({name} {desired[0]:g} {desired[1]:g})'))
         for start, end, replacement in sorted(edits, reverse=True):
@@ -488,7 +489,7 @@ def cleanup(project: Path, *, apply: bool = False, top_alignment: bool = False) 
     assets = asset_root(project)
     policy_path = assets / 'config' / 'silkscreen.json'
     config = json.loads(policy_path.read_bytes())
-    cli = Path(sys.executable).with_name('kicad-cli.exe')
+    cli = kicad_cli()
     with _exclusive(assets / 'results' / 'autoroute' / 'active.lock'):
         with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             dependencies = dict(snapshot.fingerprints)

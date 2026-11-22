@@ -19,7 +19,7 @@ import tempfile
 import time
 import uuid
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +48,7 @@ from pcb.route_validation import (
     _broken_existing_connections, _net_identities, _new_dangling_indices, _segment_identities,
     added_violation_keys,
 )
+from core.compat import strict_zip
 
 
 def _source_hashes(snapshot: Snapshot, project: Path, assets: Path) -> dict[str, str]:
@@ -603,7 +604,7 @@ def _unfinished_combined_batches(requests: list[dict], result: dict) -> list[dic
     completed = {"geometric_candidate_only", "already_connected"}
     retryable = {"no_complete_candidate_found", "checkpoint_exhausted"}
     unfinished = []
-    for request, attempt in zip(requests, attempts, strict=True):
+    for request, attempt in strict_zip(requests, attempts):
         status = attempt.get("status")
         if status in retryable:
             unfinished.append(request)
@@ -907,13 +908,16 @@ def _search_alternatives_native(directory: Path, requests: list[dict], workers: 
     arguments = [(str(directory), request) for request in requests]
     if len(arguments) == 1:
         return [_search(arguments[0])]
-    # Recycle workers after one native operation: KiCad's SWIG board wrappers
-    # can retain native allocations between loads.
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
-        max_tasks_per_child=1,
-    ) as executor:
-        return list(executor.map(_search, arguments))
+    # One fresh process per search: KiCad's SWIG board wrappers can retain
+    # native allocations between loads.
+    context = multiprocessing.get_context("spawn")
+    with ExitStack() as stack:
+        futures = [
+            stack.enter_context(concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=context))
+            .submit(_search, argument)
+            for argument in arguments
+        ]
+        return [future.result() for future in futures]
 
 
 def _validate_alternative_native(directory: Path, request: dict, result: dict,
@@ -927,7 +931,7 @@ def _validate_search_alternatives(directory: Path, requests: list[dict], searche
                                   critical_nets: tuple[str, ...]) -> list[dict]:
     """Validate competing proposals independently in fresh native processes."""
     results = []
-    for request, search in zip(requests, searches, strict=True):
+    for request, search in strict_zip(requests, searches):
         if search.get("status") == "geometric_candidate_only":
             results.append(run_native(_validate_alternative_native, directory, request, search, critical_nets))
         else:
@@ -1487,7 +1491,7 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
                             accepted = True
                     if not accepted:
                         if parallel_ordinary and not combined_ordinary:
-                            for request, alternative in zip(requests, alternatives, strict=True):
+                            for request, alternative in strict_zip(requests, alternatives):
                                 _split_failed(state["queue"], [request], state.get("island_counts", {}), alternative, recovery)
                         else:
                             _split_failed(state["queue"], requests, state.get("island_counts", {}), result, recovery)

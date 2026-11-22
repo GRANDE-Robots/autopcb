@@ -39,7 +39,7 @@ from pcb.net_routing.rework import (
 from pcb.net_routing.rules import RoutingRules
 
 
-@dataclass(slots=True)
+@dataclass
 class Candidate:
     board: BoardPlan
     poses: dict

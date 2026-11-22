@@ -31,7 +31,7 @@ def asset_root(project: Path) -> Path:
     return migrated if migrated.is_dir() else root
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProjectStorage:
     """Paths for one native design, optionally owned by an AutoPCB workspace."""
 

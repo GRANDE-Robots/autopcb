@@ -26,7 +26,7 @@ def _version(text: str) -> str:
     return match[1]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Native:
     cli: Path
     python: Path

@@ -32,6 +32,26 @@ def _executable(requested: Path | None) -> Path | None:
     return next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
 
 
+class RouterCache:
+    """Optional external routers kept under ~/.kicad-mcp, named for this OS."""
+
+    @staticmethod
+    def root() -> Path:
+        return Path.home() / ".kicad-mcp"
+
+    @classmethod
+    def fastroute(cls) -> Path:
+        return cls.root() / "fastroute-0.1.14" / ("fastroute.exe" if os.name == "nt" else "fastroute")
+
+    @classmethod
+    def krt(cls) -> Path:
+        return cls.root() / "kicad-routing-tools-0.23.7"
+
+    @classmethod
+    def freerouting(cls) -> Path:
+        return cls.root() / "freerouting-2.5.0.jar"
+
+
 def kicad_cli(requested: Path | None = None) -> Path:
     candidate = _executable(requested)
     if candidate is None or not candidate.is_file():
@@ -93,7 +113,7 @@ def inspect_toolchain(
     jar = (
         freerouting_jar.resolve()
         if freerouting_jar is not None
-        else Path.home() / ".kicad-mcp" / "freerouting.jar"
+        else RouterCache.root() / "freerouting.jar"
     )
     java = shutil.which("java")
     return {

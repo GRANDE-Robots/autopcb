@@ -16,9 +16,10 @@ from core.kicad_sexpr import parse
 from core.pcb_io import copper_width, net_classes
 from pcb.route_native import _pad_obstacle, validate_removals
 from pcb.route_optimizer import mm
+from core.compat import strict_zip
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GroundAnchorPose:
     """A half-turn of a bottom resistor around one unchanged protected pad."""
 
@@ -119,7 +120,7 @@ class MoveGuide:
         movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options}
         settings = {**request["shared"], **request["nets"][0]}
         witnesses, _ = diagnose(board, anchors, [], settings, recovery, critical_nets, weights,
-                                movable=movable)
+                                movable=movable, first_feasible=True)
         return cls(board, (witness for witness in witnesses if witness.identifiers <= movable.keys()))
 
     def names(self, selection) -> bool:
@@ -730,7 +731,7 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
 
             copies = []
             moved_geometry = {}
-            for item, choice in zip(selected, candidate["movable"], strict=True):
+            for item, choice in strict_zip(selected, candidate["movable"]):
                 copy = pcbnew.FOOTPRINT(item[2])
                 x, y = choice["positions_mm"][0]
                 copy.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))

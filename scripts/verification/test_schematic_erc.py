@@ -141,7 +141,7 @@ class ReadOnlyErcTests(unittest.TestCase):
             with (
                 mock.patch.object(sys, "argv", args),
                 mock.patch(
-                    "verification.audit_schematic_erc.find_cli",
+                    "verification.audit_schematic_erc.kicad_cli",
                     return_value=Path("cli"),
                 ),
                 mock.patch(

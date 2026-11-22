@@ -6,6 +6,7 @@ import tempfile
 
 from pcb.branch_widths import bounded_leaves, check_unchanged_other_rules, compile_widths
 from core.toolchain import kicad_cli
+from core.compat import strict_zip
 
 
 class BranchWidthTests(unittest.TestCase):
@@ -317,7 +318,7 @@ class BranchWidthTests(unittest.TestCase):
             block, counts = compile_widths(board, {'schema': 1, 'electrically_verified': False, 'taps': groups})
             self.assertEqual(counts, {'SIGNAL': 2})
             self.assertNotIn(traces[0].m_Uuid.AsString(), block)
-            for track, width in zip(traces[1:], ('0.650000', '0.725000'), strict=True):
+            for track, width in strict_zip(traces[1:], ('0.650000', '0.725000')):
                 self.assertTrue(any(track.m_Uuid.AsString() in line and f'(min {width}mm)' in line
                                     for line in block.splitlines()))
             board.Remove(traces[0])

@@ -90,7 +90,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_project_after_action_resolves_from_caller_for_router_and_review(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-cwd-") as tmp:
-            caller = Path(tmp)
+            caller = Path(tmp).resolve()
             with mock.patch.object(Path, "cwd", return_value=caller):
                 for group, action in (("pcb", "freeroute-fast"), ("review", "refresh")):
                     for option in (["--project", "."], ["--project=."]):

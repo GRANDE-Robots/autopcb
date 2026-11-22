@@ -51,7 +51,7 @@ def _basis(value: object, name: str) -> str:
     return value.strip()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TrackLimit:
     minimum_width: int
     maximum_current_a: float
@@ -59,7 +59,7 @@ class TrackLimit:
     basis: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ViaLimit:
     minimum_size: int
     minimum_drill: int
@@ -69,7 +69,7 @@ class ViaLimit:
     basis: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExistingVia:
     """Dimensions of a same-net through via from a stable native snapshot."""
 
@@ -92,7 +92,7 @@ def via_sizes_meet(sizes: tuple[tuple[str, int], ...], required_layers, *,
                     for layer, size in observed.items()))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ElectricalConstraints:
     current_a: float
     current_basis: str

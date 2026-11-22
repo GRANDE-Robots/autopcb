@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pcb.net_routing import fast
+from core.toolchain import RouterCache
 
 
 class ExternalBatchTests(unittest.TestCase):
@@ -399,7 +400,7 @@ class ExternalBatchTests(unittest.TestCase):
         with patch.object(fast, "run_one", return_value={"status": "no_improvement", "preview_opens": 245}) as run:
             fast.run_batches(Path("."), run_id, batches=1, items=80, timeout=180, engine="fastroute")
         self.assertEqual(run.call_args.kwargs["engine"], "fastroute")
-        self.assertEqual(run.call_args.kwargs["jar"].name, "fastroute.exe")
+        self.assertEqual(run.call_args.kwargs["jar"], RouterCache.fastroute())
 
     def test_can_compare_two_router_orders_without_changing_validation(self):
         with patch.object(fast, "run_one", return_value={"status": "no_improvement", "preview_opens": 211}) as run:

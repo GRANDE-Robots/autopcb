@@ -15,6 +15,7 @@ from core.pcb_io import copper_width
 from pcb.net_routing.geometry import intersection, on_segment
 from pcb.route_cli import campaign_changes
 from pcb.route_optimizer import Point, Route, Segment
+from core.compat import strict_zip
 
 
 def _contacts(first: Segment, second: Segment) -> set[Point]:
@@ -276,7 +277,7 @@ def junction_changes(
         )
     new_segments = tuple(
         piece
-        for segment, points in zip(segments, cuts, strict=True)
+        for segment, points in strict_zip(segments, cuts)
         for piece in _pieces(segment, points)
     )
     if merge_collinear:

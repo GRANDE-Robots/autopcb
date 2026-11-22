@@ -12,7 +12,7 @@ from dataclasses import dataclass, fields
 STAGE_NAMES = ("local", "wider pairs", "finer pairs", "board detour", "copper reroute")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecoveryPolicy:
     early_rework: bool = False
     stages: int = 3

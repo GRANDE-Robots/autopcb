@@ -3,7 +3,6 @@
 import argparse
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 from core.paths import default_project, long_path
@@ -12,6 +11,7 @@ import pcbnew
 
 from core.export_helpers import assert_current_inputs, require, sha, writejson
 from review.refresh_gallery import dependency_paths
+from core.toolchain import kicad_cli
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
     )
     sheets = [sch]
     source = {p.relative_to(C).as_posix(): sha(p) for p in [board, *sheets]}
-    CLI = str((a.cli or Path(sys.executable).with_name("kicad-cli.exe")).resolve())
+    CLI = str(kicad_cli(a.cli))
     dependencies = {name: sha(path) for name, path in dependency_paths(C).items()}
     commands = []
 

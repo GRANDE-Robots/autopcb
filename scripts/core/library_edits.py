@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.compat import file_sha256
 from core.paths import library_directories, library_root
 from typing import Any
 
@@ -24,10 +25,7 @@ PROJECT_SUFFIXES = {
 LIBRARY_SUFFIXES = {*LIBRARY_ROOTS, ".step", ".stp", ".wrl"}
 
 
-def file_hash(path: Path) -> str:
-    """Hash large files without loading their contents into memory."""
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+file_hash = file_sha256
 
 
 def library_path(project: Path, document: str) -> Path:
@@ -76,7 +74,7 @@ def _input_paths(project: Path) -> list[Path]:
     return sorted(paths)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LibraryInputs:
     """A reproducible inventory and hashes of saved design and library inputs."""
 

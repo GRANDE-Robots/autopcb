@@ -69,7 +69,7 @@ def read_profile(root: Path) -> dict:
     return data
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProjectPaths:
     """Select one native project family, retaining its basename and sheet structure."""
 
@@ -233,7 +233,7 @@ def native_path(location: Path, suffix: str) -> Path:
         raise
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SourceSnapshot:
     """Bind operations to the exact saved files and dependency inventory."""
 

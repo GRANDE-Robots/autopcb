@@ -1,5 +1,7 @@
 """Optimistic lower bound on required new vias for a grid search."""
 
+from __future__ import annotations
+
 from array import array
 from collections import deque
 import heapq

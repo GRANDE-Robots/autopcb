@@ -9,7 +9,7 @@ from pcb.net_routing.geometry import vertices
 from pcb.route_optimizer import NM_PER_MM, Point, Route
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Frame:
     origin: Point
     quarter_turns: int = 0
@@ -27,7 +27,7 @@ class Frame:
         return (-x, y) if self.mirror else (x, y)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SymmetryComparison:
     path_distance_mm: float
     via_distance_mm: float
@@ -117,7 +117,7 @@ def compare_routes(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CostWeights:
     length: float = 1.0
     via: float = 10.0
@@ -131,7 +131,7 @@ class CostWeights:
             raise ValueError("Routing weights must be finite and nonnegative, with positive length weight")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LayoutScore:
     open_connections: int
     symmetry: float

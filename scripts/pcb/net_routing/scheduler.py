@@ -30,7 +30,7 @@ def _union(a: Window, b: Window) -> Window:
     return min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WorkItem:
     name: str
     priority: int
@@ -47,18 +47,18 @@ class WorkItem:
             raise ValueError("A routing work item needs at least two copper islands")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RoutingBatch:
     items: tuple[WorkItem, ...]
     window: Window
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RoutingRound:
     batches: tuple[RoutingBatch, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BoardWork:
     items: tuple[WorkItem, ...]
     connected_nets: tuple[str, ...]

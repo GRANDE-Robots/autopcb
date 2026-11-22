@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterator
 
+from core.compat import file_sha256
 from core.kicad_sexpr import Form, parse
 
 KIND = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -112,9 +113,7 @@ def _summary(form: Form) -> dict[str, Any]:
     return result
 
 
-def _hash_file(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+_hash_file = file_sha256
 
 
 def inspect(

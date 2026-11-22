@@ -9,7 +9,7 @@ from typing import Callable
 from pcb.net_routing.model import Budget, BudgetExhausted, Net, NetPlan
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BoardPlan:
     plans: tuple[NetPlan, ...] = ()
 

@@ -253,7 +253,7 @@ def audit(source: str) -> list[dict[str, object]]:
             and bool(ordered)
             and all(
                 before[2] <= after[2] + 1e-6
-                for before, after in zip(ordered, ordered[1:], strict=False)
+                for before, after in zip(ordered, ordered[1:])
             )
         )
         one_side = len(x_columns) == 1

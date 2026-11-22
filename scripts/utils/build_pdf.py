@@ -11,6 +11,7 @@ import importlib.util
 import os
 from pathlib import Path
 
+from core.compat import file_sha256
 from core.paths import asset_root, default_project
 import re
 import shutil
@@ -420,10 +421,7 @@ def project_path(project: Path, name: object, suffix: str) -> Path:
     return result
 
 
-def file_hash(path: Path) -> str:
-    """Hash a file without keeping large image assets in memory."""
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+file_hash = file_sha256
 
 
 class _ImageReferences(HTMLParser):

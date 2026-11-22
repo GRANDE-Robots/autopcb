@@ -146,7 +146,7 @@ def normalize(source: str) -> tuple[str, dict[str, int], int]:
             )
             touched_instances += 1
     replacements.sort(key=lambda item: (item[0], item[1]))
-    for previous, current in zip(replacements, replacements[1:], strict=False):
+    for previous, current in zip(replacements, replacements[1:]):
         if current[0] < previous[1]:
             raise ValueError("terminal-name edits overlap")
     for start, end, replacement in reversed(replacements):

@@ -1,5 +1,7 @@
 """Standard locations for AutoPCB inputs, policy and generated projects."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,7 +9,7 @@ from core.paths import ProjectStorage
 from core.project import ProjectPaths, project_entries
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Workspace:
     root: Path
 

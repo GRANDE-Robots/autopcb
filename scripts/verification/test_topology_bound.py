@@ -10,6 +10,7 @@ from unittest import mock
 from pcb.route_optimizer import GridRouter, NoGridRoute, Obstacle, Point, Weights, mm
 from pcb.topology_bound import UNREACHABLE, minimum_vias, relaxed_costs
 from pcb.net_routing.model import Budget, BudgetExhausted, Limits
+from core.compat import strict_zip
 
 
 def p(x, y):
@@ -116,7 +117,7 @@ class TopologyBoundTests(unittest.TestCase):
                                lookup(router, full, p(8.25, 5), "B.Cu"))
         self.assertLess(router.check_budget.call_count, 5)
         self.assertTrue(all(pcost <= fcost + 1e-8
-                            for pcost, fcost in zip(partial, full, strict=True)
+                            for pcost, fcost in strict_zip(partial, full)
                             if math.isfinite(fcost)))
 
     def test_partial_bound_never_calls_unexplored_cells_unreachable(self):

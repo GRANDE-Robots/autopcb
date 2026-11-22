@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pcb.route_optimizer import Point, Route, SearchBudgetExceeded, Segment
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Site:
     point: Point
     layer: str
@@ -20,7 +20,7 @@ class Site:
         return self.point.x, self.point.y, self.layer
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Island:
     identifier: str
     sites: tuple[Site, ...]
@@ -28,7 +28,7 @@ class Island:
     zone_anchors: tuple[tuple[Site, Site], ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Net:
     name: str
     islands: tuple[Island, ...]
@@ -36,7 +36,7 @@ class Net:
     pad_sites: frozenset[Site] = frozenset()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NetPlan:
     net: str
     route: Route
@@ -62,7 +62,7 @@ class NetPlan:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Limits:
     tree_beam: int = 4
     board_beam: int = 4
@@ -113,7 +113,7 @@ class BudgetExhausted(SearchBudgetExceeded):
     """A configured search limit was reached; feasibility is still unknown."""
 
 
-@dataclass(slots=True)
+@dataclass
 class Budget:
     limits: Limits
     started: float = field(default_factory=time.monotonic)

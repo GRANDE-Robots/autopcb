@@ -5,9 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,12 +22,8 @@ CLI_AVAILABLE = CLI is not None and CLI.is_file()
 
 
 def _kicad_python() -> Path:
-    if CLI is None:
-        raise RuntimeError("KiCad CLI is unavailable")
-    running = Path(sys.executable)
-    if running.parent.resolve() == CLI.parent:
-        return running
-    return CLI.parent / ("python.exe" if os.name == "nt" else "python3")
+    """The KiCad Python the product picks for this CLI, as in the macOS app bundle."""
+    return toolchain.native_python_candidates(CLI)[0]
 
 
 FOOTPRINT = (
@@ -319,8 +313,6 @@ class LibraryCampaignTests(unittest.TestCase):
     def test_standard_campaign_can_add_a_library_change(self) -> None:
         scripts = Path(__file__).resolve().parents[1]
         kicad_python = _kicad_python()
-        if not kicad_python.is_file():
-            self.skipTest("KiCad Python is not installed at the test path")
         base = [
             str(kicad_python),
             "-B",
@@ -373,8 +365,6 @@ class LibraryCampaignTests(unittest.TestCase):
     def test_single_entrypoint_dispatches_library_preview(self) -> None:
         scripts = Path(__file__).resolve().parents[1]
         kicad_python = _kicad_python()
-        if not kicad_python.is_file():
-            self.skipTest("KiCad Python is not installed at the test path")
         result = subprocess.run(
             [
                 str(kicad_python),

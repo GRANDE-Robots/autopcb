@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pcbnew
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NetInventory:
     name: str
     pad_ids: tuple[str, ...]
@@ -18,7 +18,7 @@ class NetInventory:
     zone_ids: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BoardInventory:
     nets: tuple[NetInventory, ...]
     unassigned_pad_ids: tuple[str, ...]

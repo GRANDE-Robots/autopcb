@@ -21,7 +21,7 @@ from pcb.route_optimizer import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Obstruction:
     uuid: str
     net: str

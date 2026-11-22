@@ -234,6 +234,21 @@ class NativeProductTests(unittest.TestCase):
                         self.assertEqual(sha256((fabrication / item).read_bytes()).hexdigest(), digest)
                     original.verify_unchanged()
 
+    def test_bottom_side_catalog_part_is_built_on_the_bottom_layer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            spec = design.catalog()
+            spec["designs"]["temperature"]["parts"]["R1"].update(position=[12, 5, 270], side="bottom")
+            catalog = root / "catalog.json"
+            catalog.write_text(json.dumps(spec), encoding="utf-8")
+            proposal = design.propose("Two-layer I2C temperature sensor at 3.3 V", catalog_file=catalog)
+            build = jobs.build(self.native, proposal, proposal["proposal_id"], root / "Bottom Part")
+            project = ProjectPaths(Path(build["project"]))
+            sides = {fp["ref"]: fp["layer"] for fp in jobs.inspect(self.native, project)["geometry"]["footprints"]}
+            self.assertEqual((sides["R1"], sides["R2"]), ("B.Cu", "F.Cu"))
+            findings = jobs.verify(self.native, project)["native"]["findings"]
+            self.assertEqual({item["check"] for item in findings}, {"unconnected_items"})
+
     def test_exhausted_pair_seed_preserves_the_unrouted_project(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

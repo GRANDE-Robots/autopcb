@@ -67,7 +67,7 @@ r_t^\star\approx \arg\min_{r\in\mathcal R_t}
 \big[\Delta C_t(r)+\widehat C_{\mathrm{remain}}(r)\big].
 $$
 
-**Grid search.** State $v$ stores position, layer, and heading. A* ranks $g(v)+\eta h(v)$ using accumulated cost $g$, estimated remaining cost $h$, and heuristic weight $\eta$ (default 1). The topology bound sets $h$ to a relaxed cost, vias included, to the nearest grid access of the endpoint. One map serves every access of an off-grid pad. Cells it did not reach take the last cost it settled.
+**Grid search.** State $v$ stores position, layer, and heading. A* ranks $g(v)+\eta h(v)$ using accumulated cost $g$, estimated remaining cost $h$, and heuristic weight $\eta$ (default 1). The topology bound raises $h$ to a relaxed cost, vias included, to the nearest grid access of the endpoint. One map serves every access of an off-grid pad. Cells it did not reach take the last cost it settled.
 
 <!-- pagebreak -->
 

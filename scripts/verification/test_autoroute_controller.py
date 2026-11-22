@@ -1340,9 +1340,14 @@ class AutoControllerTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["resource_limits"]["job_commit_limit_bytes"], 1234)
 
     def test_publication_stays_disabled_until_electrical_checks_exist(self):
+        import contextlib
+        import io
         from pcb.net_routing.autoroute_cli import main
-        with self.assertRaisesRegex(SystemExit, "2"):
+
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error), self.assertRaisesRegex(SystemExit, "2"):
             main(["--project", ".", "run", "--apply"])
+        self.assertIn("publication is disabled", error.getvalue())
 
     def test_an_explicit_exclusion_remains_visible_as_a_blocker(self):
         from pcb.net_routing.controller import make_work_plan

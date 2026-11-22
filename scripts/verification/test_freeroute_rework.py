@@ -1302,7 +1302,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_failed_batch_records_elapsed_time_before_reporting_error(self):
         with (patch.object(api, "run_one", side_effect=RuntimeError("native failure")),
               patch.object(api, "record_unimproved_batch") as record,
-              redirect_stderr(io.StringIO())):
+              redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO())):
             result = api.main(["--project", ".", "--run", "a" * 32, "--batches", "1",
                                "--focus-open-class", "SIGNAL"])
         self.assertEqual(result, 1)
@@ -1317,11 +1317,13 @@ class CoordinatedRepairTests(unittest.TestCase):
         results = [{"status": "no_safe_improvement", "repair_blockers": ("FAILED",),
                     "unchanged_followup_scope": ()},
                    {"status": "no_rework_candidate"}]
+        output = io.StringIO()
         with (patch.object(api, "run_one", side_effect=results) as run,
-              patch.object(api, "record_unimproved_batch")):
+              patch.object(api, "record_unimproved_batch"), redirect_stdout(output)):
             result = api.main(["--project", ".", "--run", "a" * 32, "--batches", "2",
                                "--focus-open-class", "SIGNAL"])
         self.assertEqual(result, 0)
+        self.assertIn("Temporarily deferring unrelated failed nets: FAILED", output.getvalue())
         self.assertEqual(run.call_args_list[0].kwargs["avoid"], ())
         self.assertEqual(run.call_args_list[1].kwargs["avoid"], ("FAILED",))
         self.assertEqual(run.call_args_list[0].kwargs["tried_unchanged"], ())

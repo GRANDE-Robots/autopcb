@@ -1,0 +1,63 @@
+name: Tests
+
+on:
+  pull_request:
+    paths: ["scripts/**", "config/**", "pyproject.toml", ".github/workflows/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install KiCad 10
+        run: |
+          sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kicad kicad-symbols kicad-footprints xvfb
+          sudo /usr/bin/python3 -m pip install --break-system-packages psutil markdown-it-py Pillow pypdfium2 ruff
+          kicad-cli version
+      - name: Test
+        run: xvfb-run -a /usr/bin/python3 scripts/run.py --project . --kicad-python /usr/bin/python3 test
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      KICAD_CLI: /Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install KiCad 10
+        run: |
+          brew install --cask kicad
+          "$KICAD_CLI" version
+      - name: Test
+        run: |
+          python=$(ls /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/*/bin/python3 | head -1)
+          "$python" -m ensurepip --upgrade || true
+          "$python" -m pip install psutil markdown-it-py Pillow pypdfium2 ruff
+          "$python" scripts/run.py --project . --kicad-python "$python" test
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install KiCad 10
+        run: |
+          choco install kicad -y --no-progress
+          & "C:\Program Files\KiCad\10.0\bin\kicad-cli.exe" version
+      - name: Test
+        run: |
+          $python = "C:\Program Files\KiCad\10.0\bin\python.exe"
+          & $python -m pip install psutil markdown-it-py Pillow pypdfium2 ruff
+          & $python scripts\run.py --project . --kicad-python $python test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

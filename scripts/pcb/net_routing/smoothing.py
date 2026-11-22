@@ -134,7 +134,8 @@ def simplify_terminal_branches(
         best = aggregate(
             (route,), existing=net.existing, weights=router.weights,
             layer_penalties=router.layer_penalties, guide=router.guide,
-            pad_sites=net.pad_sites, forbid_staircase=router.forbid_staircase,
+            pad_sites=net.pad_sites, pad_copper=net.pad_copper,
+            forbid_staircase=router.forbid_staircase,
             minimum_segment=router.min_segment_length,
         )
     except (RefinementNotApplicable, RouteGeometryError):
@@ -166,7 +167,8 @@ def simplify_terminal_branches(
             measured = aggregate(
                 (candidate,), existing=net.existing, weights=router.weights,
                 layer_penalties=router.layer_penalties, guide=router.guide,
-                pad_sites=net.pad_sites, forbid_staircase=router.forbid_staircase,
+                pad_sites=net.pad_sites, pad_copper=net.pad_copper,
+                forbid_staircase=router.forbid_staircase,
                 minimum_segment=router.min_segment_length,
             )
             if measured.cost + 1e-9 < best.cost:
@@ -373,6 +375,7 @@ def simplify_route(
                 layer_penalties=router.layer_penalties,
                 guide=router.guide,
                 pad_sites=net.pad_sites,
+                pad_copper=net.pad_copper,
                 forbid_staircase=router.forbid_staircase,
                 minimum_segment=router.min_segment_length,
             )

@@ -129,7 +129,10 @@ class TopologyBoundTests(unittest.TestCase):
         layer = router.layers.index("B.Cu")
         costs = relaxed_costs(router, (gx, gy, layer), stop_at=(sx, sy, layer),
                               max_expansions=2)
-        self.assertEqual(lookup(router, costs, p(2, 5), "B.Cu"), 0)
+        full = relaxed_costs(router, (gx, gy, layer))
+        bound = lookup(router, costs, p(2, 5), "B.Cu")
+        self.assertTrue(math.isfinite(bound))
+        self.assertLessEqual(bound, lookup(router, full, p(2, 5), "B.Cu"))
 
     def test_relaxed_topology_does_not_reject_a_clear_diagonal(self):
         obstacles = tuple(

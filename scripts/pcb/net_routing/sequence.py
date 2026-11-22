@@ -21,10 +21,11 @@ from core.paths import results_path
 from pcb import checkpoints
 from pcb.net_routing.geometry import aggregate
 from pcb.net_routing.model import Site
-from pcb.net_routing.native import Snapshot, sha
+from pcb.net_routing.native import Snapshot, pad_core, sha
 from pcb.route_optimizer import (
     COPPER_LAYERS,
     GridRouter,
+    PadCopper,
     Point,
     Route,
     Segment,
@@ -169,6 +170,10 @@ def _check_seed_geometry(
                     layer_penalties={},
                     guide=(),
                     pad_sites=pad_sites,
+                    pad_copper=PadCopper(tuple(
+                        box for p in board.GetPads() if p.GetNetname() == net
+                        for box in pad_core(p, {layer: board.GetLayerID(layer)
+                                                for layer in enabled_copper_layers(board)}))),
                     forbid_staircase=True,
                 )
             except ValueError as error:

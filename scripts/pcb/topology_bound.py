@@ -94,8 +94,13 @@ def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
 
 def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
                   stop_at: tuple[int, int, int] | None = None,
-                  max_expansions: int | None = None) -> array:
-    """Compute optimistic costs; unfinished cells have the safe lower bound zero."""
+                  max_expansions: int | None = None,
+                  more_goals: tuple[tuple[int, int, int], ...] = ()) -> array:
+    """Compute optimistic costs; unfinished cells get the last settled cost.
+
+    With several goals each cell holds its cost to the nearest one, which
+    bounds the cost to every one of them.
+    """
     nx, ny = router.nx, router.ny
     area = nx * ny
     nstates = area * len(router.layers)
@@ -124,10 +129,11 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
     via_blocked = bytearray(area)
     for x, y in router.via_blocked:
         via_blocked[y * nx + x] = 1
-    gx, gy, glayer = goal
-    goal_id = glayer * area + gy * nx + gx
-    distance[goal_id] = 0
-    queue = [(0.0, goal_id)]
+    queue = []
+    for gx, gy, glayer in (goal, *more_goals):
+        goal_id = glayer * area + gy * nx + gx
+        distance[goal_id] = 0
+        queue.append((0.0, goal_id))
     edge = router.clearance + math.ceil(router.width / 2)
     via_edge = router.clearance + math.ceil(router.via_size / 2)
     xmin, ymin, xmax, ymax = grid_bounds(router, edge)
@@ -186,9 +192,10 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
                 distance[next_state] = updated
                 heapq.heappush(queue, (updated, next_state))
     if partial:
-        # Tentative Dijkstra distances are upper bounds, not lower bounds.
-        # Unknown cells must never be mistaken for unreachable cells either.
+        # Dijkstra settles in cost order, so every unsettled cell costs at
+        # least the last settled one. Tentative distances are upper bounds,
+        # and unknown cells must never be mistaken for unreachable cells.
         for index, visited in enumerate(settled):
             if not visited:
-                distance[index] = 0.0
+                distance[index] = cost
     return distance

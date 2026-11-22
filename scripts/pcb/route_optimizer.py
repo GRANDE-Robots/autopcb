@@ -38,12 +38,15 @@ def is_standard_dogleg(directions: Iterable[int]) -> bool:
             and (diagonal - middle) % 8 in {1, 7})
 
 
-def _advance_staircase_history(memory: int, current: int, following: int) -> int | None:
+def _advance_staircase_history(memory: int, current: int, following: int,
+                                anchored: bool = False) -> int | None:
     """Keep three prior runs; resolve a diagonal/cardinal/diagonal after its exit.
 
     A pending final triplet is checked on the complete candidate, where pad
     access and existing-copper context are available. No unsafe path is accepted
     merely because this bounded search history has not seen its ending yet.
+    A turn inside same-net pad copper ends the chain there, so a staircase
+    ending at it has no dogleg exit and the next run starts a new chain.
     """
     if current < 0 or current == following:
         return memory
@@ -53,6 +56,8 @@ def _advance_staircase_history(memory: int, current: int, following: int) -> int
         history.append(value % 9 - 1)
         value //= 9
     history.reverse()
+    if anchored:
+        return None if len(history) >= 2 and is_staircase_triplet(*history[-2:], current) else -1
     context = [*history, current, following]
     if (len(context) == 5 and is_staircase_triplet(*context[1:4])
             and not is_standard_dogleg(context)):
@@ -259,6 +264,24 @@ class Via:
 
 
 @dataclass(frozen=True)
+class PadCopper:
+    """Boxes (layer, x0, y0, x1, y1) that lie inside one net's pad copper.
+
+    A track vertex inside one is anchored on the pad, as in the saved-board
+    style check: no bend or staircase rule applies at it.
+    """
+
+    boxes: tuple[tuple[str, int, int, int, int], ...] = ()
+
+    def holds(self, point: Point, layer: str) -> bool:
+        return any(name == layer and x0 <= point.x <= x1 and y0 <= point.y <= y1
+                   for name, x0, y0, x1, y1 in self.boxes)
+
+    def covers(self, segment: Segment) -> bool:
+        return self.holds(segment.start, segment.layer) and self.holds(segment.end, segment.layer)
+
+
+@dataclass(frozen=True)
 class Route:
     segments: tuple[Segment, ...]
     vias: tuple[Via, ...]
@@ -358,6 +381,7 @@ class GridRouter:
         check_budget: Callable[[], None] | None = None,
         profile=None,
         first_feasible: bool = False,
+        pad_copper: PadCopper = PadCopper(),
     ) -> None:
         if step <= 0 or width <= 0 or clearance < 0:
             raise ValueError(
@@ -429,6 +453,7 @@ class GridRouter:
         if not isinstance(first_feasible, bool):
             raise ValueError("first_feasible must be true or false")
         self.first_feasible = first_feasible
+        self.pad_copper = pad_copper
         if not isinstance(topology_heuristic, bool):
             raise ValueError("topology_heuristic must be true or false")
         if (
@@ -455,12 +480,21 @@ class GridRouter:
         self.blocked: dict[str, set[tuple[int, int]]] = {
             layer: set() for layer in layers
         }
+        self._pad_cells = {
+            (layers.index(name), x, y)
+            for name, x0, y0, x1, y1 in pad_copper.boxes if name in layers
+            for x in range(max(0, -((lower.x - x0) // step)), min(self.nx - 1, (x1 - lower.x) // step) + 1)
+            for y in range(max(0, -((lower.y - y0) // step)), min(self.ny - 1, (y1 - lower.y) // step) + 1)
+        }
         self.via_blocked: set[tuple[int, int]] = set()
         self.existing_vias: dict[tuple[int, int], set[str]] = {}
         self.foreign_obstacles: dict[str, list[Obstacle]] = {
             layer: [] for layer in layers
         }
         self._topology_cache = OrderedDict()
+        # Grid accesses of the off-grid endpoint now being searched; one
+        # relaxed map from all of them bounds the cost to each.
+        self._goal_seeds: frozenset[tuple[int, int, int]] = frozenset()
         self._edge_cache = OrderedDict()
         # Dense searches revisit the same physical edge with many headings.
         # Scale this cache with the actual grid, while bounding memory per router.
@@ -751,16 +785,15 @@ class GridRouter:
                     or (self.final_directions is not None and directions[-1] not in self.final_directions)):
                 continue
             turns = [(right - left) % 8 for left, right in zip(directions, directions[1:])]
-            if any(turn in {2, 4, 6} or (self.gentle_turns and turn in {3, 5}) for turn in turns):
+            if any(self._illegal_turn(turn, at, layer) for turn, at in zip(turns, path[1:])):
                 continue
-            if self.forbid_staircase and self._has_staircase(list(segments)):
+            if self.forbid_staircase and self._staircase_off_pads(segments):
                 continue
             distances = [math.hypot(seg.end.x - seg.start.x, seg.end.y - seg.start.y)
                          for seg in segments]
-            if any(value < self.min_segment_length for value in distances[1:-1]):
-                continue
-            if self.enforce_endpoint_spacing and any(
-                    value < self.min_segment_length for value in (distances[0], distances[-1])):
+            short = [value < self.min_segment_length and not self.pad_copper.covers(segment)
+                     for segment, value in strict_zip(segments, distances)]
+            if any(short[1:-1]) or self.enforce_endpoint_spacing and (short[0] or short[-1]):
                 continue
             length = sum(distances) / NM_PER_MM
             diagonal = sum(distance for segment, distance in strict_zip(segments, distances)
@@ -947,7 +980,7 @@ class GridRouter:
                              middle.expanded, search_truncated=True)
 
             def accepted(result):
-                if self.forbid_staircase and self._has_staircase(list(result.segments)):
+                if self.forbid_staircase and self._staircase_off_pads(result.segments):
                     return False
                 self.initial_directions, self.final_directions = original
                 try:
@@ -1227,14 +1260,13 @@ class GridRouter:
             return None
         # A via separates planar copper; its outgoing heading is not a bend.
         turns = [
-            (directions[i + 1] - directions[i]) % 8
+            (segments[i].end, segments[i].layer, (directions[i + 1] - directions[i]) % 8)
             for i in range(len(segments) - 1)
             if segments[i].layer == segments[i + 1].layer
         ]
-        if any(turn in {2, 4, 6} or (self.gentle_turns and turn in {3, 5})
-               for turn in turns):
+        if any(self._illegal_turn(turn, at, layer) for at, layer, turn in turns):
             return None
-        bends = sum(bool(turn) for turn in turns)
+        bends = sum(bool(turn) for _, _, turn in turns)
         stub_segments = [*leading, *trailing]
         stub_length = sum(
             math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / NM_PER_MM
@@ -1269,10 +1301,11 @@ class GridRouter:
                 merged[-1] = Segment(merged[-1].start, segment.end, segment.layer)
             else:
                 merged.append(segment)
-        if self.forbid_staircase and self._has_staircase(merged):
+        if self.forbid_staircase and self._staircase_off_pads(merged):
             return None
         if enforce_endpoint_spacing and any(
             math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) < self.min_segment_length
+            and not self.pad_copper.covers(s)
             for s in (merged[0], merged[-1])
         ):
             return None
@@ -1280,6 +1313,7 @@ class GridRouter:
             segment.start not in via_points and segment.end not in via_points
             and math.hypot(segment.end.x - segment.start.x,
                            segment.end.y - segment.start.y) < self.min_segment_length
+            and not self.pad_copper.covers(segment)
             for segment in merged[1:-1]
         ):
             return None
@@ -1393,8 +1427,14 @@ class GridRouter:
         global_limit_hit = False
         access_truncated = False
         remaining = self.max_expansions
+
+        def goal_seeds() -> frozenset[tuple[int, int, int]]:
+            layer = self.layers.index(end_layer)
+            return frozenset((*self._index(last[0]), layer) for last in ends)
+
         grid_cache: dict[tuple, tuple[Route, Route | None] | None] = {}
         allowed_turns = {0, 1, 7} if self.gentle_turns else {0, 1, 3, 5, 7}
+        pad_turns = {0, 1, 2, 3, 5, 6, 7}
         pairs = list(itertools.product(starts, ends))
         work = [(first, last, False) for first, last in pairs]
         work.append((None, None, False))
@@ -1449,12 +1489,15 @@ class GridRouter:
             grid_start, grid_end = first[-1], last[0]
             initial = self.initial_directions
             final = self.final_directions
+            # Inside same-net pad copper an escape may turn any way but back.
             if len(first) > 1:
                 incoming = self._direction(first[-2], first[-1])
-                initial = frozenset(d for d in range(8) if (d - incoming) % 8 in allowed_turns)
+                turns = pad_turns if self.pad_copper.holds(first[-1], start_layer) else allowed_turns
+                initial = frozenset(d for d in range(8) if (d - incoming) % 8 in turns)
             if len(last) > 1:
                 outgoing = self._direction(last[0], last[1])
-                final = frozenset(d for d in range(8) if (outgoing - d) % 8 in allowed_turns)
+                turns = pad_turns if self.pad_copper.holds(last[0], end_layer) else allowed_turns
+                final = frozenset(d for d in range(8) if (outgoing - d) % 8 in turns)
             spacing = self.enforce_endpoint_spacing and len(first) == len(last) == 1
             key = grid_start, grid_end, initial, final, spacing
             if candidate_check is not None:
@@ -1471,7 +1514,7 @@ class GridRouter:
                         base = Route((), (), (), 0.0, 0, 0.0, 0)
                     else:
                         saved = (self.initial_directions, self.final_directions,
-                                 self.enforce_endpoint_spacing, self.topology_heuristic)
+                                 self.enforce_endpoint_spacing, self._goal_seeds)
                         accepted = []
 
                         def valid_join(candidate):
@@ -1487,13 +1530,8 @@ class GridRouter:
                         try:
                             self.initial_directions, self.final_directions = initial, final
                             self.enforce_endpoint_spacing = spacing
-                            # Rebuilding reverse maps for many possible off-grid
-                            # accesses can consume the entire search budget. Use
-                            # the ordinary admissible bound for such batches;
-                            # single-pair and on-grid searches retain the chosen
-                            # topology heuristic. Hard constraints are unchanged.
-                            if len(pairs) > 1:
-                                self.topology_heuristic = False
+                            # One reverse map per endpoint serves every access pair.
+                            self._goal_seeds = goal_seeds()
                             base = self.route(
                                 grid_start,
                                 start_layer,
@@ -1506,7 +1544,7 @@ class GridRouter:
                                 joined = accepted[-1]
                         finally:
                             (self.initial_directions, self.final_directions,
-                             self.enforce_endpoint_spacing, self.topology_heuristic) = saved
+                             self.enforce_endpoint_spacing, self._goal_seeds) = saved
                 except SearchLimitReached as exc:
                     unresolved.add(key)
                     remaining = max(0, remaining - exc.expanded)
@@ -1550,7 +1588,7 @@ class GridRouter:
                     global_limit_hit = True
                     break
                 saved = (self.initial_directions, self.final_directions,
-                         self.enforce_endpoint_spacing, self.topology_heuristic)
+                         self.enforce_endpoint_spacing, self._goal_seeds)
                 alternatives = []
 
                 def legal_join(candidate):
@@ -1566,8 +1604,7 @@ class GridRouter:
                 try:
                     self.initial_directions, self.final_directions = initial, final
                     self.enforce_endpoint_spacing = spacing
-                    if len(pairs) > 1:
-                        self.topology_heuristic = False
+                    self._goal_seeds = goal_seeds()
                     alternative = self.route(
                         grid_start, start_layer, grid_end, end_layer,
                         _expansion_budget=remaining, candidate_check=legal_join,
@@ -1589,7 +1626,7 @@ class GridRouter:
                                    expanded=self.max_expansions - remaining)
                 finally:
                     (self.initial_directions, self.final_directions,
-                     self.enforce_endpoint_spacing, self.topology_heuristic) = saved
+                     self.enforce_endpoint_spacing, self._goal_seeds) = saved
                 remaining -= alternative.expanded
                 result = alternatives[-1] if alternatives else None
             if result is None:
@@ -1618,8 +1655,8 @@ class GridRouter:
         )
 
     @classmethod
-    def staircase_windows(cls, segments: list[Segment]) -> tuple[tuple[Segment, Segment, Segment], ...]:
-        """Find local staircase windows after merging collinear chain pieces."""
+    def _runs(cls, segments: Iterable[Segment]) -> list[Segment]:
+        """Merge connected collinear pieces into directional runs."""
         merged: list[Segment] = []
         for segment in segments:
             direction = cls._direction(segment.start, segment.end)
@@ -1632,6 +1669,12 @@ class GridRouter:
                 merged[-1] = Segment(merged[-1].start, segment.end, segment.layer)
             else:
                 merged.append(segment)
+        return merged
+
+    @classmethod
+    def staircase_windows(cls, segments: list[Segment]) -> tuple[tuple[Segment, Segment, Segment], ...]:
+        """Find local staircase windows after merging collinear chain pieces."""
+        merged = cls._runs(segments)
         windows = []
         for index, (first, middle, last) in enumerate(zip(merged, merged[1:], merged[2:])):
             if not (
@@ -1659,6 +1702,22 @@ class GridRouter:
     def _has_staircase(cls, segments: list[Segment]) -> bool:
         """Reject candidate chains containing any staircase window."""
         return cls.staircase_count(segments) > 0
+
+    def _staircase_off_pads(self, segments: Iterable[Segment]) -> bool:
+        """Judge each track chain between same-net pad copper, as the saved-board style check does."""
+        chain: list[Segment] = []
+        for segment in self._runs(segments):
+            if chain and self.pad_copper.holds(segment.start, segment.layer):
+                if self._has_staircase(chain):
+                    return True
+                chain = []
+            chain.append(segment)
+        return self._has_staircase(chain)
+
+    def _illegal_turn(self, turn: int, at: Point, layer: str) -> bool:
+        """Reversals are never legal; inside same-net pad copper any other turn is."""
+        return turn == 4 or not self.pad_copper.holds(at, layer) and (
+            turn in {2, 6} or (self.gentle_turns and turn in {3, 5}))
 
     def route(
         self,
@@ -1748,15 +1807,17 @@ class GridRouter:
             from pcb.topology_bound import relaxed_costs
 
             goal = (ex, ey, goal_layer)
-            if goal not in self._topology_cache:
-                self._topology_cache[goal] = relaxed_costs(
+            seeds = self._goal_seeds if goal in self._goal_seeds else frozenset({goal})
+            if seeds not in self._topology_cache:
+                self._topology_cache[seeds] = relaxed_costs(
                     self, goal, stop_at=(sx, sy, start_state[2]),
                     max_expansions=min(50_000, max(1, self.max_expansions // 4)),
+                    more_goals=tuple(sorted(seeds - {goal})),
                 )
                 if len(self._topology_cache) > 2:
                     self._topology_cache.popitem(last=False)
-            self._topology_cache.move_to_end(goal)
-            topology = self._topology_cache[goal]
+            self._topology_cache.move_to_end(seeds)
+            topology = self._topology_cache[seeds]
             area = self.nx * self.ny
             if math.isinf(topology[start_state[2] * area + sy * self.nx + sx]):
                 raise NoGridRoute("No route exists in the relaxed grid topology")
@@ -1807,7 +1868,7 @@ class GridRouter:
                     self.check_budget()
                     candidate = self._materialize_grid_route(state, start_state, previous, distances, expanded)
                     if (candidate_check(candidate) if candidate_check is not None
-                            else not self._has_staircase(list(candidate.segments))):
+                            else not self._staircase_off_pads(candidate.segments)):
                         return candidate
                     rejected_context = True
                     continue
@@ -1834,8 +1895,10 @@ class GridRouter:
                 turn = 0 if old_direction == -1 else (direction - old_direction) % 8
                 if turn in {2, 4, 6} or (self.gentle_turns and turn in {3, 5}):
                     continue
-                next_previous = (_advance_staircase_history(previous_direction, old_direction, direction)
-                                 if self.forbid_staircase else -1)
+                next_previous = (_advance_staircase_history(
+                    previous_direction, old_direction, direction,
+                    (layer_index, x, y) in self._pad_cells,
+                ) if self.forbid_staircase else -1)
                 if next_previous is None:
                     continue
                 if turn and not long_enough(old_direction, run_steps):

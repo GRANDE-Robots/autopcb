@@ -70,14 +70,17 @@ class ProjectSettings:
     def __init__(self, board: Path):
         self.path = str(Path(board).with_suffix(".kicad_pro"))
 
-    @property
-    def complete(self) -> bool:
+    def _read(self) -> Any:
         import json
 
         try:
-            data = json.loads(Path(self.path).read_text(encoding="utf-8-sig"))
+            return json.loads(Path(self.path).read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
-            return False
+            return None
+
+    @property
+    def complete(self) -> bool:
+        data = self._read()
         return isinstance(data, dict) and "net_settings" in data
 
     def write(self) -> None:
@@ -85,6 +88,9 @@ class ProjectSettings:
 
         if self.complete:
             return
+        if self._read() is None:
+            # KiCad would migrate a non-JSON file as a legacy project, which crashes on Windows.
+            Path(self.path).unlink(missing_ok=True)
         manager = pcbnew.GetSettingsManager()
         manager.LoadProject(self.path, False)  # False for a new project, which KiCad still creates
         project = manager.GetProject(self.path)

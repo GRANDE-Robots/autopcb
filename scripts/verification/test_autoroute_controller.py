@@ -656,6 +656,55 @@ class AutoControllerTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), before)
             self.assertEqual(schematic.read_bytes(), sch_before)
 
+    def test_accepted_preview_drops_queued_work_for_the_nets_it_connected(self):
+        import copy
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from pcb.net_routing import runner
+        from verification.test_autoroute_batch import CombinedBatchTests
+        from verification.test_net_routing import NativeNetRoutingTests
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            CombinedBatchTests().project(project)
+            (project / "v4.1.kicad_sch").write_text(
+                '(kicad_sch (version 20250114) (generator "eeschema") '
+                '(uuid "6b6b7707-0425-4195-9c79-1824e2f1a24e") (paper "A4") '
+                '(lib_symbols) (sheet_instances (path "/" (page "1"))) (embedded_fonts no))',
+                encoding="utf-8",
+            )
+            config = NativeNetRoutingTests.config()
+            (project / "config").mkdir()
+            policy = {"schema": 1, "max_pins": 3, "route": config["shared"],
+                      "search": config["search"], "search_margin_mm": .1}
+            (project / "config" / "autopcb.json").write_text(json.dumps(policy), encoding="utf-8")
+            original_native = runner.run_native
+
+            def native(function, *args, **kwargs):
+                if function is runner._preview_round_native:
+                    return {"status": "no_candidate_found", "attempts": []}
+                return original_native(function, *args, **kwargs)
+
+            with patch.object(runner, "run_native", side_effect=native):
+                first = runner.run_project(project, max_rounds=1, workers=1)
+            path = project / "results" / "autoroute" / (first["run_id"] + ".json")
+            state = json.loads(path.read_text(encoding="utf-8"))
+            signal, other = (next(req for batch in state["queue"] for req in batch
+                                  if req["nets"][0]["name"] == name) for name in ("SIGNAL", "OTHER"))
+            signal.update(recovery_stage=0, checkpoint_offset=0)
+            other.update(recovery_stage=0, checkpoint_offset=0)
+            later = {**copy.deepcopy(signal), "recovery_stage": 1}
+            state.update(queue=[[signal], [later], [other]], attempted_searches=[],
+                         target_attempts={"OTHER": 5})
+            path.write_text(json.dumps(state), encoding="utf-8")
+            runner.run_project(project, resume=first["run_id"], max_rounds=1, workers=1)
+            state = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(state["accepted_preview_batches"], 1)
+            self.assertEqual([batch[0]["nets"][0]["name"] for batch in state["queue"]], ["OTHER"])
+            self.assertEqual(set(state["island_counts"]), {"OTHER"})
+
     def test_controller_accepts_two_disjoint_ordinary_retries_together(self):
         import json
         import tempfile

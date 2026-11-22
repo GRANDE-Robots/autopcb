@@ -1523,6 +1523,12 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
                                 [request],
                             )
                         _invalidate_compiled_repairs(state["queue"])
+                        # Queued work for nets this improvement connected is done.
+                        plan = _replan(snapshot, policy, state["reference"], workers=workers,
+                                       single=state.get("single_net_search", False))
+                        state["queue"] = [batch for batch in state["queue"]
+                                          if set(plan["island_counts"]).intersection(_round_targets(batch))]
+                        state["island_counts"] = plan["island_counts"]
                         state["attempted_board_sha256"] = sha(snapshot.board_path)
                     state["attempted_searches"] = sorted(attempted)
                     state["attempted_rounds"] += 1

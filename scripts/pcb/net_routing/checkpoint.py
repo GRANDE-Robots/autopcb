@@ -154,7 +154,7 @@ def choose_transaction_checkpoint(original_board, net: Net, *, target: bool,
         return CheckpointSelection(replace(net, islands=(island,)), (island.sites[0],), 0, 1)
     if len(selected) > repair_maximum:
         raise UnsupportedRoutingRequest(
-            "Bottom movement needs more repair fragments than the checkpoint limit"
+            "Part movement needs more repair fragments than the checkpoint limit"
         )
     return choose_checkpoint(replace(net, islands=tuple(selected.values())),
                              maximum=repair_maximum, offset=0)

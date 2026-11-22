@@ -124,7 +124,7 @@ class WidthRepairTests(unittest.TestCase):
             path.with_suffix('.kicad_dru').write_text('(version 1)\n(rule "width" '
                 '(condition "A.NetName == \'WIDE\'") (constraint track_width (min 0.60mm)))\n')
             original = path.read_bytes()
-            protection = ProtectedState.capture(original, b'', preserve_all_placement=True)
+            protection = ProtectedState.capture(original, b'')
             path.write_bytes(width_candidate(project, {target: 600000}))
             cli = kicad_cli()
             direct = _drc(cli, path, project/'obstacles.json')
@@ -170,7 +170,7 @@ class WidthRepairTests(unittest.TestCase):
             source.with_suffix('.kicad_dru').write_text('(version 1)\n(rule "main" '
                 '(condition "A.NetName == \'SIGNAL\'") (constraint track_width (min 0.60mm)))\n')
             original = source.read_bytes()
-            protection = ProtectedState.capture(original, b'', preserve_all_placement=True)
+            protection = ProtectedState.capture(original, b'')
             candidate = plan_width_reroute(project, thin.m_Uuid.AsString(), 600000, 5)
             self.assertIsNotNone(candidate)
             self.assertEqual(source.read_bytes(), original)
@@ -475,7 +475,7 @@ class WidthRepairTests(unittest.TestCase):
             source.with_suffix('.kicad_pro').write_text('{"net_settings":{}}')
             source.with_suffix('.kicad_dru').write_text('(version 1)')
             original = source.read_bytes()
-            protected = ProtectedState.capture(original,b'',preserve_all_placement=True)
+            protected = ProtectedState.capture(original,b'')
             from pcb.route_validation import _drc
             cli = kicad_cli()
             before_drc = _drc(cli,source,project/'before.json')
@@ -610,7 +610,7 @@ class WidthRepairTests(unittest.TestCase):
                 source.with_suffix('.kicad_pro').write_text('{"net_settings":{}}')
                 source.with_suffix('.kicad_dru').write_text('(version 1)')
                 original = source.read_bytes()
-                protected = ProtectedState.capture(original, b'', preserve_all_placement=True)
+                protected = ProtectedState.capture(original, b'')
                 candidate = plan_width_reroute(project, middle.m_Uuid.AsString(), 600000, 5)
                 self.assertIsNotNone(candidate)
                 self.assertEqual(source.read_bytes(), original)
@@ -754,7 +754,7 @@ class WidthRepairTests(unittest.TestCase):
             source.with_suffix('.kicad_pro').write_text('{"net_settings":{}}')
             source.with_suffix('.kicad_dru').write_text('(version 1)')
             original = source.read_bytes()
-            protected = ProtectedState.capture(original, b'', preserve_all_placement=True)
+            protected = ProtectedState.capture(original, b'')
             from unittest.mock import patch
             from pcb.route_optimizer import SearchBudgetExceeded
             with patch('pcb.route_optimizer.GridRouter', side_effect=SearchBudgetExceeded('raster budget')):

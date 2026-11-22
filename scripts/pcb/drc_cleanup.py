@@ -334,7 +334,7 @@ def repair(project: Path, *, apply: bool = False, keepouts: bool = False) -> dic
             if reference['status'] == 'degraded':
                 raise RuntimeError('Contact cleanup degraded sampled reference copper')
             schematic = snapshot.source.with_suffix('.kicad_sch').read_bytes()
-            protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=True)
+            protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(candidate, schematic):
                 raise RuntimeError('Contact cleanup changed protected design items')
             result = {'status': 'checked', **counts, 'opens': len(after['unconnected_items']),

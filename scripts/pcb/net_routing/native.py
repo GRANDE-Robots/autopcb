@@ -14,12 +14,12 @@ from core.kicad_campaign import CampaignPlanner
 from core.paths import config_path, data_path, support_input_name
 from core.pcb_io import copper_width
 from pcb.footprint_pose import native_pose_change
+from pcb.move_scope import MoveScope
 from pcb.route_constraints import ExistingVia
 from pcb.route_native import read_native_obstacles
 from pcb.route_optimizer import Point, Segment, mm
 from pcb.route_validation import (
     RouteContract,
-    _check_bottom_footprint_moves,
     _copy_inputs,
     _inputs,
     _tool_inputs,
@@ -383,12 +383,11 @@ def contracts(board, names: tuple[str, ...]) -> list[RouteContract]:
     return result
 
 
-def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget):
-    """Yield finite explicit bottom-side poses; never invent permission to move."""
+def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget,
+               scope: MoveScope = MoveScope()):
+    """Yield finite explicit poses the scope allows; never invent permission to move."""
     if not isinstance(raw, list):
-        raise ValueError(
-            "movable must be an array of explicit bottom-side pose choices"
-        )
+        raise ValueError("movable must be an array of explicit pose choices")
     if not raw:
         yield {}, ()
         return
@@ -400,13 +399,11 @@ def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget)
             "positions_mm",
             "rotations_deg",
         }:
-            raise ValueError("Unknown bottom placement field")
+            raise ValueError("Unknown placement field")
         reference = item.get("reference")
         if not isinstance(reference, str) or not reference or reference in refs:
             raise ValueError("Movable references must be nonempty and distinct")
-        _check_bottom_footprint_moves(
-            board, snapshot.original.decode("utf-8-sig"), {reference}
-        )
+        scope.check(snapshot.original.decode("utf-8-sig"), (reference,))
         footprint = board.FindFootprintByReference(reference)
         affected = {
             p.GetNetname()
@@ -454,7 +451,7 @@ def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget)
         budget.check()
         snapshot.board_path.write_bytes(snapshot.original)
         changes = [
-            native_pose_change(base, ref, *pose)
+            native_pose_change(base, ref, *pose, scope)
             for ref, pose in strict_zip(refs, values)
         ]
         if changes:

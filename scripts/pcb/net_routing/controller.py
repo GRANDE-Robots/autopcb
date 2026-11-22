@@ -93,6 +93,7 @@ def make_work_plan(preparation: dict, policy: dict, *, workers: int = 2, max_bat
                     nets.append({"name": item.name, **fields})
                 requests.append({"shared": shared, "nets": nets, "search": deepcopy(search),
                                  "rework": deepcopy(policy.get("rework", {})),
+                                 "placement": deepcopy(policy.get("placement", {})),
                                  "max_islands": maximum, "checkpoint_offset": checkpoint_offset,
                                  "recovery_stage": 0,
                                  "recovery_bounds_mm": list(preparation.get("board_bounds_mm", window))})

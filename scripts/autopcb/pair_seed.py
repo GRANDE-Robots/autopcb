@@ -156,7 +156,7 @@ def seed(entry: Path, request: dict) -> dict:
         return {"status": "deferred", "reason": "No shared corridor fits the current launch, spacing and skew limits."}
 
     schematic = paths.schematic.read_bytes()
-    protection = ProtectedState.capture(source, schematic, preserve_all_placement=True)
+    protection = ProtectedState.capture(source, schematic)
     baseline = json.loads(Path(request["baseline_drc"]).read_text(encoding="utf-8"))
     opens = unconnected_by_net(baseline, native_item_nets(board))
     if opens.get("<unknown>") or not all(opens.get(name) == 1 for name in pair):

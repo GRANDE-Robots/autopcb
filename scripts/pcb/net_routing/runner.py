@@ -35,6 +35,7 @@ from pcb.net_routing.inventory import inventory_board
 from pcb.net_routing.isolation import run_native
 from pcb.net_routing.native import Snapshot, sha
 from pcb.net_routing.prepare import prepare_project
+from pcb.move_scope import MoveScope
 from pcb.net_routing.protection import ProtectedState, unqualified_working_nets
 from pcb.net_routing.reference import reference_report
 from pcb.net_routing.reference_repair import compile_reference_repairs
@@ -1051,7 +1052,8 @@ def _neutral_lookahead(snapshot: Snapshot, neutral_board: bytes, initial: dict,
         raise RuntimeError("Neutral preview source changed")
     with Snapshot(snapshot.board_path) as branch:
         schematic = (native_path(branch.directory, ".kicad_sch")).read_bytes()
-        protected = ProtectedState.capture(branch.original, schematic)
+        protected = ProtectedState.capture(branch.original, schematic,
+                                           movable=MoveScope.from_config(policy.get("placement")))
         if protected.differences(neutral_board, schematic):
             raise RuntimeError("Neutral preview changed a protected design item")
         branch.board_path.write_bytes(neutral_board)
@@ -1193,7 +1195,9 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
         with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
             inputs = _source_hashes(snapshot, project, assets)
             schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
-            protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=keep_placement)
+            protected = ProtectedState.capture(
+                snapshot.original, schematic,
+                movable=None if keep_placement else MoveScope.from_config(policy.get("placement")))
             if resume or renew:
                 if progress:
                     progress({"event": "stage", "message": "Rechecking the saved preview, protected items and source compatibility"})
@@ -1212,7 +1216,7 @@ def run_project(project: Path, *, resume: str | None = None, renew: str | None =
                 if keep_placement:
                     policy = {**policy, "recovery": {**policy.get("recovery", {}), "placement_candidates": 0}}
                     recovery = RecoveryPolicy.from_config(policy["recovery"])
-                    protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=True)
+                    protected = ProtectedState.capture(snapshot.original, schematic)
                 if previous_board is not None:
                     from pcb.net_routing.layer_rebase import rebase_checkpoint
 

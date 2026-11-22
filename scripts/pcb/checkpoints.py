@@ -142,6 +142,8 @@ def read_config(path: Path) -> tuple[dict[str, Any], str]:
     RecoveryPolicy.from_config(config.get("recovery"))
     from pcb.net_routing.rework import ReworkWeights
     ReworkWeights.from_config(config.get("rework"))
+    from pcb.move_scope import MoveScope
+    MoveScope.from_config(config.get("placement"))
     for name, default in (("max_nets", 1000), ("max_checkpoints", 5000)):
         value = config.get(name, default)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:

@@ -84,9 +84,9 @@ class SixLayerRoutingTests(unittest.TestCase):
         self.assertEqual(command[start:start + 6], ["1"] * 6)
 
     def test_strict_placement_guard_rejects_bottom_moves(self):
-        state = ProtectedState.capture(BOARD.encode(), b"sch", preserve_all_placement=True)
+        state = ProtectedState.capture(BOARD.encode(), b"sch")
         moved = BOARD.replace('(uuid "bottom") (at 5 6)', '(uuid "bottom") (at 7 6)')
-        self.assertIn("component placement", state.differences(moved.encode(), b"sch"))
+        self.assertIn("fixed footprints", state.differences(moved.encode(), b"sch"))
         self.assertEqual(state.differences(BOARD.encode(), b"sch"), ())
 
 

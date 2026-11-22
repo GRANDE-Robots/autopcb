@@ -30,6 +30,7 @@ from pcb.checkpoints import read_config
 from pcb.freeroute_delta import Trace, Via, filter_proposal, read_copper, router_class
 from pcb.freeroute_preview import preview, routing_pass_budget
 from pcb.footprint_pose import native_pose_change
+from pcb.move_scope import MoveScope
 from pcb.net_routing.controller import decode_checkpoint, make_work_plan
 from pcb.net_routing.external import retain_candidate
 from pcb.net_routing.fast import (
@@ -1119,7 +1120,9 @@ def run_one(project: Path, run_id: str, *, ordinal: int, timeout: int, cleanup: 
         if tried_plans:
             progress(f"Skipping {len(tried_plans)} prior failed repair plans on unchanged inputs")
         schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
-        protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=not bottom_placement)
+        protected = ProtectedState.capture(
+            snapshot.original, schematic,
+            movable=MoveScope.from_config(policy.get("placement")) if bottom_placement else None)
         if protected.differences(retained, schematic):
             raise RuntimeError("The retained preview changed protected design items")
         snapshot.board_path.write_bytes(retained)

@@ -1,4 +1,4 @@
-"""Prepare and verify native rotations of explicitly movable bottom footprints.
+"""Prepare and verify native poses of footprints the placement policy lets move.
 
 Only the selected footprint expression is copied from a disposable KiCad
 serialization. The saved design is never rewritten by this module.
@@ -16,13 +16,15 @@ import pcbnew
 
 from core.kicad_campaign import _one, _property, _select
 from core.kicad_sexpr import parse
+from pcb.move_scope import MoveScope
 from pcb.route_optimizer import mm
 
 
 def native_pose_change(
-    source: Path, reference: str, x_mm: float, y_mm: float, rotation_deg: float
+    source: Path, reference: str, x_mm: float, y_mm: float, rotation_deg: float,
+    scope: MoveScope = MoveScope(),
 ) -> dict[str, Any]:
-    """Return an exact native pose replacement for one unlocked bottom SMD part."""
+    """Return an exact native pose replacement for one footprint the scope lets move."""
     source = source.resolve()
     if not isinstance(reference, str) or not reference:
         raise ValueError("A footprint reference is required")
@@ -35,24 +37,9 @@ def native_pose_change(
     position = pcbnew.VECTOR2I(mm(x_mm), mm(y_mm))
     original = source.read_bytes()
     original_hash = hashlib.sha256(original).hexdigest()
-    text = original.decode("utf-8")
-    block = _select(parse(text), {"kind": "footprint", "reference": reference})
-    if '"F.SilkS"' in text[block.start : block.end]:
-        raise ValueError(f"Moving {reference} would alter front silkscreen")
+    scope.check(original.decode("utf-8"), (reference,))
     board = pcbnew.LoadBoard(str(source))
     footprint = board.FindFootprintByReference(reference)
-    if footprint is None or footprint.GetLayer() != pcbnew.B_Cu or footprint.IsLocked():
-        raise ValueError(
-            f"Footprint {reference} must be unlocked and on the bottom side"
-        )
-    pads = list(footprint.Pads())
-    if not pads or any(
-        pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
-        or not pad.IsOnLayer(pcbnew.B_Cu)
-        or pad.IsOnLayer(pcbnew.F_Cu)
-        for pad in pads
-    ):
-        raise ValueError(f"Footprint {reference} must have only bottom-side SMD pads")
     footprint.SetPosition(position)
     footprint.SetOrientationDegrees(float(rotation_deg))
     with tempfile.TemporaryDirectory(prefix="jessie-native-pose-") as directory:
@@ -72,7 +59,8 @@ def native_pose_change(
     }
 
 
-def verify_native_pose_change(source: Path, change: dict[str, Any]) -> None:
+def verify_native_pose_change(source: Path, change: dict[str, Any],
+                              scope: MoveScope = MoveScope()) -> None:
     """Reject any replacement other than the native transform of the same part."""
     target = change.get("target")
     if (
@@ -102,7 +90,7 @@ def verify_native_pose_change(source: Path, change: dict[str, Any]) -> None:
         angle = float(at[3].value) if len(at) == 4 else 0.0
     except ValueError as error:
         raise ValueError("A native pose replacement has invalid coordinates") from error
-    expected = native_pose_change(source, target["reference"], x, y, angle)
+    expected = native_pose_change(source, target["reference"], x, y, angle, scope)
     if expected["expression"] != expression:
         raise ValueError(
             "The footprint replacement is not the exact native pose transform"

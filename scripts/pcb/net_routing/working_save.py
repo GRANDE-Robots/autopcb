@@ -202,7 +202,7 @@ def save_working(project: Path, run_id: str, *, apply: bool = False, progress=pr
             candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
                                           policy_hash, allow_tool_changes=True)
             schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
-            protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=True)
+            protected = ProtectedState.capture(snapshot.original, schematic)
             if protected.differences(candidate, schematic):
                 raise RuntimeError("The preview changes protected design items")
             BoardSaveGuard(board_path, tuple(snapshot.fingerprints.items())).verify_editor_unlocked()

@@ -55,7 +55,7 @@ class RecoveryPolicy:
         if isinstance(result.obstruction_trials, bool) or not isinstance(result.obstruction_trials, int) or not 0 <= result.obstruction_trials <= 16:
             raise ValueError("Obstruction diagnosis supports zero to 16 searches")
         if isinstance(result.placement_candidates, bool) or not isinstance(result.placement_candidates, int) or not 0 <= result.placement_candidates <= 32:
-            raise ValueError("Bottom placement recovery supports zero to 32 candidates")
+            raise ValueError("Placement recovery supports zero to 32 candidates")
         if result.placement_nets > 32 or result.placement_items > 64:
             raise ValueError("Bottom placement recovery supports up to 32 affected nets and 64 copper items")
         if (result.rip_up_items > 64 or result.whole_net_rip_up_items > 64

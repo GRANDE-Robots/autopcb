@@ -15,6 +15,7 @@ from unittest import mock
 
 from core.campaign_cli import main as campaign_main
 from core.kicad_campaign import CampaignFile, CampaignPlanner, digest
+from pcb.move_scope import MoveScope
 from pcb.route_cli import main as route_main, plan, save_validated_campaign
 from pcb.route_batch import main as batch_main, plan_batch
 from core.pcb_io import ProjectSettings
@@ -2197,7 +2198,7 @@ class RouteOptimizerTests(unittest.TestCase):
             self.assertEqual(status, 2)
             self.assertEqual(source.read_bytes(), original)
 
-    def test_routing_footprint_move_requires_explicit_bottom_permission(self):
+    def test_routing_footprint_move_requires_explicit_permission(self):
         with tempfile.TemporaryDirectory(prefix="jessie-route-move-test-") as directory:
             project = Path(directory)
             source = self.make_board(project)
@@ -2209,13 +2210,14 @@ class RouteOptimizerTests(unittest.TestCase):
                 validate_routes(
                     source, digest(source.read_bytes()), changes, [contract]
                 )
-            with self.assertRaisesRegex(ValueError, "bottom side"):
+            with self.assertRaisesRegex(ValueError, "top side"):
                 validate_routes(
                     source,
                     digest(source.read_bytes()),
                     changes,
                     [contract],
-                    bottom_footprint_moves=("J1",),
+                    footprint_moves=("J1",),
+                    move_scope=MoveScope.from_config({"sides": ["bottom"]}),
                 )
 
     def test_routing_can_move_an_unlocked_bottom_smd_and_reconnect_it(self):
@@ -2256,17 +2258,22 @@ class RouteOptimizerTests(unittest.TestCase):
                 digest(original),
                 changes,
                 [contract],
-                bottom_footprint_moves=("J1",),
+                footprint_moves=("J1",),
             )
             self.assertEqual(result["status"], "no_new_drc_violations", result)
-            self.assertEqual(result["bottom_footprint_moves"], ["J1"])
+            self.assertEqual(result["footprint_moves"], ["J1"])
             self.assertEqual(result["endpoint_connectivity"], "connected")
             self.assertEqual(source.read_bytes(), original)
 
-    def test_routing_rejects_locked_through_hole_or_front_silk_moves(self):
+    def test_routing_rejects_locked_parts_and_moves_the_policy_fixes(self):
         import pcbnew
 
-        for reason in ("locked", "through_hole", "front_silk"):
+        scopes = {
+            "locked": (MoveScope(), "is locked"),
+            "through_hole": (MoveScope.from_config({"through_hole": False}), "through-hole"),
+            "front_silk": (MoveScope.from_config({"sides": ["bottom"]}), "top silkscreen"),
+        }
+        for reason, (scope, message) in scopes.items():
             with (
                 self.subTest(reason=reason),
                 tempfile.TemporaryDirectory() as directory,
@@ -2306,13 +2313,14 @@ class RouteOptimizerTests(unittest.TestCase):
                 contract = RouteContract(
                     "SIGNAL", point(2, 2), "B.Cu", point(8, 5), "F.Cu"
                 )
-                with self.assertRaises(ValueError):
+                with self.assertRaisesRegex(ValueError, message):
                     validate_routes(
                         source,
                         digest(source.read_bytes()),
                         changes,
                         [contract],
-                        bottom_footprint_moves=("J1",),
+                        footprint_moves=("J1",),
+                        move_scope=scope,
                     )
 
     def test_off_grid_endpoints_pass_native_connectivity_and_drc(self):

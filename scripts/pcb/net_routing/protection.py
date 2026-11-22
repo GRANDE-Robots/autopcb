@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from core.kicad_sexpr import Form, parse
+from pcb.move_scope import MoveScope
 from pcb.route_validation import _canonical
 
 
@@ -163,19 +164,24 @@ def _insert(target: dict, key: object, value: object) -> None:
 
 @dataclass(frozen=True)
 class ProtectedState:
+    """Design items a run must leave unchanged.
+
+    Footprints that ``movable`` permits may move, with their silkscreen. Every
+    other footprint is fixed, and without a scope all placement is fixed.
+    """
+
     schematic_sha256: str
-    top_footprints: tuple[tuple[str, str], ...]
-    front_silkscreen: tuple[tuple[tuple[str, ...], str], ...]
+    fixed_footprints: tuple[tuple[str, str], ...]
+    front_silkscreen: tuple[tuple[str, str], ...]
     outline: tuple[tuple[str, str], ...]
     stackup: str
-    preserve_all_placement: bool = False
+    movable: MoveScope | None = None
 
     @classmethod
     def capture(cls, board_bytes: bytes, schematic_bytes: bytes, *,
-                preserve_all_placement: bool = False) -> ProtectedState:
-        if not isinstance(preserve_all_placement, bool):
-            raise ValueError("Placement protection must be a boolean")
-        board = parse(board_bytes.decode("utf-8-sig"))
+                movable: MoveScope | None = None) -> ProtectedState:
+        text = board_bytes.decode("utf-8-sig")
+        board = parse(text)
         if board.name != "kicad_pcb":
             raise ValueError("Expected a native KiCad PCB")
         layers = board.children("layers")
@@ -186,8 +192,8 @@ class ProtectedState:
         if len(stackups) != 1:
             raise ValueError("A single explicit PCB stackup is required")
 
-        top: dict[str, str] = {}
-        silk: dict[tuple[str, ...], str] = {}
+        fixed: dict[str, str] = {}
+        silk: dict[str, str] = {}
         outline: dict[str, str] = {}
         for item in board.children():
             if item.name == "footprint":
@@ -195,35 +201,28 @@ class ProtectedState:
                 layer = _layer(item)
                 if layer not in {"F.Cu", "B.Cu"}:
                     raise ValueError(f"Unsupported footprint side: {layer}")
-                if layer == "F.Cu" or preserve_all_placement:
-                    _insert(top, uid, _canonical(item))
-                pose = item.children("at")
-                if len(pose) != 1:
+                if len(item.children("at")) != 1:
                     raise ValueError(f"Footprint {uid} must have one position")
-                for child in item.children():
-                    if _layer(child) == "F.SilkS":
-                        child_id = _field(child, "uuid")
-                        _insert(silk, ("footprint", uid, child_id), (_canonical(pose[0]), _canonical(child)))
+                if movable is None or movable.refusal(text, item):
+                    _insert(fixed, uid, _canonical(item))
             elif _layer(item) == "F.SilkS":
-                _insert(silk, ("board", _field(item, "uuid")), _canonical(item))
+                _insert(silk, _field(item, "uuid"), _canonical(item))
             elif _layer(item) == "Edge.Cuts":
                 _insert(outline, _field(item, "uuid"), _canonical(item))
         return cls(
             hashlib.sha256(schematic_bytes).hexdigest(),
-            tuple(sorted(top.items())),
+            tuple(sorted(fixed.items())),
             tuple(sorted(silk.items())),
             tuple(sorted(outline.items())),
             _digest((_canonical(layers[0]), _canonical(stackups[0]))),
-            preserve_all_placement,
+            movable,
         )
 
     def differences(self, board_bytes: bytes, schematic_bytes: bytes) -> tuple[str, ...]:
-        other = self.capture(board_bytes, schematic_bytes,
-                             preserve_all_placement=self.preserve_all_placement)
+        other = self.capture(board_bytes, schematic_bytes, movable=self.movable)
         pairs = (
             ("schematic", self.schematic_sha256, other.schematic_sha256),
-            ("component placement" if self.preserve_all_placement else "top footprints",
-             self.top_footprints, other.top_footprints),
+            ("fixed footprints", self.fixed_footprints, other.fixed_footprints),
             ("front silkscreen", self.front_silkscreen, other.front_silkscreen),
             ("outline", self.outline, other.outline),
             ("stackup", self.stackup, other.stackup),

@@ -188,7 +188,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             self.assertIsNone(api.compile_tree_renewal(
                 root, ("SIGNAL",), ("Default",), (), 0, 8,
                 tried_plans=(result.attempt_key,)))
-            guard = ProtectedState.capture(before, b"sch", preserve_all_placement=True)
+            guard = ProtectedState.capture(before, b"sch")
             self.assertEqual(guard.differences(result.board, b"sch"), ())
             self.assertEqual(source.read_bytes(), before)
             self.assertIsNone(api.compile_tree_renewal(root, ("SIGNAL",), ("Default",), ("SIGNAL",), 0, 8))
@@ -735,7 +735,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                      "nets": [{"name": "TARGET"}, {"name": "A"}, {"name": "B"}],
                      "movable": [{"reference": "R50", "positions_mm": [[5.5, 10.0]],
                                   "rotations_deg": [90]}]}
-        compiled = {"requests": [candidate], "candidates": [{"selection": "bottom_placement_hypothesis"}]}
+        compiled = {"requests": [candidate], "candidates": [{"selection": "placement_hypothesis"}]}
         planner = MagicMock()
         planner.plan.return_value.after = b"moved-private-board"
         queue = [[{"shared": {}, "nets": [{"name": "TARGET"}]}]]
@@ -778,6 +778,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_native_bottom_pose_is_private_and_preserves_top_geometry(self):
         import pcbnew
 
+        from pcb.move_scope import MoveScope
         from pcb.net_routing.protection import ProtectedState
         from verification import test_net_routing as fixture
         from verification import test_route_optimizer as boards
@@ -802,7 +803,9 @@ class CoordinatedRepairTests(unittest.TestCase):
             self.assertIsInstance(plan, api.ReworkPlan)
             self.assertEqual(plan.moves, ("R50",))
             self.assertEqual(source.read_bytes(), before)
-            self.assertEqual(ProtectedState.capture(before, b"sch").differences(plan.board, b"sch"), ())
+            bottom_only = MoveScope.from_config({"sides": ["bottom"]})
+            self.assertEqual(ProtectedState.capture(before, b"sch", movable=bottom_only)
+                             .differences(plan.board, b"sch"), ())
             candidate = root / "candidate.kicad_pcb"
             candidate.write_bytes(plan.board)
             after = pcbnew.LoadBoard(str(candidate))

@@ -1,4 +1,4 @@
-"""Generate bounded bottom-placement transactions from blocked endpoints."""
+"""Generate bounded placement transactions from blocked endpoints."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 
 from core.kicad_sexpr import parse
 from core.pcb_io import copper_width, net_classes
+from pcb.move_scope import MoveScope
 from pcb.route_native import _pad_obstacle, validate_removals
 from pcb.route_optimizer import mm
 from core.compat import strict_zip
@@ -21,7 +22,7 @@ from core.compat import strict_zip
 
 @dataclass(frozen=True)
 class GroundAnchorPose:
-    """A half-turn of a bottom resistor around one unchanged protected pad."""
+    """A half-turn of a resistor around one unchanged protected pad."""
 
     reference: str
     signal_net: str
@@ -33,21 +34,22 @@ class GroundAnchorPose:
 
 
 def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> GroundAnchorPose | None:
-    """Propose a half-turn preserving one symmetric bottom protected pad.
+    """Propose a half-turn preserving one symmetric protected pad.
 
     This is a geometric hypothesis, not electrical qualification. All
     disturbed signal copper must still be rerouted and independently checked.
     """
     import pcbnew
 
-    reference = str(footprint.GetReference())
+    reference, side = str(footprint.GetReference()), footprint.GetLayer()
     if (not re.fullmatch(r"R[0-9]+", reference)
-            or footprint.GetLayer() != pcbnew.B_Cu or footprint.IsLocked()):
+            or side not in (pcbnew.F_Cu, pcbnew.B_Cu) or footprint.IsLocked()):
         return None
+    other_side = pcbnew.F_Cu if side == pcbnew.B_Cu else pcbnew.B_Cu
     pads = tuple(footprint.Pads())
     if (len(pads) != 2 or len({str(pad.GetNumber()) for pad in pads}) != 2
             or any(not str(pad.GetNumber()) or pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
-                   or not pad.IsOnLayer(pcbnew.B_Cu) or pad.IsOnLayer(pcbnew.F_Cu) for pad in pads)):
+                   or not pad.IsOnLayer(side) or pad.IsOnLayer(other_side) for pad in pads)):
         return None
     anchored = [pad for pad in pads if str(pad.GetNetname()) in anchor_nets & excluded]
     signal = [pad for pad in pads if str(pad.GetNetname()) not in excluded | {""}
@@ -55,8 +57,8 @@ def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> Ground
     if len(anchored) != 1 or len(signal) != 1:
         return None
     pad = anchored[0]
-    layers = tuple(layer for layer in (pcbnew.B_Cu, pcbnew.B_Mask, pcbnew.B_Paste)
-                   if pad.IsOnLayer(layer))
+    mask, paste = (pcbnew.F_Mask, pcbnew.F_Paste) if side == pcbnew.F_Cu else (pcbnew.B_Mask, pcbnew.B_Paste)
+    layers = tuple(layer for layer in (side, mask, paste) if pad.IsOnLayer(layer))
     for layer in layers:
         offset = pad.GetOffset(layer)
         if (pad.GetShape(layer) not in {pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT,
@@ -111,13 +113,17 @@ class MoveGuide:
 
     @classmethod
     def diagnose(cls, board, request, recovery, anchors, critical_nets, options):
+        import pcbnew
         from pcb.net_routing.obstructions import diagnose
         from pcb.net_routing.rework import ReworkWeights
 
-        if not options or not recovery.obstruction_trials:
-            return cls(board)
         weights = ReworkWeights.from_config(request.get("rework"))
-        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options}
+        # The parts a route starts and ends on are its endpoints, not obstructions.
+        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options
+                   if not any(pad.HitTest(pcbnew.VECTOR2I(anchor.point.x, anchor.point.y))
+                              for pad in item[2].Pads() for anchor in anchors)}
+        if not movable or not recovery.obstruction_trials:
+            return cls(board)
         settings = {**request["shared"], **request["nets"][0]}
         witnesses, _ = diagnose(board, anchors, [], settings, recovery, critical_nets, weights,
                                 movable=movable, first_feasible=True)
@@ -156,40 +162,14 @@ class MoveGuide:
         return not any(corridor.blocked_by(shapes) for corridor in corridors)
 
 
-def _eligible(board, anchors, excluded, recovery):
+def _eligible(board, anchors, excluded, recovery, scope):
     """Cheap selection only; native placement validation checks every proposal."""
-    import pcbnew
-
-    text = Path(board.GetFileName()).read_text(encoding="utf-8-sig")
-    forbidden, counts = set(), {}
-    for block in parse(text).children("footprint"):
-        refs = [
-            p.atoms()[2].value
-            for p in block.children("property")
-            if len(p.atoms()) >= 3 and p.atoms()[1].value == "Reference"
-        ]
-        for ref in refs:
-            counts[ref] = counts.get(ref, 0) + 1
-            if '"F.SilkS"' in text[block.start : block.end]:
-                forbidden.add(ref)
+    movable = scope.movable(Path(board.GetFileName()).read_text(encoding="utf-8-sig"))
     classes = net_classes(board)
     result = []
     for footprint in board.GetFootprints():
         ref, pads = footprint.GetReference(), tuple(footprint.Pads())
-        if (
-            counts.get(ref) != 1
-            or ref in forbidden
-            or not pads
-            or footprint.GetLayer() != pcbnew.B_Cu
-            or footprint.IsLocked()
-            or any(
-                p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
-                or not p.IsOnLayer(pcbnew.B_Cu)
-                or p.IsOnLayer(pcbnew.F_Cu)
-                or p.GetNetClassName() not in classes
-                for p in pads
-            )
-        ):
+        if ref not in movable or not pads or any(p.GetNetClassName() not in classes for p in pads):
             continue
         names = {
             p.GetNetname()
@@ -376,13 +356,14 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
     moved_pads = tuple(pad for part in copies for pad in part.Pads())
     static_pads = tuple(
         pad for part in board.GetFootprints() if part.m_Uuid.AsString() not in selected_ids
-        for pad in part.Pads() if pad.IsOnLayer(pcbnew.B_Cu)
+        for pad in part.Pads()
     )
     pads = (*moved_pads, *static_pads)
-    tracks = tuple(item for item in board.GetTracks()
-                   if item.IsOnLayer(pcbnew.B_Cu) and item.m_Uuid.AsString() not in removed_ids)
-    def conflicts(shape, other, gap):
-        other_shape = other.GetEffectiveShape(pcbnew.B_Cu)
+    tracks = tuple(item for item in board.GetTracks() if item.m_Uuid.AsString() not in removed_ids)
+    layers = tuple(board.GetLayerID(name) for name in enabled_copper_layers(board))
+
+    def conflicts(shape, other, gap, layer):
+        other_shape = other.GetEffectiveShape(layer)
         if isinstance(other, pcbnew.PAD):
             drill = other.GetDrillSize()
             hole = other.GetEffectiveHoleShape() if drill.x or drill.y else None
@@ -393,15 +374,15 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
         ) or (hole is not None and shape.Collide(hole, max(0, hole_gap - 1)))
 
     collateral = {}
-    for pad in moved_pads:
-        shape = pad.GetEffectiveShape(pcbnew.B_Cu)
-        original_shape = original_pads[pad.m_Uuid.AsString()].GetEffectiveShape(pcbnew.B_Cu)
+    for pad, layer in ((pad, layer) for pad in moved_pads for layer in layers if pad.IsOnLayer(layer)):
+        shape = pad.GetEffectiveShape(layer)
+        original_shape = original_pads[pad.m_Uuid.AsString()].GetEffectiveShape(layer)
         box = pad.GetBoundingBox()
         for other in pads:
             if other.GetParentFootprint().m_Uuid.AsString() == pad.GetParentFootprint().m_Uuid.AsString():
                 # A footprint move leaves its own pad-to-pad geometry intact.
                 continue
-            if other.GetNetname() and other.GetNetname() == pad.GetNetname():
+            if not other.IsOnLayer(layer) or (other.GetNetname() and other.GetNetname() == pad.GetNetname()):
                 continue
             gap = clearance(pad, other)
             bounds = other.GetBoundingBox()
@@ -409,17 +390,17 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
             if not box.Intersects(bounds):
                 continue
             original_other = original_pads[other.m_Uuid.AsString()]
-            if conflicts(shape, other, gap) and not conflicts(original_shape, original_other, gap):
+            if conflicts(shape, other, gap, layer) and not conflicts(original_shape, original_other, gap, layer):
                 raise UnsupportedPlacement("Moved pad would violate another pad's clearance")
         for item in tracks:
-            if item.GetNetname() and item.GetNetname() == pad.GetNetname():
+            if not item.IsOnLayer(layer) or (item.GetNetname() and item.GetNetname() == pad.GetNetname()):
                 continue
             gap = clearance(pad, item)
             bounds = item.GetBoundingBox()
             bounds.Inflate(max(gap, hole_gap))
             if not box.Intersects(bounds):
                 continue
-            if not conflicts(shape, item, gap) or conflicts(original_shape, item, gap):
+            if not conflicts(shape, item, gap, layer) or conflicts(original_shape, item, gap, layer):
                 continue
             name = item.GetNetname()
             if (not name or name.startswith("unconnected-") or name in excluded
@@ -548,15 +529,7 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
     if target in excluded:
         return [], []
     text = Path(board.GetFileName()).read_text(encoding="utf-8-sig")
-    forbidden, counts = set(), {}
-    for block in parse(text).children("footprint"):
-        refs = [item.atoms()[2].value for item in block.children("property")
-                if len(item.atoms()) >= 3 and item.atoms()[1].value == "Reference"]
-        for reference in refs:
-            counts[reference] = counts.get(reference, 0) + 1
-            if '"F.SilkS"' in text[block.start:block.end]:
-                forbidden.add(reference)
-
+    movable = MoveScope.from_config(policy.get("placement")).movable(text)
     singleton_members = singleton_group_members(text)
     footprints = tuple(board.GetFootprints())
     all_geometry = {part.m_Uuid.AsString(): _courtyard_geometry(part) for part in footprints}
@@ -564,7 +537,7 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
     options = []
     for part in footprints:
         pose = _anchor_pose(part, excluded, anchor_nets)
-        if (pose is None or counts.get(pose.reference) != 1 or pose.reference in forbidden
+        if (pose is None or pose.reference not in movable
                 or (part.GetParentGroup() is not None
                     and part.m_Uuid.AsString() not in singleton_members)):
             continue
@@ -655,6 +628,7 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         anchors,
         set(critical_nets) | set(policy.get("exclude_nets", [])),
         recovery,
+        MoveScope.from_config(policy.get("placement")),
     )
     guide = MoveGuide.diagnose(board, request, recovery, anchors, critical_nets, options)
     selections = guide.selections(options)
@@ -789,7 +763,7 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                     candidate,
                     {
                         "selection": ("path_obstruction_move" if guide.names(selected)
-                                      else "bottom_placement_hypothesis"),
+                                      else "placement_hypothesis"),
                         "references": [item[1] for item in selected],
                         "nets": sorted(candidate_names),
                         "displacement_mm": step,

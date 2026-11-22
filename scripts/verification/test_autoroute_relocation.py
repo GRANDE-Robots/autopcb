@@ -20,6 +20,9 @@ from pcb.route_optimizer import GridRouter, Obstacle, Point, Route, SearchBudget
 from verification import test_net_routing as fixture
 from verification import test_route_optimizer as boards
 
+# Tests of bottom-part logic keep the top-side anchor connectors in place.
+BOTTOM_ONLY = {"sides": ["bottom"]}
+
 
 class ObstructionHitsTests(unittest.TestCase):
     def test_same_net_copper_is_not_mistaken_for_a_blocking_trace(self):
@@ -486,7 +489,7 @@ class RelocationTests(unittest.TestCase):
             self.assertTrue(witnesses, notes)
             self.assertEqual(witnesses[0].identifiers, {record.uuid})
 
-    def test_generator_preserves_top_and_excluded_parts_and_prices_moves(self):
+    def test_generator_keeps_parts_the_policy_fixes_and_prices_moves(self):
         with tempfile.TemporaryDirectory() as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
             board = pcbnew.LoadBoard(str(source))
@@ -501,7 +504,7 @@ class RelocationTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": BOTTOM_ONLY}
             anchors = (
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
@@ -530,6 +533,9 @@ class RelocationTests(unittest.TestCase):
                 board, request, policy, recovery, anchors, ("OTHER",)
             )
             self.assertEqual(blocked, [])
+            del policy["placement"]
+            default, _ = placement_requests(board, request, policy, recovery, anchors, ())
+            self.assertTrue({"J1", "J2"} & {m["reference"] for c in default for m in c["movable"]})
             self.assertEqual(
                 placement_cost(board, {"R50": (4, 3, 90)}, ReworkWeights()), 2
             )
@@ -583,7 +589,7 @@ class RelocationTests(unittest.TestCase):
                     break
             self.assertEqual(result["status"], "validated_preview",
                              {key: result.get(key) for key in ("status", "reason")})
-            self.assertEqual(result["validation"]["bottom_footprint_moves"], ["R50"])
+            self.assertEqual(result["validation"]["footprint_moves"], ["R50"])
             self.assertEqual(result["validation"]["candidate_unconnected"], 0)
             self.assertEqual(source.read_bytes(), before)
 
@@ -768,7 +774,7 @@ class RelocationTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": BOTTOM_ONLY}
             anchors = (Site(Point.from_mm((2, 2)), "F.Cu"), Site(Point.from_mm((8, 5)), "F.Cu"))
             candidates, _ = placement_requests(
                 board, request, policy, RecoveryPolicy(placement_candidates=32), anchors, ()
@@ -867,7 +873,7 @@ class RelocationTests(unittest.TestCase):
             before = source.read_bytes()
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": BOTTOM_ONLY}
             anchors = (
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
@@ -905,7 +911,7 @@ class RelocationTests(unittest.TestCase):
             request = fixture.NativeNetRoutingTests.config()
             request["shared"]["layers"] = ["F.Cu", "B.Cu"]
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": BOTTOM_ONLY}
             anchors = (
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
@@ -920,7 +926,7 @@ class RelocationTests(unittest.TestCase):
                 result["status"], "validated_preview",
                 {key: result.get(key) for key in ("status", "reason", "attempts")},
             )
-            self.assertEqual(result["validation"]["bottom_footprint_moves"], ["U50"])
+            self.assertEqual(result["validation"]["footprint_moves"], ["U50"])
             self.assertFalse(result["validation"]["broken_existing_connections"])
             self.assertEqual(source.read_bytes(), before)
             self.assertEqual(schematic.read_bytes(), sch_before)
@@ -945,7 +951,7 @@ class RelocationTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": BOTTOM_ONLY}
             anchors = (
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
@@ -1031,7 +1037,7 @@ class RelocationTests(unittest.TestCase):
                 {key: result.get(key) for key in ("status", "reason")},
             )
             self.assertEqual(
-                result["validation"]["bottom_footprint_moves"], ["R50", "R51"]
+                result["validation"]["footprint_moves"], ["R50", "R51"]
             )
             self.assertFalse(result["validation"]["broken_existing_connections"])
             self.assertEqual(result["validation"]["candidate_unconnected"], 0)

@@ -1932,7 +1932,7 @@ class NativeNetRoutingTests(unittest.TestCase):
             ]
             result = plan_nets(config, project, validate=True, include_changes=True)
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
-            self.assertEqual(result["validation"]["bottom_footprint_moves"], ["R50"])
+            self.assertEqual(result["validation"]["footprint_moves"], ["R50"])
             moves = [
                 c
                 for c in result["unvalidated_campaign_changes"]
@@ -2039,15 +2039,18 @@ class NativeNetRoutingTests(unittest.TestCase):
                     )
                 self.assertIn("configuration changed", output.getvalue())
 
-    def test_topside_placement_is_rejected(self):
+    def test_topside_placement_follows_the_placement_policy(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)
             source = route_tests.RouteOptimizerTests.make_board(project)
             before = source.read_bytes()
             config = self.config()
             config["movable"] = [{"reference": "J1", "positions_mm": [[2, 3]]}]
-            with self.assertRaisesRegex(ValueError, "bottom"):
+            config["placement"] = {"sides": ["bottom"]}
+            with self.assertRaisesRegex(ValueError, "top side"):
                 plan_nets(config, project)
+            del config["placement"]
+            self.assertIn("status", plan_nets(config, project))
             self.assertEqual(source.read_bytes(), before)
 
     def test_source_change_during_planning_is_rejected(self):

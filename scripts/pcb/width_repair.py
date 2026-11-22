@@ -1121,7 +1121,7 @@ def repair(project: Path, *, apply: bool = False, max_checks: int = 16,
             guard = BoardSaveGuard(snapshot.source, tuple(dependencies.items()))
             guard.verify_editor_unlocked()
             schematic = snapshot.source.with_suffix('.kicad_sch').read_bytes()
-            protected = ProtectedState.capture(snapshot.original, schematic, preserve_all_placement=True)
+            protected = ProtectedState.capture(snapshot.original, schematic)
             print('Inventorying all native width findings; saved board stays unchanged', flush=True)
             baseline = _drc(cli, snapshot.board_path, snapshot.directory / 'before.json',
                             save_refill=True, schematic_parity=True)

@@ -22,6 +22,7 @@ from typing import Any
 from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import Atom, Form, parse, select_direct_children
 from core.native_command import run_checked
+from pcb.move_scope import MoveScope
 from pcb.route_native import validate_removals
 from pcb.route_optimizer import COPPER_LAYERS, Point
 
@@ -62,6 +63,7 @@ def _tool_inputs() -> dict[str, str]:
         "pcb/topology_bound.py",
         "pcb/joint_optimizer.py",
         "pcb/footprint_pose.py",
+        "pcb/move_scope.py",
         "pcb/route_cli.py",
         "pcb/route_batch.py",
         "core/kicad_campaign.py",
@@ -617,44 +619,6 @@ class RouteContract:
     removals: tuple[dict[str, str], ...] = ()
 
 
-def _check_bottom_footprint_moves(
-    board, source_text: str, references: set[str]
-) -> None:
-    """Reject moves that could alter top-side parts or front silkscreen."""
-    import pcbnew
-
-    if not references:
-        return
-    blocks: dict[str, list[Form]] = collections.defaultdict(list)
-    for footprint in parse(source_text).children("footprint"):
-        for prop in footprint.children("property"):
-            atoms = prop.atoms()
-            if len(atoms) >= 3 and atoms[1].value == "Reference":
-                blocks[atoms[2].value].append(footprint)
-                break
-    for reference in references:
-        footprint = board.FindFootprintByReference(reference)
-        if footprint is None or len(blocks[reference]) != 1:
-            raise ValueError(f"Bottom footprint {reference!r} is missing or ambiguous")
-        if footprint.GetLayer() != pcbnew.B_Cu or footprint.IsLocked():
-            raise ValueError(
-                f"Footprint {reference} must be unlocked and on the bottom side"
-            )
-        pads = list(footprint.Pads())
-        if not pads or any(
-            pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
-            or not pad.IsOnLayer(pcbnew.B_Cu)
-            or pad.IsOnLayer(pcbnew.F_Cu)
-            for pad in pads
-        ):
-            raise ValueError(
-                f"Footprint {reference} must have only bottom-side SMD pads"
-            )
-        block = blocks[reference][0]
-        if '"F.SilkS"' in source_text[block.start : block.end]:
-            raise ValueError(f"Moving {reference} would alter front silkscreen")
-
-
 def validate_route(
     source: Path,
     source_sha256: str,
@@ -681,7 +645,8 @@ def validate_routes(
     changes: list[dict[str, Any]],
     contracts: list[RouteContract],
     *,
-    bottom_footprint_moves: tuple[str, ...] = (),
+    footprint_moves: tuple[str, ...] = (),
+    move_scope: MoveScope = MoveScope(),
     require_full_nets: bool = False,
 ) -> dict[str, Any]:
     """DRC a route batch against the same saved baseline and check endpoints.
@@ -703,12 +668,12 @@ def validate_routes(
     requested_nets = {contract.net for contract in contracts}
     requested_ids: dict[str, str] = {}
     removals: list[dict[str, str]] = []
-    permitted_moves = set(bottom_footprint_moves)
-    if len(permitted_moves) != len(bottom_footprint_moves) or any(
+    permitted_moves = set(footprint_moves)
+    if len(permitted_moves) != len(footprint_moves) or any(
         not isinstance(reference, str) or not reference
-        for reference in bottom_footprint_moves
+        for reference in footprint_moves
     ):
-        raise ValueError("Bottom footprint permissions must be distinct references")
+        raise ValueError("Footprint move permissions must be distinct references")
     moved: set[str] = set()
     for change in changes:
         if change.get("document") != "pcb":
@@ -723,9 +688,9 @@ def validate_routes(
             reference = change["target"].get("reference")
             if reference not in permitted_moves or reference in moved:
                 raise ValueError(
-                    "Only explicitly permitted bottom footprint poses are allowed"
+                    "Only explicitly permitted footprint poses are allowed"
                 )
-            verify_native_pose_change(source, change)
+            verify_native_pose_change(source, change, move_scope)
             moved.add(reference)
             continue
         if change.get("op") == "set_at":
@@ -738,7 +703,7 @@ def validate_routes(
                 or reference in moved
             ):
                 raise ValueError(
-                    "Only explicitly permitted bottom footprint translations are allowed"
+                    "Only explicitly permitted footprint translations are allowed"
                 )
             moved.add(reference)
             continue
@@ -767,7 +732,7 @@ def validate_routes(
         requested_ids[ids[0].atoms()[1].value] = item_net
     if moved != permitted_moves:
         raise ValueError(
-            "Every permitted bottom footprint must have exactly one pose change"
+            "Every permitted footprint must have exactly one pose change"
         )
     if len(requested_ids) != len(changes) - len(removals) - len(moved):
         raise ValueError("Proposed copper UUIDs must be unique")
@@ -793,7 +758,7 @@ def validate_routes(
             raise RuntimeError("Saved board changed while copying validation inputs")
         original_bytes = (native_path(before, ".kicad_pcb")).read_bytes()
         original = pcbnew.LoadBoard(str(native_path(before, ".kicad_pcb")))
-        _check_bottom_footprint_moves(original, original_bytes.decode("utf-8"), moved)
+        move_scope.check(original_bytes.decode("utf-8"), moved)
         requested_removals = [
             removal for contract in contracts for removal in contract.removals
         ]
@@ -1015,7 +980,7 @@ def validate_routes(
         "endpoint_connectivity": "connected",
         **({"whole_net_copper_connectivity": "all_requested_copper_connected"} if require_full_nets else {}),
         "routes_validated": len(contracts),
-        "bottom_footprint_moves": sorted(moved),
+        "footprint_moves": sorted(moved),
         "baseline_violations": len(baseline["violations"]),
         "candidate_violations": len(tested["violations"]),
         "candidate_errors": sum(v.get("severity") == "error" for v in tested["violations"]),

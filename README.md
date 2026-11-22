@@ -56,6 +56,10 @@ The ordinary router preserves declared differential copper. Pair seeding current
 
 `--workspace PATH` selects the location of shared inputs and outputs. If several native projects are available, pass a file with `--project`. The desktop lets you open that file directly. For an imported board, the config and report paths include a project key so same-named boards stay separate. Verification and recovery records go in `results/jobs/<project>/`. Exports default to `results/exports/`. Use `--output` to choose an explicit new destination for an export or project.
 
+### Use AutoPCB from a phone
+
+KiCad runs on Windows, macOS and Linux, so phones drive a computer that has it. On that computer run `autopcb serve --host ADDRESS`, using its LAN or Tailscale address, and open the printed link on an Android phone or iPhone. The page lists the workspace's projects, shows each board, runs verify, route preview, apply and draft export, and shows every job's result. The link carries the access token and anyone holding it can run jobs, so share it only over a network you trust: Tailscale encrypts the traffic, plain LAN HTTP does not. Without `--host` the page is reachable only from the same computer.
+
 ### Evidence for a checked export
 
 The `autopcb.project.json` profile uses `schema_version: 1` and an `entry` native filename. For checked export, record `high_speed_reviewed: true` and list each differential pair as two native net names, positive first. Use an empty `differential_pairs` list for a project reviewed as having no pairs. Set `reference_net` if the return has a name other than `GND`. Verify and export independently check ERC, DRC, and schematic agreement, then sample adjacent reference copper on the refilled PCB. The findings include trace locations, layer transitions, and any unreviewed scope.

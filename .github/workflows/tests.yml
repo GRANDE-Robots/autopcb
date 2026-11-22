@@ -29,7 +29,7 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 scripts/run.py --project . --kicad-python /usr/bin/python3 test
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       KICAD_CLI: /Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli

@@ -115,7 +115,7 @@ async function loadJobs() {
       item.className = "job";
       const row = document.createElement("div");
       row.className = "row";
-      row.append(text("strong", `${job.action} · ${job.project.split(/[\\/]/).pop()}`));
+      row.append(text("strong", `${job.action} · ${job.project.split(/[\\/]/).pop().replace(/\.kicad_pro$/, "")}`));
       const ok = ["native_passed", "created", "draft", "saved_work_in_progress", "measured"].includes(job.status);
       row.append(text("span", job.status, "pill " + (job.status === "running" ? "" : ok ? "ok" : "bad")));
       item.append(row, text("div", summary(job), "detail"));

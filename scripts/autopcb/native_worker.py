@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 import json
+import math
 import os
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -186,6 +187,18 @@ class ReferenceScreen:
             raise ValueError("Reference net is missing, ambiguous, or assigned to a signal pair.")
         return pairs, matches.pop()
 
+    def _gap(self, track, net: str) -> dict:
+        """Measure the unreferenced length and the pad the trace launches from."""
+        x0, y0, x1, y1, _width = track.geometry
+        stations = [track.samples[index:index + 3] for index in range(0, len(track.samples), 3)]
+        spacing = math.hypot(x1 - x0, y1 - y0) / max(1, len(stations) - 1) / 1e6
+        missing = [index for index, station in enumerate(stations) if not all(point[2] for point in station)]
+        end = (x0, y0) if missing and sum(missing) / len(missing) < (len(stations) - 1) / 2 else (x1, y1)
+        launch = next((f"{pad.GetParentFootprint().GetReference()}.{pad.GetNumber()}"
+                       for pad in self.board.GetPads()
+                       if pad.GetNetname() == net and pad.HitTest(pcb.VECTOR2I(*end))), None)
+        return {"unreferenced_mm": round(len(missing) * spacing, 3), "launch": launch}
+
     def run(self) -> dict:
         from pcb.net_routing.reference import sample_reference
 
@@ -234,6 +247,7 @@ class ReferenceScreen:
                 "missing_samples": covered.missing_samples if covered else None,
                 "continuous_polygon": covered.continuous_polygon if covered else None,
                 "positions_mm": [{"x": position[0], "y": position[1]}],
+                **(self._gap(covered, name) if kind == "sampled_reference_gap" else {}),
             })
         for row in metrics.values():
             row["trace_length_mm"] = round(row["trace_length_mm"], 6)

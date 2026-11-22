@@ -374,6 +374,25 @@ class NetGeometryTests(unittest.TestCase):
         result = combine(added, existing=existing, pad_sites=frozenset((site(0, 0), site(4, 4))))
         self.assertTrue(result.segments)
 
+    def test_a_dogleg_crossing_existing_copper_of_its_net_is_not_a_staircase(self):
+        existing = (segment((0, 1), (6, 1)),)
+        added = route(segment((1, 2), (2, 2)), segment((2, 2), (4, 0)), segment((4, 0), (4, -2)),
+                      segment((4, -2), (5, -3)), segment((5, -3), (6, -3)))
+        result = combine(added, existing=existing, pad_sites=frozenset((site(1, 2), site(6, -3))))
+        self.assertTrue(result.segments)
+
+    def test_a_dogleg_whose_exit_lies_inside_pad_copper_is_a_staircase(self):
+        from pcb.net_routing.geometry import StaircaseGeometryError
+        from pcb.route_optimizer import PadCopper
+
+        added = route(segment((0, 6), (1, 6)), segment((1, 6), (2, 5)), segment((2, 5), (2, 3)),
+                      segment((2, 3), (3, 2)), segment((3, 2), (4, 2)))
+        pads = frozenset((site(0, 6), site(4, 2)))
+        self.assertTrue(combine(added, pad_sites=pads).segments)
+        copper = PadCopper((("F.Cu", mm(2.9), mm(1.5), mm(4.5), mm(2.5)),))
+        with self.assertRaises(StaircaseGeometryError):
+            combine(added, pad_sites=pads, pad_copper=copper)
+
     def test_context_detour_prioritizes_the_conflicting_added_copper(self):
         from pcb.net_routing.geometry import StaircaseGeometryError
 

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field, fields
 from contextlib import contextmanager
 
-from pcb.route_optimizer import Point, Route, SearchBudgetExceeded, Segment
+from pcb.route_optimizer import PadCopper, Point, Route, SearchBudgetExceeded, Segment
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,7 @@ class Net:
     islands: tuple[Island, ...]
     existing: tuple[Segment, ...] = ()
     pad_sites: frozenset[Site] = frozenset()
+    pad_copper: PadCopper = PadCopper()
 
 
 @dataclass(frozen=True)

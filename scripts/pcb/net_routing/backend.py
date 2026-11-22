@@ -248,6 +248,7 @@ class Settings:
             None if budget is None else budget.check,
             self.profile,
             first_feasible=self.raw.get("first_feasible", False),
+            pad_copper=self.native.net.pad_copper,
         )
 
     def assessment(self, route: Route) -> dict:
@@ -339,6 +340,7 @@ class NativeBackend:
             pad_sites=net.pad_sites | legacy_contacts | frozenset(
                 Site(v.at, layer) for v in s.native.vias for layer, _ in v.sizes
             ),
+            pad_copper=net.pad_copper,
             forbid_staircase=forbid_staircase,
             minimum_segment=s.minimum_segment,
         )

@@ -32,11 +32,13 @@ from pcb.route_optimizer import (
     GridRouter,
     NoGridRoute,
     Obstacle,
+    PadCopper,
     Point,
     SearchBudgetExceeded,
     SearchLimitReached,
     Segment,
     Weights,
+    _advance_staircase_history,
     mirror_points,
     mm,
 )
@@ -618,44 +620,17 @@ class RouteOptimizerTests(unittest.TestCase):
         self.assertEqual(result.segments[-1].end, end)
         self.assertTrue(result.search_truncated)
 
-    def test_multiple_off_grid_access_pairs_skip_repeated_topology_maps(self):
-        model = router(max_expansions=100, topology_heuristic=True)
-        start, end = point(.1, .1), point(4.1, 3.1)
-        groups = {
-            start: [[(start, point(1, .1)), (start, point(2, .1))]],
-            end: [[(point(4, 3.1), end)]],
-        }
-        checked = []
+    def test_off_grid_access_pairs_share_one_topology_map(self):
+        from pcb import topology_bound
 
-        def limited(*_args, **_kwargs):
-            checked.append(model.topology_heuristic)
-            raise SearchLimitReached("bounded trial", expanded=1)
-
-        with mock.patch.object(model, "_endpoint_option_groups",
-                               side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint])):
-            with mock.patch.object(model, "route", side_effect=limited):
-                with self.assertRaises(SearchLimitReached):
-                    model._route_off_grid(start, "F.Cu", end, "B.Cu")
-        self.assertEqual(checked, [False, False, False, False])
-        self.assertTrue(model.topology_heuristic)
-
-    def test_single_off_grid_access_pair_keeps_the_configured_topology(self):
-        model = router(max_expansions=100, topology_heuristic=True)
-        start, end = point(.1, .1), point(4.1, 3.1)
-        groups = {start: [[(start, point(1, .1))]], end: [[(point(4, 3.1), end)]]}
-        checked = []
-
-        def limited(*_args, **_kwargs):
-            checked.append(model.topology_heuristic)
-            raise SearchLimitReached("bounded trial", expanded=1)
-
-        with mock.patch.object(model, "_endpoint_option_groups",
-                               side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint])):
-            with mock.patch.object(model, "route", side_effect=limited):
-                with self.assertRaises(SearchLimitReached):
-                    model._route_off_grid(start, "F.Cu", end, "B.Cu")
-        self.assertEqual(checked, [True, True])
-        self.assertTrue(model.topology_heuristic)
+        model = router(topology_heuristic=True)
+        with mock.patch("pcb.topology_bound.relaxed_costs",
+                        side_effect=topology_bound.relaxed_costs) as built:
+            result = model.route(point(.1, .1), "F.Cu", point(8.1, 6.1), "B.Cu")
+        self.assertEqual(built.call_count, 1)
+        self.assertTrue(built.call_args.kwargs["more_goals"])
+        self.assertEqual((result.segments[0].start, result.segments[-1].end), (point(.1, .1), point(8.1, 6.1)))
+        self.assertEqual(model._goal_seeds, frozenset())
 
     def test_straight_off_grid_route_stops_at_a_proven_cost_lower_bound(self):
         model = router(layers=("B.Cu",), step=mm(0.5),
@@ -719,6 +694,23 @@ class RouteOptimizerTests(unittest.TestCase):
             u = (a.end.x - a.start.x, a.end.y - a.start.y)
             v = (b.end.x - b.start.x, b.end.y - b.start.y)
             self.assertNotEqual(u[0] * v[0] + u[1] * v[1], 0)
+
+    def test_pad_copper_ends_track_chains_and_frees_turns_inside_it(self):
+        east, northeast, north = 0, 7, 6
+        memory = -1
+        for current, following in ((east, northeast), (northeast, north), (north, northeast)):
+            memory = _advance_staircase_history(memory, current, following)
+        self.assertIsNotNone(_advance_staircase_history(memory, northeast, east))
+        self.assertIsNone(_advance_staircase_history(memory, northeast, east, anchored=True))
+        dogleg = [Segment(point(*a), point(*b), "F.Cu") for a, b in (
+            ((0, 6), (1, 6)), ((1, 6), (2, 5)), ((2, 5), (2, 3)), ((2, 3), (3, 2)), ((3, 2), (4, 2)))]
+        model = router(gentle_turns=True,
+                       pad_copper=PadCopper((("F.Cu", mm(2.9), mm(1.5), mm(4.5), mm(2.5)),)))
+        self.assertTrue(model._staircase_off_pads(dogleg))
+        self.assertFalse(router()._staircase_off_pads(dogleg))
+        self.assertFalse(model._illegal_turn(2, point(3, 2), "F.Cu"))
+        self.assertTrue(model._illegal_turn(4, point(3, 2), "F.Cu"))
+        self.assertTrue(model._illegal_turn(3, point(2, 3), "F.Cu"))
 
     def test_staircase_count_distinguishes_chamfers_and_overlapping_windows(self):
         def chain(points):

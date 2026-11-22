@@ -67,7 +67,7 @@ r_t^\star\approx \arg\min_{r\in\mathcal R_t}
 \big[\Delta C_t(r)+\widehat C_{\mathrm{remain}}(r)\big].
 $$
 
-**Grid search.** State $v$ stores position, layer, and heading. A* ranks $g(v)+\eta h(v)$ using accumulated cost $g$, estimated remaining cost $h$, and heuristic weight $\eta$ (default 1).
+**Grid search.** State $v$ stores position, layer, and heading. A* ranks $g(v)+\eta h(v)$ using accumulated cost $g$, estimated remaining cost $h$, and heuristic weight $\eta$ (default 1). The topology bound raises $h$ to a relaxed cost, vias included, to the nearest grid access of the endpoint. One map serves every access of an off-grid pad. Cells it did not reach take the last cost it settled.
 
 <!-- pagebreak -->
 
@@ -75,7 +75,7 @@ $$
 
 ## Geometry and rework
 
-**Route rules.** Use headings in 45° increments and odd multiples of 45° at bends. Check branches as junctions. Enforce clearance, width, via access, and keepouts. Reject shorts and broken connections.
+**Route rules.** Use headings in 45° increments and odd multiples of 45° at bends. Inside same-net pad copper any turn but a reversal is allowed. Check branches as junctions. Enforce clearance, width, via access, and keepouts. Reject shorts and broken connections.
 
 **Cost.** Default local cost is $L+L_{45}+10V+J$ plus configured layer and guide costs. For trace $e$, $d_e$ is the length removed or changed in position, layer, or width. For via $v$, $m_v$ is 1 when the via is removed or changes position, span, drill, or diameter, and 0 otherwise.
 
@@ -83,7 +83,7 @@ $$
 R=\sum_e\mathbf 1[d_e>0]+\sum_e d_e+10\sum_v m_v .
 $$
 
-**Staircases.** After collinear merging, $\phi_i$ is heading $i$ along an unbranched same-layer chain. $N_{\mathrm{stair}}$ counts repeated diagonals separated by one cardinal run. $E_i$ is 1 inside a complete dogleg such as $0^\circ,45^\circ,90^\circ,45^\circ,0^\circ$ and 0 otherwise.
+**Staircases.** After collinear merging, $\phi_i$ is heading $i$ along an unbranched same-layer chain. A chain runs through crossings and ends at a joint on same-net pad or via copper. $N_{\mathrm{stair}}$ counts repeated diagonals separated by one cardinal run. $E_i$ is 1 inside a complete dogleg such as $0^\circ,45^\circ,90^\circ,45^\circ,0^\circ$ and 0 otherwise.
 
 $$
 N_{\mathrm{stair}}=\sum_i\mathbf 1[\phi_i\text{ diagonal},\ \phi_{i+1}\text{ cardinal},\

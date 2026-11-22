@@ -12,13 +12,13 @@ from itertools import combinations
 from pcb.route_optimizer import (
     COPPER_LAYERS,
     GridRouter,
+    PadCopper,
     Point,
     Route,
     Segment,
     Via,
     Weights,
     _guide_distance,
-    is_staircase_triplet, is_standard_dogleg,
 )
 from pcb.net_routing.model import Site
 from core.compat import strict_zip
@@ -223,10 +223,15 @@ def aggregate(
     layer_penalties: dict[str, float],
     guide: tuple[Point, ...],
     pad_sites: frozenset[Site] = frozenset(),
+    pad_copper: PadCopper = PadCopper(),
     forbid_staircase: bool = True,
     minimum_segment: int = 0,
 ) -> Route:
-    """Charge each added copper length and physical through via exactly once."""
+    """Charge each added copper length and physical through via exactly once.
+
+    A point inside same-net pad copper anchors the track there, as in the
+    saved-board style check: bends and staircase chains end at it.
+    """
     segments = unique_segments(tuple(s for r in routes for s in r.segments), existing)
     via_by_point = {v.at: Via(v.at, "F.Cu", "B.Cu") for r in routes for v in r.vias}
     reused = {
@@ -236,6 +241,10 @@ def aggregate(
         Site(p, layer) for p in (*via_by_point, *reused) for layer in COPPER_LAYERS
     }
     anchors = set(via_sites)
+
+    def anchored(site: Site) -> bool:
+        return site in pad_sites or site in via_sites or pad_copper.holds(site.point, site.layer)
+
     # Inspect only contacts involving new copper; avoid quadratic rescanning of
     # a large pre-existing net and do not judge its unrelated legacy bends.
     for new in segments:
@@ -246,7 +255,7 @@ def aggregate(
     graph = vertices(segments, tuple(anchors))
     bends = 0
     for site, directions in graph.items():
-        if site in pad_sites or site in via_sites:
+        if anchored(site):
             continue
         relevant = set(directions)
         for old in existing:
@@ -269,75 +278,63 @@ def aggregate(
         bends += (a - b) % 8 not in {0, 4}
     if forbid_staircase:
         checked = _staircase_context(segments, existing)
-        stair_graph = vertices(checked, tuple(pad_sites | via_sites))
+        graph = vertices(checked)
         added_intervals = defaultdict(list)
         for segment in segments:
             key, first, last = _line(segment)
             added_intervals[key].append((first, last))
+        ends: dict[Site, list[Segment]] = defaultdict(list)
+        for segment in checked:
+            ends[Site(segment.start, segment.layer)].append(segment)
+            ends[Site(segment.end, segment.layer)].append(segment)
+        visited: set[Segment] = set()
 
-        def includes_added(first, last):
-            key, lo, hi = _line(Segment(first.point, last.point, first.layer))
-            return any(max(lo, a) < min(hi, b) for a, b in added_intervals[key])
+        def extend(segment: Segment, point: Point, *, backwards: bool) -> list[Segment]:
+            # As in the saved-board style check, a chain runs through a track's
+            # interior, crossings included, and continues only at a plain joint
+            # of two tracks that is not anchored on pad or via copper.
+            run = []
+            site = Site(point, segment.layer)
+            while len(graph.get(site, ())) == 2 and len(ends[site]) == 2 and not anchored(site):
+                following = next(s for s in ends[site] if s != segment)
+                if following in visited:
+                    break
+                visited.add(following)
+                other = following.end if following.start == point else following.start
+                run.append(Segment(other, point, site.layer) if backwards else Segment(point, other, site.layer))
+                segment, point = following, other
+                site = Site(point, segment.layer)
+            return run
 
-        adjacency: dict[Site, list[Site]] = defaultdict(list)
-        for s in checked:
-            points = sorted(
-                (p for p in stair_graph if p.layer == s.layer and on_segment(p.point, s)),
-                key=lambda p: p.key,
-            )
-            for a, b in zip(points, points[1:]):
-                adjacency[a].append(b)
-                adjacency[b].append(a)
-        for start in adjacency:
-            for second in adjacency[start]:
-                chain = [start, second]
-                while (
-                    len(chain) < 4
-                    and len(adjacency[chain[-1]]) == 2
-                    and chain[-1] not in pad_sites
-                    and chain[-1] not in via_sites
-                ):
-                    next_site = next(p for p in adjacency[chain[-1]] if p != chain[-2])
-                    if next_site in chain:
-                        break
-                    chain.append(next_site)
-                if len(chain) == 4:
-                    a, b, c = [
-                        GridRouter._direction(x.point, y.point)
-                        for x, y in zip(chain, chain[1:])
-                    ]
-                    before = [p for p in adjacency[chain[0]] if p != chain[1]]
-                    after = [p for p in adjacency[chain[-1]] if p != chain[-2]]
-                    dogleg = (
-                        len(before) == len(after) == 1
-                        and chain[0] not in pad_sites | via_sites
-                        and chain[-1] not in pad_sites | via_sites
-                        and is_standard_dogleg((
-                            GridRouter._direction(before[0].point, chain[0].point), a, b, c,
-                            GridRouter._direction(chain[-1].point, after[0].point),
-                        ))
+        for seed in segments:
+            if seed in visited:
+                continue
+            visited.add(seed)
+            chain = [*reversed(extend(seed, seed.start, backwards=True)), seed,
+                     *extend(seed, seed.end, backwards=False)]
+            for window in GridRouter.staircase_windows(chain):
+                witnesses, touched = [], False
+                for run in window:
+                    key, lo, hi = _line(run)
+                    for added_lo, added_hi in added_intervals[key]:
+                        overlap_lo, overlap_hi = max(lo, added_lo), min(hi, added_hi)
+                        touched = touched or overlap_lo < overlap_hi
+                        if overlap_hi - overlap_lo >= 2:
+                            witness = (run.layer, _point(key, (overlap_lo + overlap_hi) // 2))
+                            if witness not in witnesses:
+                                witnesses.append(witness)
+                if touched:
+                    turn = window[1].start
+                    raise StaircaseGeometryError(
+                        f"A combined route forms a staircase on {seed.layer} "
+                        f"near ({turn.x / 1e6:g}, {turn.y / 1e6:g}) mm",
+                        tuple(witnesses),
                     )
-                    if (is_staircase_triplet(a, b, c) and not dogleg
-                            and any(includes_added(x, y) for x, y in zip(chain, chain[1:]))):
-                        witnesses = []
-                        for first, last in zip(chain, chain[1:]):
-                            key, lo, hi = _line(Segment(first.point, last.point, first.layer))
-                            for added_lo, added_hi in added_intervals[key]:
-                                overlap_lo = max(lo, added_lo)
-                                overlap_hi = min(hi, added_hi)
-                                if overlap_hi - overlap_lo >= 2:
-                                    witness = (first.layer, _point(key, (overlap_lo + overlap_hi) // 2))
-                                    if witness not in witnesses:
-                                        witnesses.append(witness)
-                        raise StaircaseGeometryError(
-                            f"A combined route forms a staircase on {start.layer} "
-                            f"near ({start.point.x / 1e6:g}, {start.point.y / 1e6:g}) mm",
-                            tuple(witnesses),
-                        )
     if minimum_segment and any(
         math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) < minimum_segment
         and Site(s.start, s.layer) not in pad_sites
         and Site(s.end, s.layer) not in pad_sites
+        and not pad_copper.covers(s)
         for s in segments
     ):
         raise RouteGeometryError("A combined segment is shorter than the configured minimum")

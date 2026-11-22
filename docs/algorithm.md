@@ -40,7 +40,7 @@ x_i=(p_i,\theta_i,b_i),\qquad
 =\sum_n w_n(W_n+H_n)+w_C C_{\mathrm{cong}}+w_P C_{\mathrm{prox}}+w_M M.
 $$
 
-**Recovery.** Route a blocked net with the pads of unlocked bottom-side parts relaxed. Move the parts that relaxed route crosses first, with poses that clear it before the rest, then the nearest parts. Each move is tried on a copy, affected nets are rerouted, and native checks decide.
+**Recovery.** Route a blocked net with the pads of movable parts relaxed. By default that is every part not locked in KiCad; the placement policy can limit it to one side or to SMD parts. Move the parts that relaxed route crosses first, with poses that clear it before the rest, then the nearest parts. Each move is tried on a copy, affected nets are rerouted, and native checks decide.
 
 ## Checkpoints and search
 

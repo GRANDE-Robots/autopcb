@@ -18,6 +18,7 @@ from core.paths import config_path, data_path
 from pcb.net_routing.completion import VerificationEvidence, completion_issues
 from pcb.net_routing.inventory import inventory_board
 from pcb.net_routing.native import Snapshot, sha
+from pcb.move_scope import MoveScope
 from pcb.net_routing.protection import ProtectedState, unqualified_working_nets
 from pcb.net_routing.reference import high_speed_nets, reference_report
 from pcb.net_routing.scheduler import schedule, work_from_board
@@ -212,6 +213,8 @@ def prepare_project(project: Path, *, progress=None) -> dict:
             routing_policy, _ = read_config(config)
             priorities = routing_policy.get("priorities", {})
             margin = routing_policy.get("search_margin_mm") or margin
+        fixed = ProtectedState.capture(snapshot.original, schematic_bytes,
+                                       movable=MoveScope.from_config(routing_policy.get("placement")))
         stage("5/6 | Scheduling unfinished nets and checking review freshness")
         work = work_from_board(board, inventory, priorities, margin_mm=margin)
         rounds = schedule(work.items)
@@ -244,7 +247,7 @@ def prepare_project(project: Path, *, progress=None) -> dict:
                                 board.GetBoardEdgesBoundingBox().GetY() / 1e6,
                                 board.GetBoardEdgesBoundingBox().GetRight() / 1e6,
                                 board.GetBoardEdgesBoundingBox().GetBottom() / 1e6],
-            "protected_counts": {"top_footprints": len(protected.top_footprints), "front_silkscreen": len(protected.front_silkscreen), "outline": len(protected.outline)},
+            "protected_counts": {"fixed_footprints": len(fixed.fixed_footprints), "front_silkscreen": len(fixed.front_silkscreen), "outline": len(fixed.outline)},
             "nets": [asdict(net) for net in inventory.nets],
             "unqualified_nets": sorted(unqualified_working_nets(
                 board, tuple(routing_policy.get("exclude_nets", ()))

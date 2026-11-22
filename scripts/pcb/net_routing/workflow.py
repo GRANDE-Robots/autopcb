@@ -15,6 +15,7 @@ from core.kicad_campaign import CampaignPlanner
 from pcb.route_junctions import junction_changes
 from pcb.route_native import validate_removals
 from pcb.route_optimizer import COPPER_LAYERS, Point, mm
+from pcb.move_scope import MoveScope
 from pcb.route_validation import CandidateRejected, RouteContract, validate_routes
 from pcb.net_routing.checkpoint import (
     CheckpointWindowUnavailable, route_access_inset, search_window, choose_checkpoint,
@@ -142,7 +143,7 @@ def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, w
 def configurations(data: object) -> tuple[dict, dict[str, dict], Limits]:
     data = _fields(
         data,
-        {"board_snapshot", "shared", "nets", "orders", "movable", "search", "rip_up", "rework", "max_islands", "repair_max_islands", "checkpoint_offset", "checkpoint_margin_mm", "recovery_stage", "recovery_bounds_mm"},
+        {"board_snapshot", "shared", "nets", "orders", "movable", "placement", "search", "rip_up", "rework", "max_islands", "repair_max_islands", "checkpoint_offset", "checkpoint_margin_mm", "recovery_stage", "recovery_bounds_mm"},
         "net planner",
     )
     shared = _fields(
@@ -187,6 +188,7 @@ def configurations(data: object) -> tuple[dict, dict[str, dict], Limits]:
     if isinstance(stage, bool) or not isinstance(stage, int) or not 0 <= stage <= 4:
         raise ValueError("recovery_stage must be an integer between 0 and 4")
     ReworkWeights.from_config(data.get("rework"))
+    MoveScope.from_config(data.get("placement"))
     margin = data.get("checkpoint_margin_mm", 4.0)
     if isinstance(margin, bool) or not isinstance(margin, (int, float)) or not math.isfinite(margin) or margin <= 0:
         raise ValueError("checkpoint_margin_mm must be finite and positive")
@@ -202,6 +204,7 @@ def plan_nets(
     include_changes: bool = False,
 ) -> dict:
     data, requests, limits = configurations(data)
+    move_scope = MoveScope.from_config(data.get("placement"))
     source_name = data.get("board_snapshot", "pcb")
     if not isinstance(source_name, str) or not source_name:
         raise ValueError("board_snapshot must be a saved PCB path or 'pcb'")
@@ -238,7 +241,7 @@ def plan_nets(
         rework_weights = ReworkWeights.from_config(data.get("rework"))
         try:
             for poses, moves in placements(
-                snapshot, data.get("movable", []), set(requests), budget
+                snapshot, data.get("movable", []), set(requests), budget, move_scope
             ):
                 if removal_changes:
                     snapshot.board_path.write_bytes(
@@ -497,7 +500,8 @@ def plan_nets(
                         result["source_sha256"],
                         changes,
                         candidate_contracts,
-                        bottom_footprint_moves=tuple(candidate.poses),
+                        footprint_moves=tuple(candidate.poses),
+                        move_scope=move_scope,
                         require_full_nets=data.get("max_islands") is None,
                     )
                 except CandidateRejected as error:

@@ -1,4 +1,4 @@
-"""Search bottom-side placements and octilinear routes on saved-board copies.
+"""Search explicit footprint placements and octilinear routes on saved-board copies.
 
 The result is the lowest-cost *validated candidate among those sampled*, not
 proof of a global optimum. The live board is never modified by this module.
@@ -21,10 +21,10 @@ import pcbnew
 
 from core.kicad_campaign import CampaignFile, CampaignPlanner
 from pcb.footprint_pose import native_pose_change
+from pcb.move_scope import MoveScope
 from pcb.route_cli import _endpoint, plan, save_validated_campaign
 from pcb.route_validation import (
     RouteContract,
-    _check_bottom_footprint_moves,
     _copy_inputs,
     _inputs,
     validate_routes,
@@ -207,7 +207,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
     original_bytes = source.read_bytes()
     source_hash = hashlib.sha256(original_bytes).hexdigest()
     original = pcbnew.LoadBoard(str(source))
-    _check_bottom_footprint_moves(original, original_bytes.decode("utf-8"), set(names))
+    MoveScope().check(original_bytes.decode("utf-8"), names)
     original_start = _endpoint_for_board(route["start"], original)
     original_end = _endpoint_for_board(route["end"], original)
     start, start_layer = _endpoint(original_start, "start")
@@ -273,7 +273,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
                 source_hash,
                 changes,
                 [contract],
-                bottom_footprint_moves=tuple(names),
+                footprint_moves=tuple(names),
             )
             changes.extend(evidence.pop("_zone_refill_changes"))
             if evidence["status"] != "no_new_drc_violations" or (

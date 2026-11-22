@@ -13,6 +13,7 @@ from core.kicad_campaign import CampaignPlanner
 from core.pcb_io import quiet_duplicate_image_handlers
 from pcb.net_routing.native import Snapshot, load_board, sha
 from pcb.net_routing.checkpoint import CheckpointExhausted
+from pcb.move_scope import MoveScope
 from pcb.net_routing.protection import ProtectedState
 from pcb.net_routing.recovery import search_key
 from pcb.net_routing.scheduler import overlaps
@@ -35,6 +36,8 @@ def _search(args: tuple[str, dict]) -> dict:
 def _check_requests(requests: list[dict]) -> None:
     if not isinstance(requests, list) or not requests:
         raise ValueError("A routing round needs at least one batch")
+    if any(request.get("placement") != requests[0].get("placement") for request in requests):
+        raise ValueError("Parallel batches must share one placement policy")
     windows = []
     names = set()
     for request in requests:
@@ -71,7 +74,8 @@ def preview_round(project: Path, requests: list[dict], *, workers: int = 2, exec
         raise ValueError("A saved schematic is required to protect the design")
     with Snapshot(source) as snapshot:
         schematic_bytes = (snapshot.directory / schematic.name).read_bytes()
-        protected = ProtectedState.capture(snapshot.original, schematic_bytes)
+        move_scope = MoveScope.from_config(requests[0].get("placement"))
+        protected = ProtectedState.capture(snapshot.original, schematic_bytes, movable=move_scope)
         arguments = [(str(snapshot.directory), request) for request in requests]
         if precomputed is not None:
             if not isinstance(precomputed, list) or len(precomputed) != len(requests):
@@ -131,9 +135,9 @@ def preview_round(project: Path, requests: list[dict], *, workers: int = 2, exec
         try:
             evidence = validate_routes(snapshot.board_path, sha(snapshot.board_path), changes,
                                        route_contracts, require_full_nets=scope == "whole_net",
-                                       bottom_footprint_moves=tuple(sorted({
+                                       footprint_moves=tuple(sorted({
                                            reference for item in successful for reference in item.get("placement", {})
-                                       })))
+                                       })), move_scope=move_scope)
         except CandidateRejected as error:
             snapshot.check()
             return {"status": "rejected", "source_sha256": sha(source),

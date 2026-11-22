@@ -10,8 +10,8 @@ names; one permutation fixes the order. Otherwise several deterministic orders
 are tried. Search limits cap tree/board beams, alternatives, path calls and time.
 
 Optional movable entries use reference, positions_mm and rotations_deg. Only
-explicitly listed bottom SMD poses are considered, and all nets on each movable
-part must be included. Native validation preserves existing connections and
+explicitly listed poses of parts the placement policy lets move are considered,
+and all nets on each movable part must be included. Native validation preserves existing connections and
 rejects new DRC violations. Nothing locks or groups the resulting tracks.
 """
 

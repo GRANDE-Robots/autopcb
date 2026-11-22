@@ -8,6 +8,7 @@ import pcbnew
 
 from pcb.footprint_pose import native_pose_change, verify_native_pose_change
 from pcb.joint_optimizer import _staircase, optimize
+from pcb.move_scope import MoveScope
 import verification.test_route_optimizer as route_tests
 
 
@@ -120,8 +121,9 @@ class JointOptimizerTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "exact native pose"):
                 verify_native_pose_change(source, altered)
-            with self.assertRaisesRegex(ValueError, "front silkscreen|bottom side"):
-                native_pose_change(source, "J1", 2, 2, 90)
+            self.assertEqual(native_pose_change(source, "J1", 2, 2, 90)["target"]["reference"], "J1")
+            with self.assertRaisesRegex(ValueError, "top side"):
+                native_pose_change(source, "J1", 2, 2, 90, MoveScope.from_config({"sides": ["bottom"]}))
             route = route_tests.RouteOptimizerTests.config()
             route.update(
                 {
@@ -161,7 +163,7 @@ class JointOptimizerTests(unittest.TestCase):
             result = optimize(project, {"route": route})
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
             self.assertEqual(result["placement"], {})
-            self.assertEqual(result["validation"]["bottom_footprint_moves"], [])
+            self.assertEqual(result["validation"]["footprint_moves"], [])
             self.assertEqual(source.read_bytes(), original)
 
 

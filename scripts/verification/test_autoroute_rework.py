@@ -1087,7 +1087,7 @@ class ReworkTests(unittest.TestCase):
                                      layers=list(enabled_copper_layers(board)))
             request["search"].update(seconds=30, net_candidates=3, order_trials=2)
             request.update(max_islands=3, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 3}
+            policy = {"route": request["shared"], "max_pins": 3, "recovery": {"placement_candidates": 0}}
             compiled = compile_reroutes(board, request, policy, ())
             self.assertEqual(len(compiled["requests"]), 1, compiled)
             repair = compiled["requests"][0]

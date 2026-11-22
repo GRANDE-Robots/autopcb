@@ -120,7 +120,7 @@ class MoveGuide:
         movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options}
         settings = {**request["shared"], **request["nets"][0]}
         witnesses, _ = diagnose(board, anchors, [], settings, recovery, critical_nets, weights,
-                                movable=movable)
+                                movable=movable, first_feasible=True)
         return cls(board, (witness for witness in witnesses if witness.identifiers <= movable.keys()))
 
     def names(self, selection) -> bool:

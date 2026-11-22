@@ -185,11 +185,14 @@ def local_escape_witnesses(router, anchor, soft, costs, check, *, max_expanded=5
     return sorted(found.values(), key=lambda item: (item.score, sorted(item.identifiers)))
 
 
-def diagnose(board, anchors, records, settings, recovery, critical_nets, weights, *, movable=None):
+def diagnose(board, anchors, records, settings, recovery, critical_nets, weights, *, movable=None,
+             first_feasible=False):
     """Sample alternate corridors, retaining exact obstructing copper UUIDs.
 
     ``movable`` maps footprint UUIDs to a move cost. Their pads are relaxed
     like eligible copper, so a witness can name parts as well as copper.
+    ``first_feasible`` keeps the first corridor each search finds, so the
+    witnesses do not depend on how fast the machine is.
     """
     import pcbnew
 
@@ -320,6 +323,7 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
                 gentle_turns=True,
                 forbid_staircase=True,
                 heuristic_weight=recovery.heuristic_weight,
+                first_feasible=first_feasible,
             )
             route = router.route(
                 anchors[0].point, anchors[0].layer, anchors[-1].point, anchors[-1].layer

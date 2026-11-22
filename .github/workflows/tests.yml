@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONFAULTHANDLER: "1"
+
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
@@ -26,7 +29,7 @@ jobs:
           sudo /usr/bin/python3 -m pip install --break-system-packages psutil markdown-it-py Pillow pypdfium2 ruff
           kicad-cli version
       - name: Test
-        run: xvfb-run -a /usr/bin/python3 scripts/run.py --project . --kicad-python /usr/bin/python3 test
+        run: xvfb-run -a /usr/bin/python3 scripts/run.py --project . --kicad-python /usr/bin/python3 test -v
 
   macos:
     runs-on: macos-15
@@ -44,7 +47,7 @@ jobs:
           python=$(ls /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/*/bin/python3 | head -1)
           "$python" -m ensurepip --upgrade || true
           "$python" -m pip install psutil markdown-it-py Pillow pypdfium2 ruff
-          "$python" scripts/run.py --project . --kicad-python "$python" test
+          "$python" scripts/run.py --project . --kicad-python "$python" test -v
 
   windows:
     runs-on: windows-2022
@@ -59,5 +62,7 @@ jobs:
         run: |
           $python = "C:\Program Files\KiCad\10.0\bin\python.exe"
           & $python -m pip install psutil markdown-it-py Pillow pypdfium2 ruff
-          & $python scripts\run.py --project . --kicad-python $python test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python scripts\run.py --project . --kicad-python $python test -v
+          $code = $LASTEXITCODE
+          Write-Host "Test process exit code: $code"
+          if ($code -ne 0) { exit 1 }

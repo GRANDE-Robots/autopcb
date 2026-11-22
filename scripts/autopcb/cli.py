@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from autopcb import design, jobs
-from autopcb.layout import Layout
+from autopcb.layout import Budget, Layout
 from autopcb.native import Native
 from autopcb.workspace import Workspace
 from core.project import project_entries
@@ -152,11 +152,11 @@ def _run(args) -> dict:
     if args.action == "apply":
         return Layout(native, project, storage).apply(args.run_id)
     if args.action == "benchmark":
-        from autopcb.benchmark import benchmark
-        return benchmark(native, project, args.baseline, rounds=args.rounds, seconds=args.seconds,
-                         memory_gib=args.memory_gib, storage=storage)
+        from autopcb.benchmark import Benchmark
+        return Benchmark(native, project, args.baseline, Budget(args.rounds, args.seconds, args.memory_gib),
+                         storage).run()
     if args.action == "placement-study":
-        from autopcb.placement_study import Budget, PlacementStudy
+        from autopcb.placement_study import PlacementStudy
         report = PlacementStudy(native, project, Budget(args.rounds, args.seconds, args.memory_gib),
                                 storage).run()
         if args.output:

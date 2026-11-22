@@ -14,7 +14,7 @@ from pathlib import Path
 
 from core.kicad_sexpr import parse
 from core.pcb_io import copper_width, net_classes
-from pcb.route_native import validate_removals
+from pcb.route_native import _pad_obstacle, validate_removals
 from pcb.route_optimizer import mm
 
 
@@ -95,6 +95,64 @@ def protected_anchor_pose(footprint, excluded: set[str]) -> GroundAnchorPose | N
 
 class UnsupportedPlacement(ValueError):
     """A candidate requires moving copper that this recovery cannot replace."""
+
+
+class MoveGuide:
+    """Rank placement moves by the relaxed route a blocked net wants to take.
+
+    The pads of eligible parts are relaxed in a diagnostic search. Parts that
+    route crosses are tried first, and poses that clear it before others.
+    Every candidate is still rerouted and checked natively.
+    """
+
+    def __init__(self, board, witnesses=()):
+        self.board, self.witnesses = board, tuple(witnesses)
+
+    @classmethod
+    def diagnose(cls, board, request, recovery, anchors, critical_nets, options):
+        from pcb.net_routing.obstructions import diagnose
+        from pcb.net_routing.rework import ReworkWeights
+
+        if not options or not recovery.obstruction_trials:
+            return cls(board)
+        weights = ReworkWeights.from_config(request.get("rework"))
+        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options}
+        settings = {**request["shared"], **request["nets"][0]}
+        witnesses, _ = diagnose(board, anchors, [], settings, recovery, critical_nets, weights,
+                                movable=movable)
+        return cls(board, (witness for witness in witnesses if witness.identifiers <= movable.keys()))
+
+    def names(self, selection) -> bool:
+        identifiers = {item[2].m_Uuid.AsString() for item in selection}
+        return any(witness.identifiers <= identifiers for witness in self.witnesses)
+
+    def selections(self, options):
+        """Diagnosed parts first, then the nearest singles and pairs."""
+        by_id = {item[2].m_Uuid.AsString(): item for item in options}
+        diagnosed = [tuple(sorted((by_id[uid] for uid in witness.identifiers), key=lambda item: item[:2]))
+                     for witness in self.witnesses if len(witness.identifiers) <= 2]
+        nearest = options[:3]
+        result, seen = [], set()
+        for selection in (*diagnosed, *((item,) for item in nearest), *itertools.combinations(nearest, 2)):
+            key = tuple(item[1] for item in selection)
+            if key not in seen:
+                seen.add(key)
+                result.append(selection)
+        return result
+
+    def clears(self, copies) -> bool:
+        """Whether moved pads leave every diagnosed corridor open."""
+        corridors = [witness.corridor for witness in self.witnesses if witness.corridor is not None]
+        if not corridors:
+            return False
+        layers = enabled_copper_layers(self.board)
+        shapes = []
+        for copy in copies:
+            for pad in copy.Pads():
+                active = tuple(layer for layer in layers if pad.IsOnLayer(self.board.GetLayerID(layer)))
+                if active:
+                    shapes.append(_pad_obstacle(self.board, pad, active))
+        return not any(corridor.blocked_by(shapes) for corridor in corridors)
 
 
 def _eligible(board, anchors, excluded, recovery):
@@ -244,6 +302,18 @@ def _net_settings(board, name, policy, recovery, dimensions, target_settings=Non
     )
     options.pop("bounds_mm", None)
     return options
+
+
+def _beyond_edge_clearance(board, pads) -> bool:
+    """Whether any pad sits closer to the outline box than the copper edge rule."""
+    box, gap = board.GetBoardEdgesBoundingBox(), board.GetDesignSettings().m_CopperEdgeClearance
+    return any(
+        pad.GetBoundingBox().GetLeft() < box.GetLeft() + gap
+        or pad.GetBoundingBox().GetRight() > box.GetRight() - gap
+        or pad.GetBoundingBox().GetTop() < box.GetTop() + gap
+        or pad.GetBoundingBox().GetBottom() > box.GetBottom() - gap
+        for pad in pads
+    )
 
 
 def _courtyard_geometry(footprint):
@@ -585,9 +655,8 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         set(critical_nets) | set(policy.get("exclude_nets", [])),
         recovery,
     )
-    nearest = options[:3]
-    selections = [(item,) for item in nearest]
-    selections.extend(itertools.combinations(nearest, 2))
+    guide = MoveGuide.diagnose(board, request, recovery, anchors, critical_nets, options)
+    selections = guide.selections(options)
     box = board.GetBoardEdgesBoundingBox()
     footprints = tuple(board.GetFootprints())
     all_geometry = {
@@ -670,6 +739,10 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                 moved_geometry[item[2].m_Uuid.AsString()] = _courtyard_geometry(copy)
             if _courtyard_conflicts(moved_geometry, all_geometry) - before:
                 continue
+            # A pad pushed past the copper edge rule cannot pass native DRC.
+            if (_beyond_edge_clearance(board, (pad for copy in copies for pad in copy.Pads()))
+                    and not _beyond_edge_clearance(board, (pad for item in selected for pad in item[2].Pads()))):
+                continue
             candidate_removals = deepcopy(removals)
             candidate_dimensions = dict(dimensions)
             removed_ids = {item["uuid"] for items in candidate_removals.values() for item in items}
@@ -714,21 +787,29 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                 (
                     candidate,
                     {
-                        "selection": "bottom_placement_hypothesis",
+                        "selection": ("path_obstruction_move" if guide.names(selected)
+                                      else "bottom_placement_hypothesis"),
                         "references": [item[1] for item in selected],
                         "nets": sorted(candidate_names),
                         "displacement_mm": step,
                         "rotation_deg": turn,
+                        "clears_corridor": guide.clears(copies),
                         "items": sum(map(len, candidate_removals.values())),
                     },
                 )
             )
+        choices.sort(key=lambda pair: not pair[1]["clears_corridor"])
         streams.append(choices)
+    # Moves that open the diagnosed corridor come first; the rest share the
+    # remaining slots so a small cap still samples every selection.
+    guided = [pair for choices in streams for pair in choices
+              if pair[1]["selection"] == "path_obstruction_move" and pair[1]["clears_corridor"]]
+    first = {id(pair) for pair in guided}
     interleaved = (
         pair
         for row in itertools.zip_longest(*streams)
         for pair in row
-        if pair is not None
+        if pair is not None and id(pair) not in first
     )
-    chosen = list(itertools.islice(interleaved, recovery.placement_candidates))
+    chosen = list(itertools.islice(itertools.chain(guided, interleaved), recovery.placement_candidates))
     return [pair[0] for pair in chosen], [pair[1] for pair in chosen]

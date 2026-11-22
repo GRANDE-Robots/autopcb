@@ -23,7 +23,7 @@ from core.toolchain import kicad_cli
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PreparedLibraryEdit:
     """A validated candidate bound to exact saved inputs and a campaign."""
 

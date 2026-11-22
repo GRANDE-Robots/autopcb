@@ -12,6 +12,7 @@ from core.kicad_sexpr import Form, parse
 from pcb.net_routing.controller import new_style_issues
 from pcb.net_routing.style import audit_style, normalize_segment_identities
 from pcb.route_validation import _canonical, _segment_identities
+from core.compat import strict_zip
 
 
 MAX_JOINT_SHIFT_NM = 50_000
@@ -145,8 +146,8 @@ def find_candidate(board, eligible: set[str]) -> dict | None:
                         item.SetEnd(pcbnew.VECTOR2I(*end))
                 changes = []
                 for name in sorted(ids):
-                    for field, old, new in zip(
-                        ("start", "end"), originals[name], revised[name], strict=True
+                    for field, old, new in strict_zip(
+                        ("start", "end"), originals[name], revised[name]
                     ):
                         if old == new:
                             continue
@@ -211,7 +212,7 @@ def verify_candidate(before: bytes, after: bytes, old_board, new_board,
             raise ValueError("Rounding touched protected or unsupported copper")
         if _octilinear(*a) and not _octilinear(*b):
             raise ValueError("Rounding introduced an off-angle track")
-        for first, second in zip(a, b, strict=True):
+        for first, second in strict_zip(a, b):
             if first == second:
                 continue
             if ((first[0] - second[0]) ** 2 + (first[1] - second[1]) ** 2

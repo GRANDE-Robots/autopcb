@@ -34,7 +34,7 @@ from pcb.route_optimizer import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Corridor:
     """A relaxed diagnostic route: where the blocked net wants to pass."""
 
@@ -49,7 +49,7 @@ class Corridor:
                                      self.target, self.via_size, self.clearance))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RepairWitness:
     identifiers: frozenset[str]
     route_cost: float

@@ -29,6 +29,7 @@ from pcb.route_validation import (
     _inputs,
     validate_routes,
 )
+from core.compat import strict_zip
 
 
 def _fingerprints(source: Path) -> dict[Path, str]:
@@ -228,7 +229,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
                     if angle is None
                     else native_pose_change(source, name, x, y, angle)
                 )
-                for name, (x, y, angle) in zip(names, placement, strict=True)
+                for name, (x, y, angle) in strict_zip(names, placement)
             ]
             if moves:
                 trial_board.write_bytes(CampaignPlanner(trial).plan("pcb", moves).after)
@@ -302,8 +303,8 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
                         if angle is None
                         else {"at_mm": [x, y], "rotation_deg": angle}
                     )
-                    for name, (x, y, angle) in zip(
-                        names, candidate["placement"], strict=True
+                    for name, (x, y, angle) in strict_zip(
+                        names, candidate["placement"]
                     )
                 },
                 "cost": candidate["cost"],

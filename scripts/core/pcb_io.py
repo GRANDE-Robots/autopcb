@@ -125,7 +125,7 @@ def quiet_duplicate_image_handlers():
         wx.Log.SetActiveTarget(previous)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BoardSaveGuard:
     """Bind an edit to the board and supporting files it was planned against."""
 

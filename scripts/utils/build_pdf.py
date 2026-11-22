@@ -422,8 +422,11 @@ def project_path(project: Path, name: object, suffix: str) -> Path:
 
 def file_hash(path: Path) -> str:
     """Hash a file without keeping large image assets in memory."""
+    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 class _ImageReferences(HTMLParser):

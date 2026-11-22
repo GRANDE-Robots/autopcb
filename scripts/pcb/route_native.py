@@ -19,9 +19,10 @@ from core.kicad_sexpr import parse, select_direct_children
 from core.pcb_io import copper_width
 from pcb.route_constraints import ExistingVia
 from pcb.route_optimizer import COPPER_LAYERS, Obstacle, Point, mm
+from core.compat import strict_zip
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NativeSnapshot:
     source_sha256: str
     obstacles: tuple[Obstacle, ...]
@@ -196,7 +197,7 @@ def _pad_obstacle(board, pad, layers: tuple[str, ...]) -> Obstacle:
                 for shape in shapes)
     ):
         radii = []
-        for layer, shape in zip(active, shapes, strict=True):
+        for layer, shape in strict_zip(active, shapes):
             size, offset = pad.GetSize(layer), pad.GetOffset(layer)
             if (size.x <= 0 or size.y <= 0 or offset.x or offset.y
                     or max(int(drill.x), int(drill.y)) > min(int(size.x), int(size.y))):

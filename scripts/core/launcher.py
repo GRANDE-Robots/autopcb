@@ -69,7 +69,7 @@ def resolve_document_python(requested: Path | None) -> Path:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ActionSpec:
     """Describe one user-selected action without running it."""
 

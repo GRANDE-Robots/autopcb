@@ -14,7 +14,7 @@ from pcb.net_routing.model import Site
 from pcb.route_optimizer import GridRouter, Point, Segment
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Joint:
     net: str
     layer: str
@@ -22,7 +22,7 @@ class Joint:
     item_ids: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Staircase:
     """Local defect identity, independent of track splits and chain extension."""
 
@@ -33,7 +33,7 @@ class Staircase:
     item_ids: tuple[str, ...] = field(compare=False)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StyleReport:
     non_octilinear: tuple[str, ...]
     arcs: tuple[str, ...]

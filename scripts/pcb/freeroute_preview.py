@@ -32,6 +32,7 @@ from core.kicad_sexpr import parse, quote
 from pcb.net_routing.prepare import summarize_drc
 from pcb.route_validation import _copy_inputs, _drc as _native_drc
 from core.toolchain import RouterCache
+from core.compat import strict_zip
 
 FASTROUTE_014_SHA256 = "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714ddae23f1e5"
 
@@ -546,11 +547,11 @@ def _set_net_widths(design: Path, widths: dict[str, int]) -> None:
         if count > 1024 or len(inherited) + count > 4096:
             raise ValueError('Compiled-width clearance inheritance exceeds its expansion budget')
         for variant in product(*choices):
-            if all(name == atom.value for atom, name in zip(members, variant, strict=True)):
+            if all(name == atom.value for atom, name in strict_zip(members, variant)):
                 continue
             snippet = text[start + rule.start:start + rule.end]
             replacements = [(atom.start - rule.start, atom.end - rule.start, quote(name))
-                            for atom, name in zip(members, variant, strict=True) if atom.value != name]
+                            for atom, name in strict_zip(members, variant) if atom.value != name]
             for first, last, replacement in sorted(replacements, reverse=True):
                 snippet = snippet[:first] + replacement + snippet[last:]
             inherited.add(snippet)

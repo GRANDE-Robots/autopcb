@@ -14,6 +14,7 @@ import pcbnew as pcb
 
 from core.kicad_sexpr import parse
 from core.pcb_io import ProjectSettings, copper_width, enabled_copper_layers, quiet_duplicate_image_handlers
+from core.compat import strict_zip
 
 
 class BoardGeometry:
@@ -122,7 +123,7 @@ class BoardGenerator:
     def _outline(self, board) -> None:
         width, height, low = *self.spec["size_mm"], self.OFFSET_MM
         corners = [(low, low), (low + width, low), (low + width, low + height), (low, low + height)]
-        for start, end in zip(corners, corners[1:] + corners[:1], strict=True):
+        for start, end in strict_zip(corners, corners[1:] + corners[:1]):
             line = pcb.PCB_SHAPE()
             line.SetShape(pcb.SHAPE_T_SEGMENT)
             line.SetLayer(pcb.Edge_Cuts)

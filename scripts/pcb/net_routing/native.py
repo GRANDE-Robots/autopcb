@@ -27,6 +27,7 @@ from pcb.route_validation import (
 )
 from pcb.net_routing.geometry import branch_sites
 from pcb.net_routing.model import Budget, Island, Net, Site
+from core.compat import strict_zip
 
 
 def sha(path: Path) -> str:
@@ -105,7 +106,7 @@ class Snapshot:
             self._temporary.cleanup()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NativeNet:
     net: Net
     tracks: tuple[tuple[Segment, int], ...]
@@ -457,13 +458,13 @@ def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget)
         snapshot.board_path.write_bytes(snapshot.original)
         changes = [
             native_pose_change(base, ref, *pose)
-            for ref, pose in zip(refs, values, strict=True)
+            for ref, pose in strict_zip(refs, values)
         ]
         if changes:
             snapshot.board_path.write_bytes(
                 CampaignPlanner(snapshot.directory).plan("pcb", changes).after
             )
-        yield dict(zip(refs, values, strict=True)), tuple(changes)
+        yield dict(strict_zip(refs, values)), tuple(changes)
 
 
 def obstacles(path: Path, first_net: str, assume_refill: bool):

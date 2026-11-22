@@ -38,7 +38,7 @@ from pcb.reconcile_named_nets import board_pads, collect_candidates, export_sche
 from pcb.route_validation import _dangling_track_identities, _drc, _segment_identities, stable_connection_items
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AliasGroup:
     old: str
     target: str

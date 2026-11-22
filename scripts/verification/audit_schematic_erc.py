@@ -17,7 +17,7 @@ from core.project import ProjectPaths, SourceSnapshot
 from core.toolchain import kicad_cli
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ErcAudit:
     """Results from the configured rules, with their limits made explicit."""
 

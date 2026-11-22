@@ -38,6 +38,7 @@ from pcb.route_junctions import junction_changes
 from pcb.route_optimizer import COPPER_LAYERS, Point, mm
 from pcb.route_validation import RouteContract, _drc, validate_routes
 from core.toolchain import kicad_cli
+from core.compat import strict_zip
 
 SCHEMA = 1
 
@@ -741,7 +742,7 @@ def attempt(
             pos = pad.GetPosition()
             anchors.append((Point(int(pos.x), int(pos.y)), layer))
         access: dict[int, list[Site]] = {}
-        for uid, (point, layer) in zip(ids, anchors, strict=True):
+        for uid, (point, layer) in strict_zip(ids, anchors):
             # A plated-through selected pin can be reached on every copper
             # layer it physically occupies. These are still one selected pin,
             # and the route contract remains anchored to that original pad.

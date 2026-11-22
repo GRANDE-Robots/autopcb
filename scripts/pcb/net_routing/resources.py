@@ -21,7 +21,7 @@ MIN_NATIVE_BYTES = 2 * GIB
 COMMIT_RESERVE_BYTES = GIB // 4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AvailableMemory:
     physical: int
     commit: int

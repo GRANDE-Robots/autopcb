@@ -13,6 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Callable, Iterable
+from core.compat import strict_zip
 
 NM_PER_MM = 1_000_000
 COPPER_LAYERS = ("F.Cu", *(f"In{index}.Cu" for index in range(1, 31)), "B.Cu")
@@ -92,7 +93,7 @@ def _octilinear_lower_bound(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Point:
     x: int
     y: int
@@ -109,7 +110,7 @@ class Point:
         return [to_mm(self.x), to_mm(self.y)]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Obstacle:
     """Conservative bounds, optionally with capsule or rounded-pad geometry."""
 
@@ -224,7 +225,7 @@ def _segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Weights:
     length: float = 1.0
     bend: float = 1.0
@@ -243,21 +244,21 @@ class Weights:
             )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Segment:
     start: Point
     end: Point
     layer: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Via:
     at: Point
     from_layer: str
     to_layer: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Route:
     segments: tuple[Segment, ...]
     vias: tuple[Via, ...]
@@ -762,10 +763,10 @@ class GridRouter:
                     value < self.min_segment_length for value in (distances[0], distances[-1])):
                 continue
             length = sum(distances) / NM_PER_MM
-            diagonal = sum(distance for segment, distance in zip(segments, distances, strict=True)
+            diagonal = sum(distance for segment, distance in strict_zip(segments, distances)
                            if segment.start.x != segment.end.x and segment.start.y != segment.end.y) / NM_PER_MM
             symmetry = sum(distance / NM_PER_MM * _guide_distance(segment.end, self.guide)
-                           for segment, distance in zip(segments, distances, strict=True))
+                           for segment, distance in strict_zip(segments, distances))
             bends = sum(bool(turn) for turn in turns)
             cost = ((self.weights.length + self.layer_penalties.get(layer, 0)) * length
                     + self.weights.bend * bends + self.weights.diagonal * diagonal
@@ -936,8 +937,8 @@ class GridRouter:
                 last_cell, last_reuse, last_path = last
                 a, b = self._point(*first_cell), self._point(*last_cell)
                 vias = (Via(a, layer, transit), Via(b, transit, layer))
-                new = tuple(v for v, reuse in zip(vias, (first_reuse, last_reuse), strict=True) if not reuse)
-                reused = tuple(v for v, reuse in zip(vias, (first_reuse, last_reuse), strict=True) if reuse)
+                new = tuple(v for v, reuse in strict_zip(vias, (first_reuse, last_reuse)) if not reuse)
+                reused = tuple(v for v, reuse in strict_zip(vias, (first_reuse, last_reuse)) if reuse)
                 return Route((*first_path.segments, *middle.segments, *last_path.segments),
                              new, reused,
                              first_path.length_mm + middle.length_mm + last_path.length_mm,

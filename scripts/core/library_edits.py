@@ -76,7 +76,7 @@ def _input_paths(project: Path) -> list[Path]:
     return sorted(paths)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LibraryInputs:
     """A reproducible inventory and hashes of saved design and library inputs."""
 

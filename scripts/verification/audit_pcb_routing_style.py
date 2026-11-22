@@ -42,7 +42,7 @@ def main():
     non45 = []
     for t in segments:
         for q in [t.GetStart(), t.GetEnd()]:
-            ends[t.GetNetCode(), t.GetLayer(), *key(q)].append(t)
+            ends[(t.GetNetCode(), t.GetLayer(), *key(q))].append(t)
         s = t.GetStart()
         e = t.GetEnd()
         dx = abs(e.x - s.x)

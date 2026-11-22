@@ -51,9 +51,10 @@ from pcb.net_routing.runner import (
 from pcb.net_routing.via_prune import copper_removal_changes
 from pcb.route_validation import stable_connection_items
 from core.toolchain import RouterCache
+from core.compat import strict_zip
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReworkPlan:
     target: str
     affected: tuple[str, ...]
@@ -405,7 +406,7 @@ def native_rejection_detail(baseline: dict, candidate: dict) -> str:
             f" -> {candidate.get('exclusions')})")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RepairPreparation:
     targets: tuple[str, ...]
     deferred: tuple[str, ...]
@@ -413,7 +414,7 @@ class RepairPreparation:
     board: bytes
 
 
-@dataclass(slots=True)
+@dataclass
 class RepairPreparationCache:
     key: tuple | None = None
     value: RepairPreparation | None = None
@@ -747,7 +748,7 @@ def compile_candidate(directory: Path, queue: list, policy: dict, targets: tuple
             continue
         protected = tuple(sorted(excluded - {""}))
         compiled = compile_reroutes(board, request, policy, protected, reference_nets=critical)
-        for candidate, description in zip(compiled["requests"], compiled["candidates"], strict=True):
+        for candidate, description in strict_zip(compiled["requests"], compiled["candidates"]):
             repair = candidate.get("rip_up", {})
             poses = (placement_poses(board, candidate, allowed_set, excluded, allow_ground_anchor=True,
                                      allow_protected_anchor=True)

@@ -15,6 +15,7 @@ import pcbnew
 
 from core.pcb_io import copper_width
 from pcb.route_optimizer import GridRouter, Obstacle, Point, mm
+from core.compat import strict_zip
 
 
 def _default_return(board) -> str | None:
@@ -35,14 +36,14 @@ def adjacent_reference_layers(board) -> dict[int, tuple[int, ...]]:
     }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReferenceCorridors:
     obstacles: tuple[Obstacle, ...]
     unsupported_items: tuple[str, ...]
     source_item_ids: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReferenceConflict:
     high_speed_item_id: str
     blocking_item_id: str
@@ -51,7 +52,7 @@ class ReferenceConflict:
     reference_layer: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TrackReference:
     item_id: str
     net: str
@@ -63,7 +64,7 @@ class TrackReference:
     continuous_polygon: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReferenceSnapshot:
     tracks: tuple[TrackReference, ...]
     unsupported_items: tuple[str, ...]
@@ -75,7 +76,7 @@ class ReferenceSnapshot:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReferenceComparison:
     status: str
     degraded_track_ids: tuple[str, ...]
@@ -199,7 +200,7 @@ def reference_conflicts(
         if item.GetNetname() == return_net:
             continue
         uid = item.m_Uuid.AsString()
-        for guard, source in zip(corridors.obstacles, corridors.source_item_ids, strict=True):
+        for guard, source in strict_zip(corridors.obstacles, corridors.source_item_ids):
             layer_name = guard.layers[0]
             layer = layers[layer_name]
             if uid == source or not item.IsOnLayer(layer):
@@ -317,10 +318,10 @@ def compare_reference(before: ReferenceSnapshot, after: ReferenceSnapshot) -> Re
                 degraded.add(uid)
             unverified.add(uid)
             continue
-        if len(previous.samples) != len(current.samples) or any(a[:2] != b[:2] for a, b in zip(previous.samples, current.samples, strict=True)):
+        if len(previous.samples) != len(current.samples) or any(a[:2] != b[:2] for a, b in strict_zip(previous.samples, current.samples)):
             unverified.add(uid)
             continue
-        if any(a[2] and not b[2] for a, b in zip(previous.samples, current.samples, strict=True)) or (previous.continuous_polygon and not current.continuous_polygon):
+        if any(a[2] and not b[2] for a, b in strict_zip(previous.samples, current.samples)) or (previous.continuous_polygon and not current.continuous_polygon):
             degraded.add(uid)
         if previous.missing_samples or current.missing_samples or not previous.continuous_polygon or not current.continuous_polygon:
             unverified.add(uid)
@@ -395,7 +396,7 @@ def comparable_missing_samples(before: ReferenceSnapshot, after: ReferenceSnapsh
         if (previous.geometry != current.geometry or previous.signal_layer != current.signal_layer
                 or previous.reference_layer != current.reference_layer
                 or len(previous.samples) != len(current.samples)
-                or any(a[:2] != b[:2] for a, b in zip(previous.samples, current.samples, strict=True))):
+                or any(a[:2] != b[:2] for a, b in strict_zip(previous.samples, current.samples))):
             return None
     return sum(track.missing_samples for track in old.values()), sum(track.missing_samples for track in new.values())
 

@@ -23,6 +23,7 @@ from core.toolchain import kicad_cli
 from core.pcb_io import BoardSaveGuard, file_sha256, quiet_duplicate_image_handlers, typed_copper
 from pcb.net_routing.native import Snapshot
 from pcb.route_validation import _drc
+from core.compat import strict_zip
 
 
 BEGIN = '# BEGIN AUTOPCB TERMINAL WIDTHS'
@@ -297,14 +298,14 @@ def tap_selector(board, track, copper) -> str | None:
                 or item.GetLayer() != track.GetLayer()):
             continue
         actual = coordinates(item)
-        if any(all(abs(a-b) <= TAP_MATCH_NM+1 for a, b in zip(actual, expected, strict=True))
+        if any(all(abs(a-b) <= TAP_MATCH_NM+1 for a, b in strict_zip(actual, expected))
                for expected in (start, reverse)):
             return None
 
     def limits(values):
         return ' && '.join(f'(A.{field} > {(value-TAP_MATCH_NM)/1e6:.6f}mm && '
                            f'A.{field} < {(value+TAP_MATCH_NM)/1e6:.6f}mm)'
-                           for field, value in zip(('Origin_X', 'Origin_Y', 'End_X', 'End_Y'), values, strict=True))
+                           for field, value in strict_zip(('Origin_X', 'Origin_Y', 'End_X', 'End_Y'), values))
 
     return (f"A.Type == 'Track' && A.NetName == '{quoted(str(track.GetNetname()))}' && "
             f"A.Layer == '{quoted(str(board.GetLayerName(track.GetLayer())))}' && "

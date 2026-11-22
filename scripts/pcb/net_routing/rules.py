@@ -92,7 +92,7 @@ def _expression(source: str):
     return tree, compile(tree, "<saved KiCad condition>", "eval")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RuleItem:
     Type: str
     Layer: str
@@ -107,7 +107,7 @@ class RuleItem:
         return False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DimensionRule:
     name: str
     kind: str
@@ -231,7 +231,7 @@ def read_rules(path: Path) -> tuple[DimensionRule, ...]:
     return tuple(reversed(result))  # KiCad: the last matching custom rule wins.
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Courtyard:
     reference: str
     layer: str

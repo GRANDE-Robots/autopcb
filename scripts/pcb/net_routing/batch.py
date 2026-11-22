@@ -19,6 +19,7 @@ from pcb.net_routing.scheduler import overlaps
 from pcb.net_routing.workflow import configurations, plan_nets
 from pcb.route_validation import CandidateRejected, RouteContract, validate_routes
 from pcb.route_optimizer import Point
+from core.compat import strict_zip
 
 
 @quiet_duplicate_image_handlers()
@@ -75,7 +76,7 @@ def preview_round(project: Path, requests: list[dict], *, workers: int = 2, exec
         if precomputed is not None:
             if not isinstance(precomputed, list) or len(precomputed) != len(requests):
                 raise ValueError("Precomputed searches must match the requested batches")
-            for request, item in zip(requests, precomputed, strict=True):
+            for request, item in strict_zip(requests, precomputed):
                 if not isinstance(item, dict):
                     raise ValueError("A precomputed search must be an object")
                 if item.get("source_sha256") != snapshot.fingerprints[source]:

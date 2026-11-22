@@ -8,7 +8,7 @@ from pathlib import Path
 import pcbnew
 
 
-@dataclass(frozen=True, order=True, slots=True)
+@dataclass(frozen=True, order=True)
 class ViaPadOverlap:
     via_id: str
     pad_id: str

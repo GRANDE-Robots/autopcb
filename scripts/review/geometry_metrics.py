@@ -18,7 +18,7 @@ import pcbnew
 from core.pcb_io import copper_width
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeometryMetrics:
     track_length_mm: float
     via_count: int

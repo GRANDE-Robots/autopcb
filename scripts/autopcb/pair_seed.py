@@ -17,9 +17,10 @@ from pcb.net_routing.reference import adjacent_reference_layers, sample_referenc
 from pcb.net_routing.style import audit_style
 from pcb.route_native import read_native_obstacles
 from pcb.route_optimizer import GridRouter, Point, Segment, _point_near_segment, _segments_intersect, mm
+from core.compat import strict_zip
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Limits:
     signal_layer: str
     reference_layer: str
@@ -86,7 +87,7 @@ def _candidates(rows, limits: Limits, routers) -> list:
     rows = [tuple(sorted(row, key=lambda point: point.x)) for row in rows]
     p, n = rows
     positive_above = p[0].y < n[0].y
-    if any(first.y == last.y or (first.y < last.y) != positive_above for first, last in zip(p, n, strict=True)):
+    if any(first.y == last.y or (first.y < last.y) != positive_above for first, last in strict_zip(p, n)):
         raise ValueError("Crossing or coincident pair launches need a different routing topology.")
     center = (p[0].y + p[1].y + n[0].y + n[1].y) // 4
     pitch = limits.width + limits.gap + 2
@@ -96,13 +97,13 @@ def _candidates(rows, limits: Limits, routers) -> list:
         lower = center + shift * mm(0.25) - pitch // 2
         lanes = (lower, lower + pitch) if positive_above else (lower + pitch, lower)
         paths = tuple(_path(*row, lane, limits.launch_length, layer, swap)
-                      for row, lane in zip(rows, lanes, strict=True))
+                      for row, lane in strict_zip(rows, lanes))
         if not all(paths) or any(_interfere(a, b, pitch - 1) for a in paths[0] for b in paths[1]):
             continue
         lengths = tuple(sum(math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) for s in path) for path in paths)
         skew = abs(lengths[0] - lengths[1])
         if skew > limits.skew or not all(router.edge_clear(s.start, s.end, layer)
-                                         for router, path in zip(routers, paths, strict=True) for s in path):
+                                         for router, path in strict_zip(routers, paths) for s in path):
             continue
         candidates.append(((sum(lengths), skew, abs(shift), shift), paths))
     return sorted(candidates, key=lambda item: item[0])
@@ -168,7 +169,7 @@ def seed(entry: Path, request: dict) -> dict:
             board = pcb.LoadBoard(str(paths.board))
             _add_reference_plane(board, reference, board.FindNet(ground), lower, upper, limits.clearance)
             trunks = set()
-            for name, path in zip(pair, geometry, strict=True):
+            for name, path in strict_zip(pair, geometry):
                 for segment in path:
                     trace = pcb.PCB_TRACK(board)
                     trace.SetLayer(signal)

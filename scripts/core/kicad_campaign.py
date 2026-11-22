@@ -68,7 +68,7 @@ def _field_value(form: Form, name: str) -> str | None:
     return matches[0].atoms()[1].value
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class _TargetIndex:
     top: dict[str, tuple[Form, ...]]
     uuid: dict[tuple[str, str], tuple[Form, ...]]
@@ -179,7 +179,7 @@ def _follow(form: Form, path: object) -> Form:
     return form
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Edit:
     start: int
     end: int
@@ -188,7 +188,7 @@ class Edit:
     description: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Plan:
     """A complete, reviewable edit against one exact saved design file."""
 

@@ -14,7 +14,7 @@ from pcb.route_optimizer import COPPER_LAYERS, GridRouter, Point, Route, Segment
 from pcb.route_constraints import via_sizes_meet
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReworkWeights:
     track: float = 1.0
     length_mm: float = 1.0
@@ -58,7 +58,7 @@ def placement_cost(board, poses: dict, weights: ReworkWeights) -> float:
     return cost
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReworkScore:
     tracks: int = 0
     length_mm: float = 0.0
@@ -66,7 +66,7 @@ class ReworkScore:
     cost: float = 0.0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RemovedVia:
     point: Point
     drill: int
@@ -74,7 +74,7 @@ class RemovedVia:
     through: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RemovedCopper:
     tracks: tuple[tuple[Segment, int], ...] = ()
     vias: tuple[RemovedVia, ...] = ()

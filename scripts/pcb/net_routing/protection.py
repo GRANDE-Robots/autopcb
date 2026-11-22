@@ -161,7 +161,7 @@ def _insert(target: dict, key: object, value: object) -> None:
     target[key] = _digest(value)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProtectedState:
     schematic_sha256: str
     top_footprints: tuple[tuple[str, str], ...]

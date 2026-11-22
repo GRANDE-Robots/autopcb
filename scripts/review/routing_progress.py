@@ -32,6 +32,7 @@ from pcb.route_validation import _copy_inputs, _drc, _inputs
 from review.geometry_metrics import GeometryMetrics, measure_board
 from review.refresh_gallery import ReviewSnapshot
 from core.toolchain import kicad_cli
+from core.compat import strict_zip
 
 CSV_NAME = "routing_progress.csv"
 PNG_NAME = "routing_progress.png"
@@ -56,7 +57,7 @@ PREVIOUS_FIELDS = LEGACY_FIELDS + (
 FIELDS = PREVIOUS_FIELDS + ("symmetry_score", "routing_run_seconds", "optimization_evidence")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProgressPoint:
     checked_at: str
     open_connections: int
@@ -82,7 +83,7 @@ class ProgressPoint:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RunMetrics:
     pcb_sha256: str
     source_signature: str
@@ -92,8 +93,11 @@ class RunMetrics:
 
 
 def _sha(path: Path) -> str:
+    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _fingerprint(project: Path) -> tuple[list[Path], dict[str, str], str]:
@@ -771,7 +775,7 @@ def attach_run_metrics(
     ):
         raise ValueError("Run metrics must be finite and nonnegative")
     old = (point.symmetry_score, point.routing_run_seconds)
-    if any(previous is not None and new is not None and previous != new for previous, new in zip(old, values, strict=True)):
+    if any(previous is not None and new is not None and previous != new for previous, new in strict_zip(old, values)):
         raise ValueError("Run metrics disagree with the recorded history")
     return replace(
         point,

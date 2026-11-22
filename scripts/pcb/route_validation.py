@@ -607,7 +607,7 @@ def _broken_existing_connections(
     return failures
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RouteContract:
     net: str
     start: Point

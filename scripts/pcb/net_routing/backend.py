@@ -33,6 +33,7 @@ from pcb.net_routing.rework import (
     RemovedCopper, octilinear_projections, restored_connects_islands,
 )
 from pcb.net_routing.smoothing import chain_endpoints, simplify_route, simplify_terminal_branches
+from core.compat import strict_zip
 
 
 class _ContextDiversionRequested(Exception):
@@ -667,7 +668,7 @@ class NativeBackend:
         dynamic = (self.endpoint_headings(net, tree, start, arriving=False),
                    self.endpoint_headings(net, tree, end, arriving=True))
         allowed = tuple(fixed if extra is None else extra if fixed is None else fixed & extra
-                        for fixed, extra in zip(original, dynamic, strict=True))
+                        for fixed, extra in strict_zip(original, dynamic))
         if any(value is not None and not value for value in allowed):
             raise NoGridRoute("Configured endpoint directions conflict with an existing copper end")
         try:

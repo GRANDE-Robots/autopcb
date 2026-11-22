@@ -34,6 +34,7 @@ from pcb.net_routing.runner import (_run_id, _source_hashes, _verify_resume_conn
                                     verify_resume_reports)
 from pcb.net_routing.style import audit_style, normalize_segment_identities
 from pcb.route_validation import _dangling_track_identities, _drc, _new_dangling_indices, _segment_identities
+from core.compat import strict_zip
 
 
 def candidate_vias(board, eligible_nets: set[str], critical_nets: set[str]) -> tuple[str, ...]:
@@ -364,7 +365,7 @@ def coordinated_tail_changes(board, selected: set[str], eligible_nets: set[str],
         vectors = [(far_trunk.x - joint.x, far_trunk.y - joint.y),
                    (far_branch.x - joint.x, far_branch.y - joint.y)]
         if (any((dx == 0) == (dy == 0) for dx, dy in vectors)
-                or sum(a * b for a, b in zip(*vectors, strict=True)) != 0):
+                or sum(a * b for a, b in strict_zip(*vectors)) != 0):
             continue
         distance = min(250_000, *(max(abs(dx), abs(dy)) // 2 for dx, dy in vectors))
         if distance < 1:

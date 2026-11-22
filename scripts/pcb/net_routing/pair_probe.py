@@ -47,7 +47,7 @@ from pcb.route_validation import _drc, _segment_identities
 from core.toolchain import RouterCache
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PairSpec:
     positive: str
     negative: str

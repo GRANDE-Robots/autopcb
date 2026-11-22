@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from pcb.net_routing.model import Net, Site
+from core.compat import strict_zip
 
 
 def _distance(a: Site, b: Site) -> float:
@@ -42,7 +43,7 @@ def _nearest(a, b):
     return best
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CheckpointSelection:
     net: Net
     anchors: tuple[Site, ...]
@@ -212,7 +213,7 @@ def search_window(anchors: tuple[Site, ...], bounds: tuple[float, float, float, 
                   min(bounds[2], max(xs) + margin), min(bounds[3], max(ys) + margin))
         window = tuple(round(value, 6) for value in window)
         if any(not (window[0] <= x <= window[2] and window[1] <= y <= window[3])
-               for x, y in zip(xs, ys, strict=True)):
+               for x, y in strict_zip(xs, ys)):
             raise CheckpointWindowUnavailable("Checkpoint anchors are outside the scheduled bounds")
         effective_step = bounded_step(window, step, layers, max_cells)
         if not access_inset:

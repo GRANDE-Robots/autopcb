@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from pcb.freeroute_delta import Trace, Via
 from pcb.net_routing import fast_rework as api
+from core.compat import strict_zip
 
 
 class CoordinatedRepairTests(unittest.TestCase):
@@ -542,7 +543,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         transistor.GetValue.return_value = "BSS138K"
         transistor.GetFieldsText.return_value = {"Description": "N-channel MOSFET"}
         pads = [MagicMock(), MagicMock(), MagicMock()]
-        for pad, name in zip(pads, ("FIELD_VALID", "GND", "U3_OE_N"), strict=True):
+        for pad, name in strict_zip(pads, ("FIELD_VALID", "GND", "U3_OE_N")):
             pad.GetNetname.return_value = name
         transistor.Pads.return_value = pads
         board.GetFootprints.return_value = [transistor]
@@ -1002,7 +1003,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
         board = MagicMock()
         items = [MagicMock(), MagicMock()]
-        for item, uid in zip(items, ("track-a", "track-b"), strict=True):
+        for item, uid in strict_zip(items, ("track-a", "track-b")):
             item.m_Uuid.AsString.return_value = uid
             item.GetNetname.return_value = "A"
             item.GetLayer.return_value = pcbnew.F_Cu
@@ -1048,7 +1049,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
         board = MagicMock()
         items = [MagicMock(), MagicMock()]
-        for item, uid, net in zip(items, ("track-a", "track-b"), ("A", "B"), strict=True):
+        for item, uid, net in strict_zip(items, ("track-a", "track-b"), ("A", "B")):
             item.m_Uuid.AsString.return_value = uid
             item.GetNetname.return_value = net
             item.GetLayer.return_value = pcbnew.F_Cu

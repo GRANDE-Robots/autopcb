@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Evidence:
     source: str
     sha256: str
@@ -21,14 +21,14 @@ class Evidence:
     status: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Quantity:
     value: float
     unit: str
     evidence: Evidence
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Branch:
     identifier: str
     parent: str
@@ -38,21 +38,21 @@ class Branch:
     resistance: Quantity
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Scenario:
     name: str
     loads: tuple[tuple[str, Quantity], ...]
     max_drop: Quantity
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ScenarioAssessment:
     name: str
     branch_currents_a: dict[str, float]
     load_drops_v: dict[str, float]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Assessment:
     status: str
     scenarios: tuple[ScenarioAssessment, ...]

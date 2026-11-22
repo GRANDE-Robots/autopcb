@@ -210,7 +210,7 @@ def atomic_write(target: Path, content: bytes) -> None:
             staged.unlink()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReviewSnapshot:
     """Preserve user-visible files if publication fails or they change."""
 

@@ -25,7 +25,7 @@ class RoutingBackend(Protocol):
     def accept(self, net: Net, route: Route) -> bool: ...
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Tree:
     connected: frozenset[int]
     route: Route

@@ -6,7 +6,6 @@ from core.pcb_io import enabled_copper_layers
 
 import itertools
 import math
-import re
 from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
@@ -15,6 +14,7 @@ from pathlib import Path
 from core.kicad_sexpr import parse
 from core.pcb_io import copper_width, net_classes
 from pcb.move_scope import MoveScope
+from pcb.net_routing.pose_sampler import PoseSampler
 from pcb.route_native import _pad_obstacle, validate_removals
 from pcb.route_optimizer import mm
 from core.compat import strict_zip
@@ -22,7 +22,7 @@ from core.compat import strict_zip
 
 @dataclass(frozen=True)
 class GroundAnchorPose:
-    """A half-turn of a resistor around one unchanged protected pad."""
+    """A half-turn of a two-pad part around one unchanged protected pad."""
 
     reference: str
     signal_net: str
@@ -41,9 +41,9 @@ def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> Ground
     """
     import pcbnew
 
+    # Whether the part may move at all is the placement policy's decision.
     reference, side = str(footprint.GetReference()), footprint.GetLayer()
-    if (not re.fullmatch(r"R[0-9]+", reference)
-            or side not in (pcbnew.F_Cu, pcbnew.B_Cu) or footprint.IsLocked()):
+    if side not in (pcbnew.F_Cu, pcbnew.B_Cu):
         return None
     other_side = pcbnew.F_Cu if side == pcbnew.B_Cu else pcbnew.B_Cu
     pads = tuple(footprint.Pads())
@@ -112,14 +112,23 @@ class MoveGuide:
         self.board, self.witnesses = board, tuple(witnesses)
 
     @classmethod
-    def diagnose(cls, board, request, recovery, anchors, critical_nets, options):
+    def diagnose(cls, board, request, policy, recovery, anchors, critical_nets, options, nearby):
+        """Relax the parts near the anchors, or every movable part when the net is cut off.
+
+        A net that pads and saved copper leave no way through may need a
+        distant part moved. One that still has a way through does not.
+        """
         import pcbnew
         from pcb.net_routing.obstructions import diagnose
         from pcb.net_routing.rework import ReworkWeights
+        from pcb.routability import GridModel
 
         weights = ReworkWeights.from_config(request.get("rework"))
+        target = request["nets"][0]["name"]
+        cut_off = len(options) > len(nearby) and len(
+            GridModel(board, policy=policy, saved_copper=True).groups(target)) > 1
         # The parts a route starts and ends on are its endpoints, not obstructions.
-        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in options
+        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in (options if cut_off else nearby)
                    if not any(pad.HitTest(pcbnew.VECTOR2I(anchor.point.x, anchor.point.y))
                               for pad in item[2].Pads() for anchor in anchors)}
         if not movable or not recovery.obstruction_trials:
@@ -133,12 +142,16 @@ class MoveGuide:
         identifiers = {item[2].m_Uuid.AsString() for item in selection}
         return any(witness.identifiers <= identifiers for witness in self.witnesses)
 
-    def selections(self, options):
+    @property
+    def corridors(self):
+        return [witness.corridor for witness in self.witnesses if witness.corridor is not None]
+
+    def selections(self, options, nearby):
         """Diagnosed parts first, then the nearest singles and pairs."""
         by_id = {item[2].m_Uuid.AsString(): item for item in options}
         diagnosed = [tuple(sorted((by_id[uid] for uid in witness.identifiers), key=lambda item: item[:2]))
                      for witness in self.witnesses if len(witness.identifiers) <= 2]
-        nearest = options[:3]
+        nearest = nearby[:3]
         result, seen = [], set()
         for selection in (*diagnosed, *((item,) for item in nearest), *itertools.combinations(nearest, 2)):
             key = tuple(item[1] for item in selection)
@@ -149,7 +162,7 @@ class MoveGuide:
 
     def clears(self, copies) -> bool:
         """Whether moved pads leave every diagnosed corridor open."""
-        corridors = [witness.corridor for witness in self.witnesses if witness.corridor is not None]
+        corridors = self.corridors
         if not corridors:
             return False
         layers = enabled_copper_layers(self.board)
@@ -162,8 +175,11 @@ class MoveGuide:
         return not any(corridor.blocked_by(shapes) for corridor in corridors)
 
 
-def _eligible(board, anchors, excluded, recovery, scope):
-    """Cheap selection only; native placement validation checks every proposal."""
+def _eligible(board, anchors, excluded, scope):
+    """Every part the scope lets move, nearest the anchors first.
+
+    Cheap selection only; native placement validation checks every proposal.
+    """
     movable = scope.movable(Path(board.GetFileName()).read_text(encoding="utf-8-sig"))
     classes = net_classes(board)
     result = []
@@ -183,8 +199,7 @@ def _eligible(board, anchors, excluded, recovery, scope):
             for p in pads
             for a in anchors
         )
-        if distance <= mm(recovery.rip_up_radius_mm * 2):
-            result.append((distance, ref, footprint, names))
+        result.append((distance, ref, footprint, names))
     return sorted(result, key=lambda value: (value[0], value[1]))
 
 
@@ -519,7 +534,7 @@ def singleton_footprint_groups(board) -> frozenset[str]:
 
 def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
                      anchor_nets: set[str], selection: str):
-    """Generate private resistor half-turns while leaving anchor copper intact."""
+    """Generate private two-pad half-turns while leaving anchor copper intact."""
     import pcbnew
 
     if not recovery.placement_candidates or not board.GetFileName():
@@ -606,7 +621,7 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
 
 
 def ground_anchor_requests(board, request, policy, recovery, anchors, protected_nets):
-    """Generate private resistor half-turns while leaving ground copper intact."""
+    """Generate private two-pad half-turns while leaving ground copper intact."""
     return _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
                             {"GND"}, "ground_anchor_hypothesis")
 
@@ -627,11 +642,11 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         board,
         anchors,
         set(critical_nets) | set(policy.get("exclude_nets", [])),
-        recovery,
         MoveScope.from_config(policy.get("placement")),
     )
-    guide = MoveGuide.diagnose(board, request, recovery, anchors, critical_nets, options)
-    selections = guide.selections(options)
+    nearby = [item for item in options if item[0] <= mm(recovery.rip_up_radius_mm * 2)]
+    guide = MoveGuide.diagnose(board, request, policy, recovery, anchors, critical_nets, options, nearby)
+    selections = guide.selections(options, nearby)
     box = board.GetBoardEdgesBoundingBox()
     footprints = tuple(board.GetFootprints())
     all_geometry = {
@@ -653,70 +668,34 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         if sum(map(len, removals.values())) > recovery.placement_items:
             continue
         choices = []
-        # Interleave axes, rotations and coarse/fine translations so a small
-        # candidate cap does not consume every slot on one distance/package.
-        poses = (
-            (0.5, 1, 0, 0),
-            (1.0, 0, 1, 0),
-            (0.0, 0, 0, 90),
-            (2.0, -1, 0, 0),
-            (0.5, 0, -1, 0),
-            (1.0, -1, 0, 0),
-            (2.0, 0, 1, 0),
-            (0.0, 0, 0, -90),
-        )
-        for step, dx, dy, turn in poses:
+
+        def legal(selected, copies, before=before):
+            moved = {item[2].m_Uuid.AsString(): _courtyard_geometry(copy)
+                     for item, copy in strict_zip(selected, copies)}
+            if _courtyard_conflicts(moved, all_geometry) - before:
+                return False
+            # A pad pushed past the copper edge rule cannot pass native DRC.
+            return not (_beyond_edge_clearance(board, (pad for copy in copies for pad in copy.Pads()))
+                        and not _beyond_edge_clearance(board, (pad for item in selected
+                                                               for pad in item[2].Pads())))
+
+        for pose in PoseSampler(board, guide, legal).poses(selected):
             candidate = deepcopy(request)
             candidate.pop("orders", None)
             candidate.update(
                 recovery_stage=4,
                 rip_up=removals,
-                movable=[],
+                movable=[{"reference": ref, "positions_mm": [[x, y]], "rotations_deg": [angle]}
+                         for ref, x, y, angle in pose.moves],
                 repair_max_islands=recovery.repair_islands,
                 checkpoint_offset=0,
                 checkpoint_margin_mm=recovery.wide_margin_mm,
             )
-            for i, (_, ref, footprint, _) in enumerate(selected):
-                origin, sign = footprint.GetPosition(), -1 if i else 1
-                x, y = (
-                    round(origin.x / 1e6 + sign * dx * step, 6),
-                    round(origin.y / 1e6 + sign * dy * step, 6),
-                )
-                if (
-                    not box.GetX() / 1e6 < x < box.GetRight() / 1e6
-                    or not box.GetY() / 1e6 < y < box.GetBottom() / 1e6
-                ):
-                    break
-                candidate["movable"].append(
-                    {
-                        "reference": ref,
-                        "positions_mm": [[x, y]],
-                        "rotations_deg": [
-                            (float(footprint.GetOrientationDegrees()) + turn) % 360
-                        ],
-                    }
-                )
-            if len(candidate["movable"]) != len(selected):
-                continue
             # Test actual KiCad courtyard polygons on detached footprint copies.
             # Existing overlaps remain baseline findings for native DRC; do not
             # spend routing time on a pose that introduces a new overlap.
-            import pcbnew
-
-            copies = []
-            moved_geometry = {}
-            for item, choice in strict_zip(selected, candidate["movable"]):
-                copy = pcbnew.FOOTPRINT(item[2])
-                x, y = choice["positions_mm"][0]
-                copy.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
-                copy.SetOrientationDegrees(choice["rotations_deg"][0])
-                copies.append(copy)
-                moved_geometry[item[2].m_Uuid.AsString()] = _courtyard_geometry(copy)
-            if _courtyard_conflicts(moved_geometry, all_geometry) - before:
-                continue
-            # A pad pushed past the copper edge rule cannot pass native DRC.
-            if (_beyond_edge_clearance(board, (pad for copy in copies for pad in copy.Pads()))
-                    and not _beyond_edge_clearance(board, (pad for item in selected for pad in item[2].Pads()))):
+            copies = PoseSampler.copies(selected, pose.moves)
+            if not legal(selected, copies):
                 continue
             candidate_removals = deepcopy(removals)
             candidate_dimensions = dict(dimensions)
@@ -764,10 +743,11 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                     {
                         "selection": ("path_obstruction_move" if guide.names(selected)
                                       else "placement_hypothesis"),
+                        "pose": pose.kind,
                         "references": [item[1] for item in selected],
                         "nets": sorted(candidate_names),
-                        "displacement_mm": step,
-                        "rotation_deg": turn,
+                        "displacement_mm": pose.displacement_mm,
+                        "rotation_deg": pose.rotation_deg,
                         "clears_corridor": guide.clears(copies),
                         "items": sum(map(len, candidate_removals.values())),
                     },

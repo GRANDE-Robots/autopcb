@@ -40,7 +40,11 @@ x_i=(p_i,\theta_i,b_i),\qquad
 =\sum_n w_n(W_n+H_n)+w_C C_{\mathrm{cong}}+w_P C_{\mathrm{prox}}+w_M M.
 $$
 
-**Recovery.** Route a blocked net with the pads of movable parts relaxed. By default that is every part, locked ones included; the placement policy can keep locked parts, one side or through-hole parts fixed. Move the parts that relaxed route crosses first, with poses that clear it before the rest, then the nearest parts. Each move is tried on a copy, affected nets are rerouted, and native checks decide.
+**Recovery.** Route a blocked net with the pads of movable parts relaxed. By default that is every part, locked ones included; the placement policy can keep locked parts, one side or through-hole parts fixed. A part that relaxed route crosses is a candidate: the parts near the net's ends, or any part on the board when pads and saved copper leave the net no way through. The nearest parts follow. For each, try first the shortest move along each axis that takes its pads off the route. Then try small nudges and quarter and half turns in place, then relocation to open spots where its pads sit nearest the pads they connect to. Each move is tried on a copy, affected nets are rerouted, and native checks decide.
+
+**Routability proof.** For each net, search the router's grid from each pad on every copper layer, with vias, every part in place and the policy's widths and clearances. Other nets' routes, bends and route order are ignored, so the search reaches every cell the router can. Pads it cannot join cannot be joined by any route while the parts stay put. The report names each part whose removal alone would join them.
+
+**Crowded variants.** To study placement, pack the parts the policy may move toward a seeded random point until their courtyards touch, inside the copper-to-edge rule. Some parts first turn where that overlaps nothing. Fixed placement and permitted moves then route each packing under one budget.
 
 **Flexible outline.** For new catalog boards, minimize rectangular area $A=WH$ within the approved width and height limits. Fit the original poses and try sliding authorized groups in both axis orders. Keep each group's geometry, the edge margin and corridor spacing. Equal areas favor less movement. Measure the finished outline on the native edge centerlines. Routing and verification then establish connectivity. Recovery on an existing board reroutes eligible moves within its fixed outline.
 

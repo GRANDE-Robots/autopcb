@@ -33,7 +33,7 @@ class ProtectedBoardTests(unittest.TestCase):
             self.assertIn("fixed footprints", baseline.differences(moved.encode(), b"schematic"))
         self.assertIn("schematic", baseline.differences(BOARD.encode(), b"changed"))
 
-    def test_movable_parts_may_move_but_locked_parts_and_board_silkscreen_stay(self):
+    def test_movable_parts_may_move_but_board_silkscreen_stays(self):
         from pcb.move_scope import MoveScope
 
         board = BOARD.replace('(footprint "BOTTOM" (layer "B.Cu")', '(footprint "BOTTOM" (locked yes) (layer "B.Cu")')
@@ -41,7 +41,9 @@ class ProtectedBoardTests(unittest.TestCase):
         moved = board.replace('(uuid "top") (at 1 2)', '(uuid "top") (at 3 2)')
         self.assertEqual(baseline.differences(moved.encode(), b"schematic"), ())
         locked = board.replace('(uuid "bottom") (at 5 6)', '(uuid "bottom") (at 7 6)')
-        self.assertIn("fixed footprints", baseline.differences(locked.encode(), b"schematic"))
+        self.assertEqual(baseline.differences(locked.encode(), b"schematic"), ())
+        kept = self.capture(board, movable=MoveScope.from_config({"locked": False}))
+        self.assertIn("fixed footprints", kept.differences(locked.encode(), b"schematic"))
         label = moved.replace('(at 8 9) (layer "F.SilkS")', '(at 8 10) (layer "F.SilkS")')
         self.assertIn("front silkscreen", baseline.differences(label.encode(), b"schematic"))
 

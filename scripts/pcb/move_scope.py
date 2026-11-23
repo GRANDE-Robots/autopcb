@@ -15,29 +15,30 @@ SILKSCREEN = {"top": '"F.SilkS"', "bottom": '"B.SilkS"'}
 class MoveScope:
     """Parts the placement policy lets routing move.
 
-    By default any footprint may move, on either side and with any pad type,
-    unless it is locked in KiCad. ``sides`` and ``through_hole`` narrow that.
-    A side that stays fixed keeps its silkscreen, so a part that prints on it
-    stays fixed too.
+    By default any footprint may move, on either side, with any pad type and
+    even if it is locked in KiCad. ``sides``, ``through_hole`` and ``locked``
+    narrow that. A side that stays fixed keeps its silkscreen, so a part that
+    prints on it stays fixed too.
     """
 
     sides: frozenset[str] = frozenset(SIDES.values())
     through_hole: bool = True
+    locked: bool = True
 
     @classmethod
     def from_config(cls, raw: object) -> MoveScope:
         if raw is None:
             return cls()
-        if not isinstance(raw, dict) or set(raw) - {"sides", "through_hole"}:
-            raise ValueError("placement accepts only sides and through_hole")
+        if not isinstance(raw, dict) or set(raw) - {"sides", "through_hole", "locked"}:
+            raise ValueError("placement accepts only sides, through_hole and locked")
         sides = raw.get("sides", sorted(SIDES.values()))
         if (not isinstance(sides, list) or len(set(sides)) != len(sides)
                 or not set(sides) <= set(SIDES.values())):
             raise ValueError("placement sides must list top, bottom or both")
-        through_hole = raw.get("through_hole", True)
-        if not isinstance(through_hole, bool):
-            raise ValueError("placement through_hole must be true or false")
-        return cls(frozenset(sides), through_hole)
+        through_hole, locked = raw.get("through_hole", True), raw.get("locked", True)
+        if not isinstance(through_hole, bool) or not isinstance(locked, bool):
+            raise ValueError("placement through_hole and locked must be true or false")
+        return cls(frozenset(sides), through_hole, locked)
 
     @staticmethod
     def reference(footprint: Form) -> str | None:
@@ -50,10 +51,10 @@ class MoveScope:
     def refusal(self, text: str, footprint: Form) -> str | None:
         """Why the footprint parsed from ``text`` may not move, or None if it may."""
         reference = self.reference(footprint) or "A footprint"
-        locked = footprint.children("locked")
-        if (any(atom.value == "locked" for atom in footprint.atoms()[2:])
-                or (locked and locked[0].atoms()[-1].value != "no")):
-            return f"{reference} is locked"
+        lock = footprint.children("locked")
+        if not self.locked and (any(atom.value == "locked" for atom in footprint.atoms()[2:])
+                                or (lock and lock[0].atoms()[-1].value != "no")):
+            return f"{reference} is locked, which the placement policy keeps fixed"
         layers = footprint.children("layer")
         side = SIDES.get(layers[0].atoms()[1].value) if layers else None
         if side not in self.sides:

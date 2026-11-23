@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -97,6 +100,43 @@ class ArmTests(unittest.TestCase):
         self.assertEqual((fixed.applied, fixed.preview["apply_error"], fixed.native_passed),
                          (False, "stale preview", False))
         self.assertTrue(moves.passes)
+
+
+class VariantStudyTests(unittest.TestCase):
+    def test_each_seed_packs_a_private_copy_with_the_policy_and_is_counted(self):
+        requests = []
+
+        class Native:
+            @staticmethod
+            def worker(operation, board, record, request, output):
+                requests.append((operation, json.loads(Path(request).read_text(encoding="utf-8"))))
+                cut = ["/SCL"] if len(requests) == 1 else []
+                Path(record).write_text(json.dumps({"moved": [], "routability": {"unroutable": cut}}))
+
+            @staticmethod
+            def status():
+                return {}
+
+        verdicts = iter(({"fixed_stalled": True, "moves_reached_zero_opens": True, "criterion_met": True},
+                         {"fixed_stalled": False, "moves_reached_zero_opens": True, "criterion_met": False}))
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "autopcb.json").write_text(json.dumps({"route": {"width_mm": 0.25}}))
+            working = SimpleNamespace(root=root, board=root / "board.kicad_pcb")
+            inner = SimpleNamespace(config_file=lambda name: root / name)
+
+            @contextlib.contextmanager
+            def opened(_self):
+                yield working, inner
+
+            with (patch.object(study.PrivateCopy, "__init__", lambda *a, **k: None),
+                  patch.object(study.PrivateCopy, "open", opened),
+                  patch.object(study.PlacementStudy, "run", lambda _self: {"verdict": next(verdicts)})):
+                report = study.VariantStudy(Native(), None, study.Budget(3, 5, 1), [4, 5], storage=object()).run()
+        self.assertEqual(requests, [("crowd", {"seed": 4, "policy": {"route": {"width_mm": 0.25}}}),
+                                    ("crowd", {"seed": 5, "policy": {"route": {"width_mm": 0.25}}})])
+        self.assertEqual(report["summary"], {"variants": 2, "unroutable_as_placed": 1, "fixed_stalled": 1,
+                                             "moves_reached_zero_opens": 2, "criterion_met": 1})
 
 
 if __name__ == "__main__":

@@ -50,6 +50,62 @@ class Corridor:
 
 
 @dataclass(frozen=True)
+class CopperItem:
+    shapes: tuple
+    via: bool
+    length: int
+
+
+@dataclass(frozen=True)
+class BoardObstacles:
+    """Every copper item and keepout on a board as router obstacles.
+
+    Pads are grouped by their footprint's UUID and tracks and vias keyed by
+    their own, so a caller can relax exactly the items it may move or replace.
+    """
+
+    pads: dict
+    copper: dict
+    fixed: tuple
+
+    @classmethod
+    def read(cls, board, critical_nets=(), *, assume_zone_refill=False, footprints=None) -> BoardObstacles:
+        """``footprints`` maps a footprint UUID to a detached copy at another pose, or None."""
+        import pcbnew
+
+        physical = enabled_copper_layers(board)
+        pads, copper, fixed = {}, {}, []
+        for footprint in board.GetFootprints():
+            owner = footprint.m_Uuid.AsString()
+            part = (footprints or {}).get(owner, footprint)
+            for pad in () if part is None else part.Pads():
+                active = physical if pad.GetDrillSize().x or pad.GetDrillSize().y else tuple(
+                    layer for layer in physical if pad.IsOnLayer(board.GetLayerID(layer)))
+                if active:
+                    pads[owner] = (*pads.get(owner, ()), _pad_obstacle(board, pad, active))
+        for item in board.GetTracks():
+            active = tuple(layer for layer in physical if item.IsOnLayer(board.GetLayerID(layer)))
+            if not active:
+                continue
+            is_via = isinstance(item, pcbnew.PCB_VIA)
+            if is_via:
+                shapes = (_via_obstacle(board, item, active),)
+            elif isinstance(item, pcbnew.PCB_ARC):
+                shapes = (_box(item, active, item.GetNetname(), "copper"),)
+            else:
+                shapes = tuple(_track_boxes(item, active, item.GetNetname()))
+            copper[item.m_Uuid.AsString()] = CopperItem(shapes, is_via, 0 if is_via else item.GetLength())
+        for zone in board.Zones():
+            active = tuple(layer for layer in physical if zone.IsOnLayer(board.GetLayerID(layer)))
+            if active and (zone.GetIsRuleArea() or not assume_zone_refill):
+                rule = zone.GetIsRuleArea()
+                fixed.append(_box(zone, active, "" if rule else zone.GetNetname(),
+                                  "keepout" if rule else "copper"))
+        fixed.extend(reference_corridors(board, set(critical_nets)).obstacles)
+        return cls(pads, copper, tuple(fixed))
+
+
+@dataclass(frozen=True)
 class RepairWitness:
     identifiers: frozenset[str]
     route_cost: float
@@ -194,7 +250,6 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
     ``first_feasible`` keeps the first corridor each search finds, so the
     witnesses do not depend on how fast the machine is.
     """
-    import pcbnew
 
     started = time.monotonic()
     deadline = started + recovery.obstruction_seconds
@@ -204,63 +259,24 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
             raise SearchBudgetExceeded("Obstruction diagnosis time limit")
 
     target = settings["name"]
-    physical = enabled_copper_layers(board)
-    layers = tuple(settings.get("layers", physical))
+    layers = tuple(settings.get("layers", enabled_copper_layers(board)))
     ids = {record.uuid for record in records}
     movable = movable or {}
+    model = BoardObstacles.read(board, critical_nets,
+                                assume_zone_refill=settings.get("assume_zone_refill", False))
     hard, soft, costs = [], {}, {}
-    for pad in board.GetPads():
-        active = tuple(
-            layer for layer in physical if pad.IsOnLayer(board.GetLayerID(layer))
-        )
-        if pad.GetDrillSize().x or pad.GetDrillSize().y:
-            active = physical
-        if not active:
-            continue
-        shape = _pad_obstacle(board, pad, active)
-        owner = pad.GetParentFootprint().m_Uuid.AsString()
+    for owner, shapes in model.pads.items():
         if owner in movable:
-            soft[owner] = (*soft.get(owner, ()), shape)
-            costs[owner] = movable[owner]
-        else:
-            hard.append(shape)
-    for item in board.GetTracks():
-        active = tuple(
-            layer for layer in physical if item.IsOnLayer(board.GetLayerID(layer))
-        )
-        if not active:
-            continue
-        is_via = isinstance(item, pcbnew.PCB_VIA)
-        shapes = [(_via_obstacle(board, item, active) if is_via
-                   else _box(item, active, item.GetNetname(), "copper"))]
-        if not is_via and not isinstance(item, pcbnew.PCB_ARC):
-            shapes = _track_boxes(item, active, item.GetNetname())
-        uid = item.m_Uuid.AsString()
-        if uid in ids:
-            soft[uid] = tuple(shapes)
-            costs[uid] = (
-                weights.via
-                if is_via
-                else weights.track + weights.length_mm * item.GetLength() / 1e6
-            )
+            soft[owner], costs[owner] = shapes, movable[owner]
         else:
             hard.extend(shapes)
-    for zone in board.Zones():
-        active = tuple(
-            layer for layer in physical if zone.IsOnLayer(board.GetLayerID(layer))
-        )
-        if active and (
-            zone.GetIsRuleArea() or not settings.get("assume_zone_refill", False)
-        ):
-            hard.append(
-                _box(
-                    zone,
-                    active,
-                    "" if zone.GetIsRuleArea() else zone.GetNetname(),
-                    "keepout" if zone.GetIsRuleArea() else "copper",
-                )
-            )
-    hard.extend(reference_corridors(board, set(critical_nets)).obstacles)
+    for uid, item in model.copper.items():
+        if uid in ids:
+            soft[uid] = item.shapes
+            costs[uid] = weights.via if item.via else weights.track + weights.length_mm * item.length / 1e6
+        else:
+            hard.extend(item.shapes)
+    hard.extend(model.fixed)
     box = board.GetBoardEdgesBoundingBox()
     bounds, step = search_window(
         anchors,

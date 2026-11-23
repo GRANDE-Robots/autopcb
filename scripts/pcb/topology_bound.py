@@ -23,12 +23,14 @@ def grid_bounds(router: GridRouter, margin: int) -> tuple[int, int, int, int]:
     )
 
 
-def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
+def minimum_vias(router: GridRouter, goal: tuple[int, int, int],
+                 more_goals: tuple[tuple[int, int, int], ...] = ()) -> array:
     """Return per-cell minimum via count, ignoring direction and bend constraints.
 
     Zero-cost existing vias and blocked copper use the same grid as the router.
     Endpoint-specific via prohibitions are deliberately relaxed, making this a
-    lower bound for every route searched from a fixed goal.
+    lower bound for every route searched from a fixed goal. With several goals
+    each cell holds its count to the nearest one.
     """
     nx, ny = router.nx, router.ny
     area = nx * ny
@@ -43,10 +45,11 @@ def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
     via_blocked = bytearray(area)
     for x, y in router.via_blocked:
         via_blocked[y * nx + x] = 1
-    gx, gy, glayer = goal
-    goal_id = glayer * area + gy * nx + gx
-    distance[goal_id] = 0
-    queue = deque([goal_id])
+    queue = deque()
+    for gx, gy, glayer in (goal, *more_goals):
+        goal_id = glayer * area + gy * nx + gx
+        distance[goal_id] = 0
+        queue.append(goal_id)
     edge = router.clearance + math.ceil(router.width / 2)
     via_edge = router.clearance + math.ceil(router.via_size / 2)
     xmin, ymin, xmax, ymax = grid_bounds(router, edge)

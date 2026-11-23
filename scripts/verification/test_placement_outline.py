@@ -3,7 +3,24 @@
 import unittest
 
 from autopcb import design
-from autopcb.placement import Envelope, OutlineFitter
+from autopcb.placement import Compactor, Envelope, OutlineFitter
+
+
+class CompactorTests(unittest.TestCase):
+    def test_parts_slide_toward_the_point_until_they_meet(self):
+        parts = {"A": Envelope((2, 2), (4, 4)), "B": Envelope((10, 2), (12, 4)), "J": Envelope((20, 20), (24, 24))}
+        packed = Compactor(parts, {"A", "B"}, Envelope((0, 0), (30, 30)), 1, 1).toward((3, 3), ["A", "B"])
+        self.assertEqual(packed["A"], parts["A"])
+        self.assertEqual(packed["B"], Envelope((5, 2), (7, 4)))
+        self.assertEqual(packed["J"], parts["J"])
+
+    def test_a_fixed_part_and_the_edge_margin_stop_a_slide(self):
+        parts = {"A": Envelope((10, 10), (12, 12)), "J": Envelope((4, 9), (6, 13))}
+        outline = Envelope((0, 0), (20, 20))
+        packed = Compactor(parts, {"A"}, outline, 2, 1).toward((0, 11), ["A"])
+        self.assertEqual(packed["A"], Envelope((7, 10), (9, 12)))
+        packed = Compactor(parts, {"A"}, outline, 2, 1).toward((11, 30), ["A"])
+        self.assertEqual(packed["A"], Envelope((10, 16), (12, 18)))
 
 
 class OutlineTests(unittest.TestCase):

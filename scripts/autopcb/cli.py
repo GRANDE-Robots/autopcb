@@ -86,6 +86,9 @@ def parser() -> argparse.ArgumentParser:
     study.add_argument("--rounds", type=int, default=10)
     study.add_argument("--seconds", type=int, default=30)
     study.add_argument("--memory-gib", type=float, default=3)
+    study.add_argument("--variants", type=int, default=0,
+                       help="study this many crowded packings of the board instead of the board itself")
+    study.add_argument("--seed", type=int, default=1, help="first packing seed")
     study.add_argument("--output", type=Path)
     export = commands.add_parser("export", help="generate a local manufacturing package")
     export.add_argument("--output", type=Path, help="defaults to results/exports")
@@ -183,9 +186,13 @@ def _run(args) -> dict:
             return Benchmark.refinement(native, project, budget, storage).run()
         return Benchmark.versions(native, project, args.baseline, budget, storage).run()
     if args.action == "placement-study":
-        from autopcb.placement_study import PlacementStudy
-        report = PlacementStudy(native, project, Budget(args.rounds, args.seconds, args.memory_gib),
-                                storage).run()
+        from autopcb.placement_study import PlacementStudy, VariantStudy
+        budget = Budget(args.rounds, args.seconds, args.memory_gib)
+        if args.variants:
+            seeds = list(range(args.seed, args.seed + args.variants))
+            report = VariantStudy(native, project, budget, seeds, storage).run()
+        else:
+            report = PlacementStudy(native, project, budget, storage).run()
         if args.output:
             jobs.write_json(args.output, report)
         return report

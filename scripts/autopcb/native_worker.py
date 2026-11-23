@@ -402,7 +402,7 @@ class PreviewComparison:
 class NativeWorker:
     """Run one native operation on files a product job selected."""
 
-    OPERATIONS = ("inspect", "generate", "compare", "reference", "apply", "pair-seed")
+    OPERATIONS = ("inspect", "generate", "compare", "reference", "apply", "pair-seed", "crowd")
 
     def __init__(self, argv: list[str] | None = None):
         parser = argparse.ArgumentParser()
@@ -422,6 +422,11 @@ class NativeWorker:
             from autopcb.pair_seed import seed
 
             return seed(args.board, json.loads(Path(args.argument).read_text(encoding="utf-8")))
+        if args.operation == "crowd":
+            from autopcb.crowding import CrowdedVariant
+
+            request = json.loads(Path(args.argument).read_text(encoding="utf-8"))
+            return CrowdedVariant(args.board, request["seed"], request["policy"]).write()
         if args.operation == "compare":
             return PreviewComparison(args.board, args.argument).run()
         if args.operation == "apply":

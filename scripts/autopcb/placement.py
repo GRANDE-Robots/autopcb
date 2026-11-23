@@ -19,6 +19,56 @@ class Envelope:
 
 
 
+class Compactor:
+    """Slide parts toward a point until each meets another part or the point itself.
+
+    Boxes keep ``gap`` between them and stay ``margin`` inside the outline,
+    so packing a board this way never makes two courtyards overlap.
+    """
+
+    def __init__(self, parts: dict[str, Envelope], movable: set[str], outline: Envelope,
+                 margin: int, gap: int):
+        if not movable <= parts.keys() or margin < 0 or gap < 0:
+            raise ValueError("Compaction needs movable parts on the board and nonnegative spacing.")
+        self.parts, self.movable, self.outline = parts, movable, outline
+        self.margin, self.gap = margin, gap
+
+    def slide(self, boxes: dict[str, Envelope], ref: str, axis: int, target: int) -> int:
+        across, box = 1 - axis, boxes[ref]
+        wanted = target - (box.low[axis] + box.high[axis]) // 2
+        if not wanted:
+            return 0
+        if wanted > 0:
+            limit = self.outline.high[axis] - self.margin - box.high[axis]
+        else:
+            limit = box.low[axis] - self.outline.low[axis] - self.margin
+        limit = max(0, limit)
+        for other, obstacle in boxes.items():
+            if (other == ref or obstacle.high[across] + self.gap <= box.low[across]
+                    or box.high[across] + self.gap <= obstacle.low[across]):
+                continue
+            if wanted > 0 and obstacle.low[axis] >= box.high[axis]:
+                limit = min(limit, obstacle.low[axis] - box.high[axis] - self.gap)
+            elif wanted < 0 and obstacle.high[axis] <= box.low[axis]:
+                limit = min(limit, box.low[axis] - obstacle.high[axis] - self.gap)
+        travel = max(0, min(abs(wanted), limit)) * (1 if wanted > 0 else -1)
+        if travel:
+            boxes[ref] = box.shifted(axis, travel)
+        return travel
+
+    def toward(self, point: tuple[int, int], order: list[str], passes: int = 6) -> dict[str, Envelope]:
+        boxes = dict(self.parts)
+        for _ in range(passes):
+            moved = False
+            for ref in order:
+                if ref in self.movable:
+                    for axis in (0, 1):
+                        moved |= bool(self.slide(boxes, ref, axis, point[axis]))
+            if not moved:
+                break
+        return boxes
+
+
 class OutlineFitter:
     """Try the approved group translations and the unmodified catalog placement."""
 

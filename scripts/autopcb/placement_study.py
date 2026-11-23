@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass, field
@@ -154,3 +155,43 @@ class PlacementStudy:
                 "budget": self.budget.as_dict(), "original": original.as_dict(),
                 "arms": {"fixed": fixed.as_dict(), "moves": moves.as_dict()},
                 "verdict": Verdict(fixed, moves, original).as_dict(), "toolchain": self.native.status()}
+
+
+class VariantStudy:
+    """Run the study on seeded crowded packings of one board, then count the outcomes.
+
+    Each seed packs the parts the policy lets move toward a random point
+    until their courtyards touch. The routability proof says whether a net
+    is physically cut off as placed or only crowded.
+    """
+
+    def __init__(self, native: Native, project: ProjectPaths, budget: Budget, seeds: list[int],
+                 storage: ProjectStorage | None = None):
+        self.native, self.project, self.budget, self.seeds = native, project, budget, seeds
+        self.storage = storage or ProjectStorage(project.root)
+
+    def variant(self, seed: int) -> dict:
+        with PrivateCopy(self.project, self.storage).open() as (working, inner):
+            policy = inner.config_file("autopcb.json")
+            request, record = working.root / "crowd-request.json", working.root / "crowd.json"
+            jobs.write_json(request, {"seed": seed, "policy": json.loads(policy.read_text(encoding="utf-8-sig"))
+                                      if policy.is_file() else {}})
+            self.native.worker("crowd", working.board, record, request, output=record)
+            packing = json.loads(record.read_text(encoding="utf-8"))
+            request.unlink()
+            record.unlink()
+            study = PlacementStudy(self.native, working, self.budget, inner).run()
+        return {"seed": seed, "packing": packing, "study": study}
+
+    def run(self) -> dict:
+        variants = [self.variant(seed) for seed in self.seeds]
+        verdicts = [item["study"]["verdict"] for item in variants]
+        return {"schema_version": 1, "kind": "placement_variant_study", "status": "measured",
+                "budget": self.budget.as_dict(), "seeds": self.seeds,
+                "summary": {"variants": len(variants),
+                            "unroutable_as_placed": sum(bool(item["packing"]["routability"]["unroutable"])
+                                                        for item in variants),
+                            "fixed_stalled": sum(v["fixed_stalled"] for v in verdicts),
+                            "moves_reached_zero_opens": sum(v["moves_reached_zero_opens"] for v in verdicts),
+                            "criterion_met": sum(v["criterion_met"] for v in verdicts)},
+                "variants": variants, "toolchain": self.native.status()}

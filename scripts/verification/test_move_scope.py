@@ -20,13 +20,19 @@ class MoveScopeTests(unittest.TestCase):
     def refusal(self, scope, text):
         return scope.refusal(text, parse(text).children("footprint")[0])
 
-    def test_by_default_any_unlocked_part_may_move(self):
+    def test_by_default_any_part_may_move_even_if_locked(self):
         text = board(footprint("U1"), footprint("R1", "B.Cu"), footprint("J1", pads=("thru_hole", "np_thru_hole")),
                      footprint("J2", extra="(locked yes) "), footprint("J3", extra="locked "))
-        self.assertEqual(MoveScope().movable(text), {"U1", "R1", "J1"})
+        self.assertEqual(MoveScope().movable(text), {"U1", "R1", "J1", "J2", "J3"})
         self.assertEqual(MoveScope.from_config(None), MoveScope())
         self.assertEqual(MoveScope.from_config({}), MoveScope())
-        self.assertIsNone(self.refusal(MoveScope(), board(footprint("J4", extra="(locked no) "))))
+
+    def test_locked_parts_can_be_kept_in_place(self):
+        scope = MoveScope.from_config({"locked": False})
+        text = board(footprint("U1"), footprint("J2", extra="(locked yes) "), footprint("J3", extra="locked "),
+                     footprint("J4", extra="(locked no) "))
+        self.assertEqual(scope.movable(text), {"U1", "J4"})
+        self.assertIn("locked", self.refusal(scope, board(footprint("J2", extra="(locked yes) "))))
 
     def test_a_fixed_side_keeps_its_parts_and_its_silkscreen(self):
         scope = MoveScope.from_config({"sides": ["bottom"]})
@@ -43,14 +49,15 @@ class MoveScopeTests(unittest.TestCase):
 
     def test_check_names_one_movable_part_per_reference(self):
         text = board(footprint("R1"), footprint("R2"), footprint("R2"), footprint("J1", extra="(locked yes) "))
-        MoveScope().check(text, ["R1"])
+        scope = MoveScope.from_config({"locked": False})
+        scope.check(text, ["R1"])
         for reference, message in (("R2", "ambiguous"), ("R9", "missing"), ("J1", "locked")):
             with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, message):
-                MoveScope().check(text, [reference])
+                scope.check(text, [reference])
 
     def test_policy_values_are_checked(self):
         for raw in ({"sides": ["left"]}, {"sides": "top"}, {"sides": ["top", "top"]},
-                    {"through_hole": "no"}, {"locked": True}, ["top"]):
+                    {"through_hole": "no"}, {"locked": "no"}, {"pinned": True}, ["top"]):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 MoveScope.from_config(raw)
 

@@ -571,7 +571,7 @@ class RelocationTests(unittest.TestCase):
             request = fixture.NativeNetRoutingTests.config()
             request["shared"].update(layers=["F.Cu", "B.Cu"], step_mm=0.25)
             request.update(max_islands=2, recovery_stage=4)
-            policy = {"route": request["shared"], "max_pins": 2}
+            policy = {"route": request["shared"], "max_pins": 2, "placement": {"locked": False}}
             anchors = (Site(Point.from_mm((2, 2)), "F.Cu"), Site(Point.from_mm((8, 5)), "F.Cu"))
             candidates, descriptions = placement_requests(
                 pcbnew.LoadBoard(str(source)), request, policy, RecoveryPolicy(), anchors, ()

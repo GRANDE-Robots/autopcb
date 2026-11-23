@@ -11,13 +11,55 @@ from autopcb.layout import Layout
 from autopcb.native import Native
 from autopcb.workspace import Workspace
 from core.export_helpers import sha
-from core.project import SourceSnapshot
+from core.paths import ProjectStorage
+from core.project import ProjectPaths, SourceSnapshot
 
 
 REFERENCE_PROJECTS = (
     ("Temperature Sensor", "Two-layer I2C temperature sensor at 3.3 V", 2),
     ("USB Breakout", "Four-layer full-speed Type-B USB breakout at 5 V", 4),
 )
+
+
+class ReferenceRouting:
+    @staticmethod
+    def run(native: Native, project: ProjectPaths, storage: ProjectStorage, case: dict,
+                         baseline: SourceSnapshot, verified: dict, *, rounds: int,
+                         seconds: int, memory_gib: float | None) -> tuple[dict, SourceSnapshot]:
+        case["stage"] = "route"
+        case["applied"] = None
+        case["routing_passes"] = []
+        routing = Layout(native, project, storage)
+        remaining = rounds
+        while remaining > 0 and (opens := verified["native"]["open_connections"]):
+            preview = routing.preview(rounds=remaining, seconds=seconds, memory_gib=memory_gib)
+            baseline.verify_unchanged()
+            case["preview"] = {key: preview.get(key) for key in (
+                "status", "run_id", "best_preview_opens", "blocked_nets", "attempted_rounds")}
+            attempted = preview["attempted_rounds"]
+            if type(attempted) is not int or not 0 <= attempted <= remaining:
+                raise RuntimeError("The routing preview reported an invalid round count.")
+            predicted = preview["best_preview_opens"]
+            if type(predicted) is not int or predicted < 0:
+                raise RuntimeError("The routing preview reported an invalid open count.")
+            attempt = {**case["preview"], "round_budget": remaining, "starting_opens": opens, "saved_opens": opens}
+            case["routing_passes"].append(attempt)
+            remaining -= attempted
+            if predicted >= opens:
+                break
+            compared = routing.compare(preview["run_id"])
+            if compared["before"] == compared["after"]:
+                raise RuntimeError("The improved preview has no visible board geometry changes.")
+            case["applied"] = _exercise_apply(native, project, storage, preview["run_id"], baseline)
+            baseline = SourceSnapshot.capture(project)
+            verified = jobs.verify(native, project, storage=storage)
+            attempt["saved_opens"] = verified["native"]["open_connections"]
+            if (attempt["saved_opens"] != case["applied"]["reported_opens"]
+                    or attempt["saved_opens"] != predicted):
+                raise RuntimeError("Independent verification disagrees with the applied open count.")
+            if any(item["check"] != "unconnected_items" for item in verified["native"]["findings"]):
+                raise RuntimeError("The applied board added a native finding other than opens.")
+        return verified, baseline
 
 
 def _refuse_apply(native, project, storage, run_id, reason: str) -> None:
@@ -76,6 +118,7 @@ def _exercise_design(native: Native, workspace: Workspace, case: dict, requireme
     proposal = design.propose(requirements)
     storage = workspace.storage(output / (output.name + ".kicad_pro"))
     build = jobs.build(native, proposal, proposal["proposal_id"], output, storage=storage)
+    case["outline"] = build["outline"]
     if build["pair_layout"]:
         case["pair_layout"] = build["pair_layout"]
     project = workspace.project(Path(build["project"]))
@@ -88,29 +131,14 @@ def _exercise_design(native: Native, workspace: Workspace, case: dict, requireme
         raise RuntimeError("The initial reference project has a native finding other than opens.")
     case["initial_opens"] = initial["native"]["open_connections"]
     jobs.publish_report(storage.results / "initial-verification.json", initial)
-
-    case["stage"] = "route"
-    case["applied"] = None
-    if case["initial_opens"]:
-        routing = Layout(native, project, storage)
-        preview = routing.preview(rounds=rounds, seconds=seconds, memory_gib=memory_gib)
-        baseline.verify_unchanged()
-        case["preview"] = {key: preview.get(key) for key in (
-            "status", "run_id", "best_preview_opens", "blocked_nets", "attempted_rounds")}
-        if preview["best_preview_opens"] < case["initial_opens"]:
-            compared = routing.compare(preview["run_id"])
-            if compared["before"]["tracks"] == compared["after"]["tracks"]:
-                raise RuntimeError("The improved preview has no visible copper changes.")
-            case["applied"] = _exercise_apply(native, project, storage, preview["run_id"], baseline)
+    verified, baseline = ReferenceRouting.run(native, project, storage, case, baseline, initial,
+                                          rounds=rounds, seconds=seconds, memory_gib=memory_gib)
 
     case["stage"] = "verify"
-    current = SourceSnapshot.capture(project)
-    verified = jobs.verify(native, project, storage=storage)
+    baseline.verify_unchanged()
     case["saved_opens"] = verified["native"]["open_connections"]
     case["native_passed"] = verified["native"]["passed"]
     case["blockers"] = verified["blockers"]
-    if case["applied"] and case["applied"]["reported_opens"] != case["saved_opens"]:
-        raise RuntimeError("Independent verification disagrees with the applied open count.")
     jobs.publish_report(storage.results / "verification.json", verified)
 
     case["stage"] = "export"
@@ -130,12 +158,12 @@ def _exercise_design(native: Native, workspace: Workspace, case: dict, requireme
             raise RuntimeError("Checked export disagrees with independent verification.")
         _check_artifacts(checked, manifest)
         case["checked_export"] = "passed"
-    current.verify_unchanged()
+    baseline.verify_unchanged()
     case.update(stage="done", status="passed" if case["checked_export"] == "passed" else "incomplete")
 
 
 def qualify(output: Path, *, cli: Path | None, python: Path | None, rounds: int, seconds: int,
-            memory_gib: float | None = None) -> dict:
+            memory_gib: float | None = None, fixed_outlines: bool = False) -> dict:
     if not 1 <= rounds <= 100 or not 1 <= seconds <= 300:
         raise ValueError("Qualification expects 1 to 100 rounds and 1 to 300 seconds per batch.")
     if memory_gib is not None and (not math.isfinite(memory_gib) or memory_gib <= 0):
@@ -157,6 +185,8 @@ def qualify(output: Path, *, cli: Path | None, python: Path | None, rounds: int,
         native.footprints()
         workspace.data.mkdir()
         for name, requirements, layers in REFERENCE_PROJECTS:
+            if fixed_outlines:
+                requirements += " with a fixed catalog outline"
             (workspace.data / (name + ".txt")).write_text(requirements + "\n", encoding="utf-8")
             case = {"name": name, "status": "running"}
             report["cases"].append(case)

@@ -14,6 +14,8 @@ For paired signals, use the [layer-specific geometry review](../docs/impedance-g
 
 Record the operating conditions and evidence behind each requirement. Tie reviewed limits and release inputs to the exact native project. Keep generated BOMs, placement files, and fabrication packages in `results/`.
 
+A catalog design can enable area minimization by adding `compact_outline` with a positive `margin_mm` and a list of `movable_groups`. Each group lists parts that may translate together. All other parts retain their catalog poses. An empty list permits trimming around fixed placement. `minimum_mm` and `size_mm` give the lower and upper dimensions for each axis. A user-specified maximum can lower that ceiling. An exact size takes precedence.
+
 ## Schematic and silkscreen
 
 Group related circuits and use consistent spacing. Keep reference and value text close to each part. Use wires where they explain local circuit structure, keep labels clear, and preserve component references and pin names.

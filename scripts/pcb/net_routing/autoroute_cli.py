@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
                     search_heuristic_weight=args.search_heuristic_weight,
                 )
                 console.result(result, show_run)
-                return 0 if result["status"] == "paused" else 2
+                return 0 if result["status"] in {"paused", "preview_zero_opens"} else 2
         with progress_heartbeat(display):
             report = prepare_project(args.project, progress=display)
         console.result(report, show_preparation)

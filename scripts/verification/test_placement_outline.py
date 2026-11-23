@@ -1,0 +1,49 @@
+"""Compact placement respects catalog limits, fixed poses and the complete native envelope."""
+
+import unittest
+
+from autopcb import design
+from autopcb.placement import Envelope, OutlineFitter
+
+
+class OutlineTests(unittest.TestCase):
+    def test_floor_prevents_pointless_component_motion(self):
+        parts = {"J1": Envelope((1, 1), (4, 4)), "C1": Envelope((7, 3), (9, 7))}
+        self.assertEqual(OutlineFitter(parts, [["C1"]], (12, 10), (30, 20), 1).fit(), ((12, 10), {}))
+
+    def test_group_slides_together_and_keeps_clear_of_the_fixed_connector(self):
+        parts = {"J": Envelope((1, 1), (4, 4)), "U": Envelope((12, 3), (15, 7)),
+                 "C": Envelope((18, 3), (20, 7))}
+        size, moved = OutlineFitter(parts, [["U", "C"]], (5, 10), (24, 20), 1).fit()
+        self.assertEqual(size, (14, 10))
+        self.assertEqual(moved, {"U": (-7, 0), "C": (-7, 0)})
+
+    def test_fixed_envelopes_set_size_and_block_out_of_range_placement(self):
+        parts = {"J": Envelope((1, 2), (16, 8))}
+        self.assertEqual(OutlineFitter(parts, [], (8, 8), (20, 20), 1).fit(), ((17, 9), {}))
+        with self.assertRaisesRegex(ValueError, "maximum outline"):
+            OutlineFitter(parts, [], (8, 8), (16, 20), 1).fit()
+        with self.assertRaisesRegex(ValueError, "left or top"):
+            OutlineFitter({"J": Envelope((0, 2), (16, 8))}, [], (8, 8), (20, 20), 1).fit()
+
+    def test_only_an_unsized_eligible_proposal_requests_compaction(self):
+        description = "Two-layer temperature sensor at 3.3 V"
+        proposal = design.propose(description)
+        self.assertEqual(proposal["compact_outline"]["minimum_mm"], [28, 20])
+        self.assertNotIn("J1", sum(proposal["compact_outline"]["movable_groups"], []))
+        for dimensions in ("35 x 25 mm", "35 mm × 25 mm", "3.5 cm by 25 mm", "35 mm by 25"):
+            with self.subTest(dimensions=dimensions):
+                fixed = design.propose(f"{description} on a {dimensions} board")
+                self.assertEqual(fixed["size_mm"], [35, 25])
+                self.assertNotIn("compact_outline", fixed)
+        self.assertNotIn("compact_outline", design.propose(description + " with the catalog outline"))
+        self.assertEqual(design.propose(description + " at address 0x18")["status"], "proposed")
+        self.assertEqual(design.propose(description + " on a 35 x 25 board")["status"], "blocked")
+        limited = design.propose(description + " up to 32 x 22 mm")
+        self.assertEqual(limited["size_mm"], [32, 22])
+        self.assertEqual(limited["compact_outline"]["minimum_mm"], [28, 20])
+        self.assertEqual(design.propose(description + " within 24 x 18 mm")["status"], "blocked")
+
+
+if __name__ == "__main__":
+    unittest.main()

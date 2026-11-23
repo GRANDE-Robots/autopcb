@@ -32,6 +32,31 @@ class Native:
     python: Path
     version: str
 
+    @staticmethod
+    def prepare_windows_cli() -> None:
+        """Keep the bundled Qt runtime out of the external Windows toolchain."""
+        bundle = getattr(sys, "_MEIPASS", None)
+        if sys.platform != "win32" or bundle is None:
+            return
+        import ctypes
+
+        # The bootloader adds a DLL directory that child processes also inherit.
+        # This process only runs CLI jobs; the desktop keeps its bundled Qt paths.
+        if not ctypes.windll.kernel32.SetDllDirectoryW(None):
+            raise ctypes.WinError()
+        root = Path(bundle)
+        for name in ("PATH", "PYTHONPATH", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH"):
+            if name not in os.environ:
+                continue
+            entries = os.environ[name].split(os.pathsep)
+            external = [entry for entry in entries
+                        if not Path(os.path.normpath(entry.strip('"'))).is_relative_to(root)]
+            if external:
+                os.environ[name] = os.pathsep.join(external)
+            else:
+                del os.environ[name]
+
+
     @classmethod
     def discover(cls, *, cli: Path | None = None, python: Path | None = None) -> Native:
         executable = kicad_cli(cli)

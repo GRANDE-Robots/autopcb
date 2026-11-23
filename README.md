@@ -2,6 +2,8 @@
 
 AutoPCB takes design requirements or an existing KiCad project through layout preview, verification, and reproducible fabrication export. The desktop and CLI run the same jobs. Edit the native schematic and board in KiCad.
 
+The [workflow map](docs/workflow.html) shows how board area, routing cost and electrical evidence affect each decision.
+
 ## Install and open
 
 ```bash
@@ -34,6 +36,8 @@ autopcb verify
 
 Review the proposal before choosing its ID. The generated `.kicad_pro`, `.kicad_pcb`, `.kicad_sch`, design rules, and local library references go in `results/projects/Control Board/`. The offline catalog covers an I²C temperature sensor and a full-speed USB Type-B breakout. The USB layout tries a single-layer differential pair and an adjacent ground plane when creating the draft. Its nominal geometry and the limits of the review appear in the proposal. Missing ratings or requirements stay visible. `lookup-sources` retrieves public manufacturer sources named by an approved proposal.
 
+For a new reference design, omit board dimensions to minimize rectangular board area during placement. The catalog sets the minimum and nominal dimensions. Use `at most 32 x 22 mm` for a tighter ceiling or `35 x 25 mm` for an exact size. The fitter includes footprint bodies, courtyards, pads, drills and printed markings. It can slide catalog-authorized groups together with their orientations intact. The create result gives the outline measured from KiCad and lists any moved parts. Imported boards and previously approved proposals keep their specified outlines. Run Route and Verify to measure connectivity on the resulting board.
+
 ### Open, preview, and verify a KiCad design
 
 ```bash
@@ -53,6 +57,10 @@ Use `configure-layout` to create or copy a reviewed policy into `config/projects
 By default routing may move any footprint, on either side, with any pad type and even if it is locked in KiCad. A moved part takes its silkscreen with it. Board silkscreen, the outline, the stackup and the schematic stay fixed. Narrow the policy to keep parts in place: `"placement": {"locked": false}` leaves KiCad-locked parts where they are, and `"placement": {"sides": ["bottom"], "through_hole": false}` moves only bottom-side SMD parts and leaves the front silkscreen unchanged. `placement-study` routes two private copies of the saved design under the same rounds, time and memory, one with fixed placement and one with permitted moves. It applies each result to its copy, verifies it with KiCad, keeps the smallest verified board and reports opens, trace length, vias and moved parts. A slow escalation can spend the whole budget before recovery reaches placement; `"recovery": {"early_rework": true}` in the policy tries copper and placement repairs after a net's first failure.
 
 The ordinary router preserves declared differential copper. Pair seeding currently covers a single two-terminal pair on a new catalog board with parallel pad rows. Existing boards can be routed and reviewed with their saved pair geometry.
+
+A preview with zero measured opens and no queued work has the status `preview_zero_opens`. Pending work can be resumed. An exhausted search with opens reports `stalled` and exits with code 2. Apply saves a validated improvement, and Verify independently checks the saved board. Checked manufacturing export also requires a source-bound electrical review.
+
+In the desktop Layout tab, the saved and preview boards show native pad outlines, drill holes, curved tracks, and front footprint markings. Copper fills are hidden in this view. In Verify, activate a reference-gap row to locate an uncovered sample on the saved board. Separate gaps along one trace have separate rows. A pin label identifies a plated through-hole pad touched at a trace endpoint. The JSON report records the first and last uncovered sampling stations in millimetres measured along the trace from its start. Each gap still requires electrical review.
 
 `--workspace PATH` selects the location of shared inputs and outputs. If several native projects are available, pass a file with `--project`. The desktop lets you open that file directly. For an imported board, the config and report paths include a project key so same-named boards stay separate. Verification and recovery records go in `results/jobs/<project>/`. Exports default to `results/exports/`. Use `--output` to choose an explicit new destination for an export or project.
 
@@ -76,6 +84,41 @@ python packaging/build_desktop.py --output results/distribution --bundle-only
 autopcb qualify --output results/host-qualification
 ```
 
-Pull requests that change code run the full suite with KiCad 10 on Windows, macOS and Linux (`.github/workflows/tests.yml`). The manual Installers workflow (`.github/workflows/installers.yml`) builds the Windows installer from the selected commit and uploads it with its SHA-256. The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. Run `qualify` from a fresh install on each target system. It creates private copies of both reference designs, exercises preview and guarded Apply, and reads the saved projects back through verification and export. The report records the host, toolchain, search budget, remaining opens and release blockers. An incomplete run exits with status 2 and retains the evidence. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets, or `--refinement` to compare greedy routing, one pass per net, with the project's recovery and rework on identical copies. The original `scripts/run.py` commands remain available for existing KiCad projects.
+Pull requests that change code run the full suite with KiCad 10 on Windows, macOS and Linux (`.github/workflows/tests.yml`). The manual [Installers workflow](.github/workflows/installers.yml) builds the Windows installer from the selected commit and uploads it with its SHA-256. The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. Run `qualify` from a fresh install on each target system. It creates both reference designs, verifies every guarded Apply against the saved PCB, and starts another preview when opens fall and rounds remain. A preview with no improvement ends that case's routing search. The report records the host, outline, toolchain, per-pass budget, saved opens and release blockers. The output directory retains the native projects, checks and draft packages. An incomplete qualification exits with status 2. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets. The `--refinement` benchmark compares greedy routing with negotiated recovery under equal budgets. The original `scripts/run.py` commands remain available for existing KiCad projects.
+
+To compare compact placement with the original catalog outline, run the same two circuits with identical budgets in fresh output directories.
+
+```bash
+autopcb qualify --output results/compact-control --rounds 65 --seconds 24 --memory-gib 2
+autopcb qualify --output results/nominal-control --fixed-outlines --rounds 65 --seconds 24 --memory-gib 2
+```
+
+### Building and qualifying the Windows installer
+
+Build on Windows with x64 Python, the `desktop-build` dependencies, and Inno Setup 6. The installer is per-user and adds a Start menu shortcut. The installed desktop loads `%LOCALAPPDATA%\AutoPCB\Workspace` by default. Use `--workspace` before `desktop` to select an existing workspace.
+
+```powershell
+New-Item -ItemType Directory -Path results/windows-release -Force | Out-Null
+python packaging/build_desktop.py --output results/windows-release/installer --iscc 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 2>&1 |
+    Tee-Object -FilePath results/windows-release/build.log
+```
+
+Omit `--iscc` to search for the compiler on PATH and in the standard Inno Setup 6 install locations. The output directory must be new. Compiling the installer leaves the Windows runtime checks pending.
+
+Copy the installer and [the validation script](packaging/check_windows_release.ps1) to a clean Windows 11 x64 VM. Use a non-elevated PowerShell session that permits local scripts, with the same standard user and evidence directory for both phases. Phase Install requires a VM with AutoPCB and KiCad absent. It checks setup, the Start menu entry, the installed CLI, and the missing KiCad diagnostic. Then install KiCad 10.0.6 in its standard location in the VM and run Phase Qualify.
+
+```powershell
+.\check_windows_release.ps1 -Phase Install -Installer .\AutoPCB-1.0.0.dev0-windows.exe -EvidenceDir '..\AutoPCB QA'
+# Install KiCad 10.0.6 in the VM between these commands.
+.\check_windows_release.ps1 -Phase Qualify -Installer .\AutoPCB-1.0.0.dev0-windows.exe -EvidenceDir '..\AutoPCB QA'
+```
+
+Phase Qualify runs both reference projects from the installed executable, guides the desktop test, and checks uninstall and workspace retention. The expected checked-export refusal is the missing source-bound electrical review on the disposable boards. Copy back the evidence directory before resetting the VM. If Windows blocks an executable, the report identifies the file and failing step so the build can be reviewed under the VM's normal policy.
+
+For a source preflight on a workstation with PySide6 and a matching KiCad toolchain, run this from the repository root:
+
+`python -B -m unittest discover -s scripts -p test_desktop.py`
+
+The test drives the Qt controls offscreen and uses the real KiCad jobs for a disposable USB board. This covers preview, guarded Apply, native verification and draft export before the separate install and uninstall trial on the VM.
 
 [Algorithm guide](docs/algorithm.pdf) · [Editable documentation](docs/algorithm.md)

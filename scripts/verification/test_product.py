@@ -2,13 +2,19 @@
 
 from hashlib import sha256
 import json
+import math
 import os
 from pathlib import Path
+
+from core.compat import strict_zip
+import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
-from autopcb import cli, design, jobs
+from autopcb import cli, design, jobs, qualification
 from autopcb.workspace import Workspace
 from core.paths import config_path, data_path, project_storage, stored_result, support_input_name
 from autopcb.native import Native
@@ -56,6 +62,66 @@ class ProjectIntakeTests(unittest.TestCase):
 
 
 class WorkspaceTests(unittest.TestCase):
+
+    def test_route_exit_status_distinguishes_zero_opens_from_exhaustion(self):
+        with mock.patch("signal.signal"), mock.patch("builtins.print"):
+            for status, code in (("preview_zero_opens", 0), ("paused", 0), ("stalled", 2), ("interrupted", 2)):
+                with self.subTest(status=status), mock.patch.object(cli, "_run", return_value={"status": status}):
+                    self.assertEqual(cli.main(["route"]), code)
+    @unittest.skipUnless(os.name == "nt", "Windows DLL search path")
+    def test_frozen_cli_does_not_expose_bundle_libraries_to_kicad(self):
+        with tempfile.TemporaryDirectory() as folder:
+            bundle = Path(folder) / "_internal"
+            bundle.mkdir()
+            system = str(Path(os.environ["SystemRoot"]) / "System32")
+            env = {**os.environ, "PATH": os.pathsep.join((f'"{bundle}"', system)),
+                   "PYTHONPATH": str(bundle / "engine"),
+                   "QT_PLUGIN_PATH": str(bundle / "PySide6" / "plugins"), "QML2_IMPORT_PATH": system}
+            probe = """
+import ctypes, os, sys
+sys.path.insert(0, sys.argv[3])
+from autopcb.native import Native
+sys._MEIPASS = sys.argv[1]
+kernel = ctypes.windll.kernel32
+assert kernel.SetDllDirectoryW(sys._MEIPASS)
+directory = ctypes.create_unicode_buffer(32768)
+assert kernel.GetDllDirectoryW(len(directory), directory)
+Native.prepare_windows_cli()
+assert not kernel.GetDllDirectoryW(len(directory), directory)
+assert os.environ["PATH"] == sys.argv[2]
+assert "PYTHONPATH" not in os.environ
+assert "QT_PLUGIN_PATH" not in os.environ
+assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
+"""
+            result = subprocess.run([sys.executable, "-B", "-c", probe, str(bundle), system,
+                                     str(Path(__file__).resolve().parents[1])],
+                                    env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_windows_shortcut_uses_the_user_workspace(self):
+        with tempfile.TemporaryDirectory() as folder:
+            user_data = Path(folder)
+            selected = user_data / "Explicit workspace"
+            launch = mock.Mock(return_value=0)
+            desktop = types.SimpleNamespace(main=launch)
+            with (mock.patch.object(cli.sys, "platform", "win32"),
+                  mock.patch.object(cli.sys, "frozen", True, create=True),
+                  mock.patch.dict(os.environ, {"LOCALAPPDATA": folder}),
+                  mock.patch.dict(cli.sys.modules, {"autopcb.desktop": desktop}),
+                  mock.patch("signal.signal")):
+                self.assertEqual(cli.main(["desktop"]), 0)
+                default = user_data / "AutoPCB" / "Workspace"
+                self.assertTrue(default.is_dir())
+                launch.assert_called_once_with(default, None, None, workspace=default)
+                launch.reset_mock()
+                self.assertEqual(cli.main(["--workspace", str(selected), "desktop"]), 0)
+                launch.assert_called_once_with(selected, None, None, workspace=selected)
+                self.assertFalse(selected.exists())
+                launch.reset_mock()
+                with mock.patch.object(cli.sys, "frozen", False):
+                    self.assertEqual(cli.main(["desktop"]), 0)
+                launch.assert_called_once_with(Path("."), None, None, workspace=Path("."))
+
     def test_proposal_defaults_and_native_project_selection(self):
         with tempfile.TemporaryDirectory() as folder:
             workspace = Workspace(Path(folder))
@@ -150,6 +216,68 @@ class RequirementsTests(unittest.TestCase):
             design.validated(proposal, approval)
 
 
+class ReferenceRoutingBudgetTests(unittest.TestCase):
+    def start_patch(self, patch):
+        self.addCleanup(patch.stop)
+        return patch.start()
+
+    def setUp(self):
+        self.case = {}
+        self.baseline = mock.Mock()
+        self.layout = self.start_patch(mock.patch.object(qualification, "Layout")).return_value
+        self.apply = self.start_patch(mock.patch.object(qualification, "_exercise_apply"))
+        self.verify = self.start_patch(mock.patch.object(jobs, "verify"))
+        self.start_patch(mock.patch.object(SourceSnapshot, "capture", return_value=self.baseline))
+        self.layout.compare.return_value = {
+            "before": {"tracks": [], "footprints": [{"at": [10, 12]}]},
+            "after": {"tracks": [], "footprints": [{"at": [10, 14]}]},
+        }
+
+    def route(self, rounds=5):
+        initial = {"native": {"open_connections": 3}}
+        return qualification.ReferenceRouting.run(mock.sentinel.native, mock.sentinel.project, mock.sentinel.storage,
+                                              self.case, self.baseline, initial, rounds=rounds,
+                                              seconds=10, memory_gib=2.0)[0]
+
+    def test_fresh_pass_uses_remaining_rounds_and_reads_back_each_saved_result(self):
+        self.layout.preview.side_effect = [
+            {"run_id": "first", "attempted_rounds": 2, "best_preview_opens": 1},
+            {"run_id": "second", "attempted_rounds": 1, "best_preview_opens": 0},
+        ]
+        self.apply.side_effect = [{"reported_opens": 1}, {"reported_opens": 0}]
+        self.verify.side_effect = [
+            {"native": {"open_connections": 1, "findings": [{"check": "unconnected_items"}]}},
+            {"native": {"open_connections": 0, "findings": []}},
+        ]
+        self.assertEqual(self.route()["native"]["open_connections"], 0)
+        self.assertEqual([c.kwargs["rounds"] for c in self.layout.preview.call_args_list], [5, 3])
+        self.assertEqual([(p["starting_opens"], p["saved_opens"]) for p in self.case["routing_passes"]],
+                         [(3, 1), (1, 0)])
+
+    def test_stall_stops_even_when_it_spends_no_rounds(self):
+        self.layout.preview.return_value = {"run_id": "blocked", "attempted_rounds": 0, "best_preview_opens": 3}
+        self.assertEqual(self.route()["native"]["open_connections"], 3)
+        self.layout.preview.assert_called_once()
+        self.apply.assert_not_called()
+
+    def test_invalid_budget_or_open_count_stops_before_apply(self):
+        for attempted, opens in ((6, 0), (-1, 0), (True, 0), (1, -1)):
+            with self.subTest(attempted=attempted, opens=opens):
+                self.layout.preview.return_value = {"attempted_rounds": attempted, "best_preview_opens": opens}
+                with self.assertRaisesRegex(RuntimeError, "invalid"):
+                    self.route()
+        self.apply.assert_not_called()
+
+    def test_saved_board_disagreement_and_new_findings_stop_the_search(self):
+        self.layout.preview.return_value = {"run_id": "trial", "attempted_rounds": 1, "best_preview_opens": 1}
+        self.apply.return_value = {"reported_opens": 1}
+        for opens, findings, reason in ((2, [], "disagrees"), (1, [{"check": "violations"}], "native finding")):
+            with self.subTest(opens=opens, findings=findings):
+                self.verify.return_value = {"native": {"open_connections": opens, "findings": findings}}
+                with self.assertRaisesRegex(RuntimeError, reason):
+                    self.route()
+
+
 class ElectricalEvidenceTests(unittest.TestCase):
     def test_current_reference_findings_cannot_be_omitted_or_reused(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -190,6 +318,34 @@ class NativeProductTests(unittest.TestCase):
         except (ValueError, RuntimeError, OSError) as error:
             raise unittest.SkipTest(f"Matched native toolchain unavailable: {error}") from error
 
+    def test_native_compaction_moves_a_catalog_group_together_and_keeps_the_header_fixed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = design.catalog()
+            recipe = catalog["designs"]["temperature"]
+            group = recipe["compact_outline"]["movable_groups"][0]
+            for ref in group:
+                recipe["parts"][ref]["position"][0] += 11
+            custom = root / "catalog.json"
+            custom.write_text(json.dumps(catalog), encoding="utf-8")
+            request = design.propose("Two-layer I2C temperature sensor at 3.3 V", catalog_file=custom)
+            built = jobs.build(self.native, request, request["proposal_id"], root / "Sensor")
+            self.assertEqual(built["outline"]["size_mm"], recipe["minimum_mm"])
+            self.assertEqual(built["outline"]["moved_footprints"], sorted(group))
+            project = ProjectPaths(Path(built["project"]))
+            geometry = jobs.inspect(self.native, project)["geometry"]
+            left, top = map(min, strict_zip(*geometry["outline"][0]))
+            shifts = {}
+            for fp in geometry["footprints"]:
+                x, y = fp["at"]
+                start_x, start_y, _ = recipe["parts"][fp["ref"]]["position"]
+                shifts[fp["ref"]] = (round(x - left - start_x, 6), round(y - top - start_y, 6))
+            self.assertEqual(shifts["J1"], (0, 0))
+            self.assertEqual(len({shifts[ref] for ref in group}), 1)
+            self.assertLess(shifts[group[0]][0], 0)
+            findings = jobs.verify(self.native, project)["native"]["findings"]
+            self.assertEqual({finding["check"] for finding in findings}, {"unconnected_items"})
+
     def test_reference_projects_build_and_export_as_drafts_with_live_opens(self):
         requirements = (
             ("Temperature Board", "Two-layer I2C temperature sensor at 3.3 V", 2),
@@ -205,6 +361,8 @@ class NativeProductTests(unittest.TestCase):
                     original = SourceSnapshot.capture(project)
                     layout = jobs.inspect(self.native, project)["geometry"]
                     self.assertEqual(len(layout["copper_layers"]), layers)
+                    self.assertEqual(build["outline"]["size_mm"], [28, 20] if layers == 2 else [30, 25])
+                    self.assertEqual(build["outline"]["moved_footprints"], [])
                     findings = jobs.verify(self.native, project)
                     self.assertEqual({item["check"] for item in findings["native"]["findings"]},
                                      {"unconnected_items"})
@@ -223,6 +381,24 @@ class NativeProductTests(unittest.TestCase):
                         self.assertEqual(sorted(item["launch"] for item in screen["findings"]),
                                          ["J1.2", "J1.3", "J2.2", "J2.3"])
                         self.assertTrue(all(0 < item["unreferenced_mm"] < 0.5 for item in screen["findings"]))
+
+                        pads = {(fp["ref"], pad["number"]): pad for fp in layout["footprints"] for pad in fp["pads"]}
+                        flagged = []
+                        for item in screen["findings"]:
+                            span, = item["gap_spans"]
+                            pin, = span["endpoint_pads"]
+                            key = (pin["reference"], pin["pad"])
+                            flagged.append(key)
+                            self.assertEqual(item["positions_mm"], [span["position_mm"]])
+                            self.assertEqual(item["missing_samples"], span["missing_samples"])
+                            physical_pad = pads[key]
+                            self.assertEqual(physical_pad["net"], item["net"])
+                            self.assertTrue(physical_pad["contours"])
+                            self.assertGreater(physical_pad["hole"]["width_mm"], 0)
+                            probe = (span["position_mm"]["x"], span["position_mm"]["y"])
+                            self.assertLess(math.dist(physical_pad["at"], probe),
+                                            max(physical_pad["size"]) / 2 + proposal["pair_layout"]["clearance_mm"])
+                        self.assertCountEqual(flagged, [("J1", "2"), ("J1", "3"), ("J2", "2"), ("J2", "3")])
                     else:
                         self.assertEqual(screen["status"], "not_applicable")
                     fabrication = root / (name + " fab")
@@ -263,11 +439,48 @@ class NativeProductTests(unittest.TestCase):
             proposal = design.propose("Four-layer full-speed Type-B USB breakout at 5 V", catalog_file=catalog)
             build = jobs.build(self.native, proposal, proposal["proposal_id"], root / "USB Short Escapes")
             self.assertEqual(build["pair_layout"]["status"], "deferred")
+            self.assertEqual(build["outline"]["mode"], "catalog_fallback")
+            self.assertEqual(build["outline"]["size_mm"], proposal["size_mm"])
             project = ProjectPaths(Path(build["project"]))
             manifest = jobs.verify(self.native, project)
             self.assertGreater(manifest["native"]["open_connections"], 1)
             self.assertEqual(len(manifest["reference_screen"]["blockers"]), 2)
             self.assertEqual(jobs.inspect(self.native, project)["geometry"]["tracks"], [])
+
+    def test_explicit_and_historical_outlines_preserve_the_requested_size(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for source, label in (("35 mm by 25 mm", "Fixed"), ("", "Historical")):
+                proposal = design.propose("Two-layer temperature sensor at 3.3 V " + source)
+                if not source:
+                    proposal.pop("compact_outline")
+                    proposal.pop("proposal_id")
+                    proposal["proposal_id"] = design.digest(proposal)
+                build = jobs.build(self.native, proposal, proposal["proposal_id"], Path(folder) / label)
+                self.assertEqual(build["outline"]["mode"], "fixed")
+                self.assertEqual(build["outline"]["size_mm"], [35, 25])
+
+    def test_native_compaction_moves_only_the_authorized_group(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            catalog = design.catalog()
+            recipe = catalog["designs"]["temperature"]
+            group, = recipe["compact_outline"]["movable_groups"]
+            for ref in group:
+                recipe["parts"][ref]["position"][0] += 10
+            file = root / "catalog.json"
+            file.write_text(json.dumps(catalog), encoding="utf-8")
+            proposal = design.propose("Temperature sensor at 3.3 V", catalog_file=file)
+            built = jobs.build(self.native, proposal, proposal["proposal_id"], root / "Moved group")
+            self.assertEqual(built["outline"]["size_mm"], [28, 20])
+            self.assertEqual(built["outline"]["moved_footprints"], sorted(group))
+            geometry = jobs.inspect(self.native, ProjectPaths(Path(built["project"])))["geometry"]
+            positions = {fp["ref"]: fp["at"] for fp in geometry["footprints"]}
+            self.assertEqual(positions["J1"], [24, 26])
+            for ref in group:
+                for axis in (0, 1):
+                    offset = positions[ref][axis] - positions["U1"][axis]
+                    self.assertAlmostEqual(offset, recipe["parts"][ref]["position"][axis]
+                                           - recipe["parts"]["U1"]["position"][axis])
 
 
 if __name__ == "__main__":

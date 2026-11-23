@@ -256,6 +256,39 @@ class ReferenceCorridorTests(unittest.TestCase):
                 self.assertEqual(launch.continuous_polygon, not missing)
                 self.assertTrue(all(sample[3] for sample in launch.samples if sample[0] < mm(0.89)))
 
+    def test_two_reference_voids_return_distinct_uncovered_locations_including_edge_only_gap(self):
+        from autopcb.native_worker import ReferenceScreen
+
+        board = self.board()
+        self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+        # A shallow notch exposes only the upper edge. A second gap spans the full trace.
+        self.fill(board, pcbnew.In1_Cu, [
+            [(-1, -1), (2.6, -1), (2.6, 1), (1.4, 1), (1.4, .045),
+             (.6, .045), (.6, 1), (-1, 1)],
+            [(3.4, -1), (5, -1), (5, 1), (3.4, 1)],
+        ])
+        track, = self.api().sample_reference(board, {"HS"}).tracks
+        spans = ReferenceScreen.gap_spans(track, [], pcbnew.F_Cu, pcbnew.In1_Cu)
+        self.assertEqual(len(spans), 2)
+        self.assertEqual(sum(s["missing_samples"] for s in spans), track.missing_samples)
+        self.assertLess(spans[0]["last_sample_mm"], spans[1]["first_sample_mm"])
+        self.assertAlmostEqual(spans[0]["position_mm"]["y"], .1)
+        self.assertAlmostEqual(spans[1]["position_mm"]["y"], 0)
+        for span in spans:
+            point = span["position_mm"]
+            self.assertIn((mm(point["x"]), mm(point["y"]), False, False), track.samples)
+            self.assertEqual(span["endpoint_pads"], [])
+
+    def test_separate_overlapping_reference_polygons_have_no_fabricated_gap_location(self):
+        board = self.board()
+        self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+        self.fill(board, pcbnew.In1_Cu, [[(-1, -1), (2.1, -1), (2.1, 1), (-1, 1)]])
+        self.fill(board, pcbnew.In1_Cu, [[(1.9, -1), (5, -1), (5, 1), (1.9, 1)]])
+        track, = self.api().sample_reference(board, {"HS"}).tracks
+        self.assertEqual(track.missing_samples, 0)
+        self.assertFalse(track.continuous_polygon)
+        self.assertEqual(track.missing_runs(), ())
+
     def test_inner_reference_switch_is_detected_even_if_other_plane_covers_it(self):
         api = self.api()
         board = self.board()

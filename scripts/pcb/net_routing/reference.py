@@ -59,7 +59,8 @@ class TrackReference:
     signal_layer: str
     reference_layer: str
     geometry: tuple[int, int, int, int, int]
-    samples: tuple[tuple[int, int, bool], ...]
+    # (x, y, covered by reference copper, inside the trace's own pad)
+    samples: tuple[tuple[int, int, bool, bool], ...]
     missing_samples: int
     continuous_polygon: bool
 
@@ -233,6 +234,8 @@ def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1,
 
     One polygon on one adjacent layer must cover all samples. Inner-layer
     signals reserve both neighbors; sampling chooses the best covered neighbor.
+    Trace copper inside a same-net pad on its own layer is part of that pad, not
+    an exposed line, so those samples never count as missing.
     This is not an impedance or return-current simulation.
     """
     if not isinstance(high_speed_nets, set) or any(not isinstance(name, str) or not name for name in high_speed_nets):
@@ -251,6 +254,10 @@ def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1,
                 polygons = zone.GetFilledPolysList(layer)
                 zones[layer].extend((zone.m_Uuid.AsString(), index, polygons)
                                     for index in range(polygons.OutlineCount()))
+    pads = {name: [] for name in high_speed_nets}
+    for pad in board.GetPads():
+        if pad.GetNetname() in pads:
+            pads[pad.GetNetname()].append(pad)
     reports = []
     unsupported = []
     for item in board.GetTracks():
@@ -280,18 +287,22 @@ def sample_reference(board, high_speed_nets: set[str], *, step_mm: float = 0.1,
                 px = round(x - dy / length * offset)
                 py = round(y + dx / length * offset)
                 points.append((px, py))
+        own = [pad for pad in pads[item.GetNetname()] if pad.IsOnLayer(layer)]
+        inside = [any(pad.HitTest(pcbnew.VECTOR2I(px, py)) for pad in own) for px, py in points]
         choices = []
         for order, reference in enumerate(references):
             samples = []
             common = None
-            for px, py in points:
+            for (px, py), in_pad in strict_zip(points, inside):
                 point = pcbnew.VECTOR2I(px, py)
                 covered = {(zone_id, number) for zone_id, number, poly in zones[reference]
                            if poly.Contains(point, number)}
-                samples.append((px, py, bool(covered)))
-                common = covered if common is None else common & covered
-            missing = sum(not sample[2] for sample in samples)
-            choices.append(((not bool(common), missing, order), reference, tuple(samples), missing, bool(common)))
+                samples.append((px, py, bool(covered), in_pad))
+                if not in_pad:
+                    common = covered if common is None else common & covered
+            missing = sum(not covered and not in_pad for _, _, covered, in_pad in samples)
+            continuous = common is None or bool(common)
+            choices.append(((not continuous, missing, order), reference, tuple(samples), missing, continuous))
         _, reference, samples, missing, continuous = min(choices, key=lambda choice: choice[0])
         reports.append(TrackReference(
             uid, item.GetNetname(), board.GetLayerName(layer), board.GetLayerName(reference),

@@ -193,10 +193,14 @@ class ReferenceScreen:
         x0, y0, x1, y1, _width = track.geometry
         stations = [track.samples[index:index + 3] for index in range(0, len(track.samples), 3)]
         spacing = math.hypot(x1 - x0, y1 - y0) / max(1, len(stations) - 1) / 1e6
-        missing = [index for index, station in enumerate(stations) if not all(point[2] for point in station)]
-        end = (x0, y0) if missing and sum(missing) / len(missing) < (len(stations) - 1) / 2 else (x1, y1)
+        missing = [index for index, station in enumerate(stations)
+                   if any(not covered and not in_pad for _, _, covered, in_pad in station)]
+        ends = ((x0, y0), (x1, y1))
+        if missing and sum(missing) / len(missing) > (len(stations) - 1) / 2:
+            ends = ends[::-1]
+        # Prefer the end nearer the gap; a short launch can put its gap past the middle.
         launch = next((f"{pad.GetParentFootprint().GetReference()}.{pad.GetNumber()}"
-                       for pad in self.board.GetPads()
+                       for end in ends for pad in self.board.GetPads()
                        if pad.GetNetname() == net and pad.HitTest(pcb.VECTOR2I(*end))), None)
         return {"unreferenced_mm": round(len(missing) * spacing, 3), "launch": launch}
 

@@ -232,6 +232,30 @@ class ReferenceCorridorTests(unittest.TestCase):
         self.assertGreater(after.tracks[0].missing_samples, 0)
         self.assertEqual(api.compare_reference(before, after).status, "degraded")
 
+    def test_trace_over_its_own_pad_is_not_counted_as_unreferenced(self):
+        api = self.api()
+        for plane_start, missing in ((1.2, 6), (0.9, 0)):
+            with self.subTest(plane_start=plane_start):
+                board = self.board()
+                self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+                self.fill(board, pcbnew.In1_Cu, [[(plane_start, -1), (5, -1), (5, 1), (plane_start, 1)]])
+                exposed = api.sample_reference(board, {"HS"}).tracks[0].missing_samples
+                footprint = pcbnew.FOOTPRINT(board)
+                pad = pcbnew.PAD(footprint)
+                pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+                pad.SetSize(pcbnew.VECTOR2I(mm(2), mm(2)))
+                pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+                pad.SetLayerSet(pcbnew.LSET.FrontMask())
+                pad.SetNetCode(board.FindNet("HS").GetNetCode())
+                footprint.Add(pad)
+                board.Add(footprint)
+                launch = api.sample_reference(board, {"HS"}).tracks[0]
+                # Only trace between the pad edge and the plane is exposed.
+                self.assertEqual(launch.missing_samples, missing)
+                self.assertGreater(exposed, missing)
+                self.assertEqual(launch.continuous_polygon, not missing)
+                self.assertTrue(all(sample[3] for sample in launch.samples if sample[0] < mm(0.89)))
+
     def test_inner_reference_switch_is_detected_even_if_other_plane_covers_it(self):
         api = self.api()
         board = self.board()

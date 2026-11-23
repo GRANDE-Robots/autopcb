@@ -10,6 +10,8 @@ Keep requirements and reviewed engineering evidence in `data/`. Use `data/projec
 | Controlled release inputs | `release_inputs/` with its `INPUT_MANIFEST.json` and all files it lists |
 | Assembly decisions and qualifications | `ASSEMBLY_POLICY.json`, `ASSEMBLY_ROTATION_OFFSETS.json`, and the evidence named by those policies |
 
+For paired signals, use the [layer-specific geometry review](../docs/impedance-geometry.md).
+
 Record the operating conditions and evidence behind each requirement. Tie reviewed limits and release inputs to the exact native project. Keep generated BOMs, placement files, and fabrication packages in `results/`.
 
 ## Schematic and silkscreen

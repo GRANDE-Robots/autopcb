@@ -2261,7 +2261,7 @@ class RouteOptimizerTests(unittest.TestCase):
         import pcbnew
 
         scopes = {
-            "locked": (MoveScope(), "is locked"),
+            "locked": (MoveScope.from_config({"locked": False}), "is locked"),
             "through_hole": (MoveScope.from_config({"through_hole": False}), "through-hole"),
             "front_silk": (MoveScope.from_config({"sides": ["bottom"]}), "top silkscreen"),
         }

@@ -16,7 +16,7 @@ from unittest import mock
 from core import toolchain
 from verification.inspect_kicad_toolchain import main
 
-CLI = toolchain._executable(None)
+CLI = toolchain.kicad_cli.locate(None)
 CLI_AVAILABLE = CLI is not None and CLI.is_file()
 
 
@@ -65,9 +65,10 @@ class ToolchainTests(unittest.TestCase):
                 ("sch", "erc", "--help"): (True, "--format"),
             }[tuple(args)]
 
-        with mock.patch("core.toolchain._run", side_effect=run):
+        with mock.patch("core.toolchain.ToolchainInspector.run", side_effect=run):
             with mock.patch(
-                "core.toolchain._installed", side_effect=lambda name: name == "pcbnew"
+                "core.toolchain.ToolchainInspector.installed",
+                side_effect=lambda name: name == "pcbnew",
             ):
                 with mock.patch("core.toolchain.shutil.which", return_value="java.exe"):
                     result = toolchain.inspect_toolchain(cli=cli, freerouting_jar=jar)

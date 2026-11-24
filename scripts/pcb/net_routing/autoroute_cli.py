@@ -10,7 +10,7 @@ import argparse
 import time
 from pathlib import Path
 
-from core.console import Console, add_output_arguments, progress_heartbeat
+from core.console import Console, ProgressHeartbeat, add_output_arguments
 from core.pcb_io import quiet_duplicate_image_handlers
 from pcb.net_routing.presentation import (
     RoutingDisplay,
@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             started = time.monotonic()
             try:
                 with (
-                    progress_heartbeat(display),
+                    ProgressHeartbeat(display),
                     limit_resources(memory_gib=args.memory_gib, progress=display),
                 ):
                     result = run_native(
@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "run":
             with (
-                progress_heartbeat(display),
+                ProgressHeartbeat(display),
                 limit_resources(
                     memory_gib=args.memory_gib,
                     wait_seconds=args.wait_for_memory,
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 console.result(result, show_run)
                 return 0 if result["status"] in {"paused", "preview_zero_opens"} else 2
-        with progress_heartbeat(display):
+        with ProgressHeartbeat(display):
             report = prepare_project(args.project, progress=display)
         console.result(report, show_preparation)
         return 2 if args.command == "verify" and report["completion_issues"] else 0

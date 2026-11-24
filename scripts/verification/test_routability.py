@@ -1,4 +1,8 @@
-"""Proofs that no route joins pads while every part stays put."""
+"""test_routability.py: check the proofs that no route joins pads while every part stays
+put.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -18,7 +22,19 @@ class WallRingBuilder:
     """Builds a ring of foreign-net pads that seals a point."""
 
     def __call__(self, board, center=(2, 2), radius=1.3, count=8, size=1.0):
-        """Through-hole pads of another net around ``center``, closed on every layer."""
+        """Add a ring of through-hole pads of another net around a point.
+
+        The pads close the ring on every copper layer.
+
+        Inputs:
+            board: The board that receives the net OTHER and the wall parts.
+            center: Centre of the ring in mm.
+            radius: Radius of the ring in mm.
+            count: Number of wall parts.
+            size: Pad diameter in mm.
+        Outputs:
+            The wall parts, each with one pad, named W1 and up.
+        """
         board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
         walls = []
         for index in range(count):
@@ -49,7 +65,16 @@ ring = WallRingBuilder()
 
 
 class RoutabilityTests(unittest.TestCase):
+    """Checks that the proof reports unroutable nets with their blocking parts."""
+
     def board(self, folder):
+        """Load the fixture board saved in a folder.
+
+        Inputs:
+            folder: Folder that receives the board file.
+        Outputs:
+            The loaded board.
+        """
         return pcbnew.LoadBoard(
             str(boards.RouteOptimizerTests.make_board(Path(folder)))
         )

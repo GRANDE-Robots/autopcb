@@ -197,7 +197,7 @@ class ArmTests(unittest.TestCase):
         calls = []
 
         def preview(self, **kwargs):
-            """Record the preview request; report no opens only when placement may move."""
+            """Record the preview request; report no opens if placement may move."""
             calls.append(kwargs)
             return {
                 "status": "preview",

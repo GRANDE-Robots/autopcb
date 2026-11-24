@@ -1,4 +1,8 @@
-"""Physical edit costs, coordinated copper repair, and native branch anchors."""
+"""test_autoroute_rework.py: check physical edit costs, coordinated copper repair and
+native branch anchors.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import hashlib
 import tempfile
@@ -31,6 +35,16 @@ class TrackAdder:
     """Adds a copper track to a board."""
 
     def __call__(self, board, start, end, name="SIGNAL"):
+        """Add a 0.25 mm F.Cu track to a board.
+
+        Inputs:
+            board: The board that receives the track.
+            start: Start point in mm.
+            end: End point in mm.
+            name: Name of the net the track belongs to.
+        Outputs:
+            The track.
+        """
         track = pcbnew.PCB_TRACK(board)
         track.SetStart(pcbnew.VECTOR2I(*[mm(x) for x in start]))
         track.SetEnd(pcbnew.VECTOR2I(*[mm(x) for x in end]))
@@ -45,6 +59,8 @@ add_track = TrackAdder()
 
 
 class ReworkTests(unittest.TestCase):
+    """Checks removed-copper costs, coordinated repair and native branch anchors."""
+
     def test_runner_separates_protected_copper_from_high_speed_reference_nets(self):
         from pcb.net_routing import runner
 
@@ -239,6 +255,11 @@ class ReworkTests(unittest.TestCase):
         clock = [0.0]
 
         def slow_search(*args, **kwargs):
+            """Stand in for a whole-net search that uses up most of the net's time.
+
+            The fake clock advances to 29 s, checking the budget each second, and no
+            plan is found.
+            """
             for second in range(1, 30):
                 clock[0] = float(second)
                 budget.check()
@@ -271,6 +292,19 @@ class ReworkTests(unittest.TestCase):
         windows = []
 
         def search(net, prior, engine, budget, **kwargs):
+            """Record the search window; find a plan only on the second call.
+
+            The x extent of the net's search window is recorded.
+
+            Inputs:
+                net: The net being searched.
+                prior: Plans already made.
+                engine: The backend whose settings give the search window.
+                budget: The search budget.
+                kwargs: Ignored.
+            Outputs:
+                No plans on the first call, then one plan with an empty route.
+            """
             setting = engine.settings[net.name]
             windows.append((setting.lower.x, setting.upper.x))
             return () if len(windows) == 1 else (NetPlan(net.name, f.route()),)
@@ -340,6 +374,19 @@ class ReworkTests(unittest.TestCase):
         windows = []
 
         def search(net, prior, engine, budget, **kwargs):
+            """Record the search window; find a plan only on the second call.
+
+            The x extent of the net's search window is recorded.
+
+            Inputs:
+                net: The net being searched.
+                prior: Plans already made.
+                engine: The backend whose settings give the search window.
+                budget: The search budget.
+                kwargs: Ignored.
+            Outputs:
+                No plans on the first call, then one plan with an empty route.
+            """
             setting = engine.settings[net.name]
             windows.append((setting.lower.x, setting.upper.x))
             return () if len(windows) == 1 else (NetPlan(net.name, f.route()),)
@@ -1267,6 +1314,14 @@ class ReworkTests(unittest.TestCase):
         old = RemovedCopper(tracks=((f.segment((0, 0), (10, 0)), mm(0.2)),))
 
         def score(route, width=0.2):
+            """Score a route against the removed copper with the default prices.
+
+            Inputs:
+                route: The proposed copper.
+                width: Track width of the route in mm.
+            Outputs:
+                The rework score of a route with 0.6 mm vias and 0.3 mm drills.
+            """
             return old.score(
                 route,
                 width=mm(width),
@@ -1348,6 +1403,13 @@ class ReworkTests(unittest.TestCase):
         )
 
         def penalty(route):
+            """Price the rework of a route with a length price of 10.
+
+            Inputs:
+                route: The proposed copper, with 0.2 mm tracks.
+            Outputs:
+                The rework cost.
+            """
             return old.score(
                 route,
                 width=mm(0.2),

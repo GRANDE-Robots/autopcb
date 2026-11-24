@@ -1,4 +1,7 @@
-"""Exercise route simplification without touching the saved PCB."""
+"""test_route_smoothing.py: check route simplification without touching the saved PCB.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import hashlib
 import tempfile
@@ -27,6 +30,14 @@ class PointBuilder:
     """Builds a point from x and y in millimetres."""
 
     def __call__(self, x, y):
+        """Build a point from x and y in mm.
+
+        Inputs:
+            x: Horizontal position in mm.
+            y: Vertical position in mm.
+        Outputs:
+            The point in nm.
+        """
         return Point(mm(x), mm(y))
 
 
@@ -34,9 +45,15 @@ point = PointBuilder()
 
 
 class SimpleRouteBuilder:
-    """Builds a back-copper route with bends that a clear path makes unnecessary."""
+    """Builds a B.Cu route with a detour between two pad positions."""
 
     def __call__(self):
+        """Build a route with a detour that a clear path makes unnecessary.
+
+        Outputs:
+            A route of five B.Cu segments through (1, 1), (3, 1), (4, 2), (5, 2), (6, 1)
+            and (8, 1) mm, with no vias.
+        """
         pts = [
             point(1, 1),
             point(3, 1),
@@ -63,6 +80,16 @@ class GridRouterBuilder:
     """Builds a grid router over a 10 mm square for the net N."""
 
     def __call__(self, obstacles=(), **kwargs):
+        """Build the grid router that the simplification tests search with.
+
+        Inputs:
+            obstacles: Obstacles on the grid.
+            kwargs: Further arguments of the router.
+        Outputs:
+            A router for the net N on B.Cu and F.Cu over (0, 0) mm to (10, 10) mm with a
+            0.25 mm step, 0.2 mm tracks and clearance, 0.6 mm vias with 0.3 mm drills,
+            gentle turns and no staircases.
+        """
         return GridRouter(
             point(0, 0),
             point(10, 10),
@@ -85,7 +112,13 @@ router = GridRouterBuilder()
 
 
 class RouteSmoothingTests(unittest.TestCase):
+    """Checks that simplification removes bends only where the copper stays valid."""
+
     def setUp(self):
+        """Create the net N with a pad at (1, 1) mm and one at (8, 1) mm on B.Cu.
+
+        Sets the two pad sites, the net and a 30 s search budget.
+        """
         self.start, self.end = Site(point(1, 1), "B.Cu"), Site(point(8, 1), "B.Cu")
         self.net = Net(
             "N",

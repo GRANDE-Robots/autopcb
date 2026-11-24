@@ -17,7 +17,7 @@ from pcb.net_routing import krt_adapter
 
 
 class KrtAdapterTests(unittest.TestCase):
-    """Checks the command, tool identity and result handling of the KRT router adapter."""
+    """Checks the command, tool identity and results of the KRT router adapter."""
 
     def test_application_control_refusal_is_not_reported_as_missing_python_packages(
         self,

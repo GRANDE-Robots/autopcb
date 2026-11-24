@@ -1,9 +1,11 @@
-"""Apply supplied electrical limits to geometric routing proposals.
+"""route_constraints.py: apply supplied electrical limits to geometric routing proposals.
 
 The caller supplies conservative, documented limits for the particular branch,
 stackup and environment. This module checks those limits; it does not derive
 ampacity or insulation ratings from current and voltage alone, and a passing
 result is not an electrical, thermal, insulation or manufacturing approval.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
@@ -19,40 +21,17 @@ class ElectricalConstraintViolation(ValueError):
     """A proposed route fails a supplied electrical limit."""
 
 
-def _object(value: object, allowed: set[str], name: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    unknown = set(value) - allowed
-    if unknown:
-        raise ValueError(f"Unknown {name} fields: {', '.join(sorted(unknown))}")
-    return value
-
-
-def _positive(value: object, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a positive finite number")
-    result = float(value)
-    if not math.isfinite(result) or result <= 0:
-        raise ValueError(f"{name} must be a positive finite number")
-    return result
-
-
-def _dimension(value: object, name: str) -> int:
-    _positive(value, name)
-    result = mm(value)
-    if result <= 0:
-        raise ValueError(f"{name} must be at least one nanometre")
-    return result
-
-
-def _basis(value: object, name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{name} needs a nonempty source or assessment basis")
-    return value.strip()
-
-
 @dataclass(frozen=True)
 class TrackLimit:
+    """Supplied limits of the track on one copper layer.
+
+    Inputs:
+        minimum_width: Narrowest track in nanometres that carries the rated current.
+        maximum_current_a: Current in amperes the track may carry.
+        copper_thickness: Copper thickness in nanometres that the rating assumes.
+        basis: Source of the rating.
+    """
+
     minimum_width: int
     maximum_current_a: float
     copper_thickness: int
@@ -61,6 +40,17 @@ class TrackLimit:
 
 @dataclass(frozen=True)
 class ViaLimit:
+    """Supplied limits of each via.
+
+    Inputs:
+        minimum_size: Smallest via diameter in nanometres.
+        minimum_drill: Smallest drill in nanometres.
+        plating_thickness: Plating thickness in nanometres that the rating assumes.
+        maximum_current_a: Current in amperes each via may carry.
+        maximum_resistance_ohm: Resistance in ohms charged for each via.
+        basis: Source of the rating.
+    """
+
     minimum_size: int
     minimum_drill: int
     plating_thickness: int
@@ -80,32 +70,56 @@ class ExistingVia:
     through: bool
 
 
-def via_sizes_meet(
-    sizes: tuple[tuple[str, int], ...],
-    required_layers,
-    *,
-    minimum_size: int = 0,
-    exact_size: int | None = None,
-) -> bool:
-    """Check every observed annulus on the real stack, not all possible layers."""
-    observed = dict(sizes)
-    return (
-        len(observed) == len(sizes)
-        and {"F.Cu", "B.Cu", *required_layers} <= observed.keys()
-        and all(
-            layer in COPPER_LAYERS
-            and isinstance(size, int)
-            and not isinstance(size, bool)
-            and size > 0
-            and size >= minimum_size
-            and (exact_size is None or size == exact_size)
-            for layer, size in observed.items()
+class ViaSizesMeet:
+    """Checks the annulus sizes of a via on every layer of its stack."""
+
+    def __call__(
+        self,
+        sizes: tuple[tuple[str, int], ...],
+        required_layers,
+        *,
+        minimum_size: int = 0,
+        exact_size: int | None = None,
+    ) -> bool:
+        """Check every observed annulus on the real stack, not all possible layers."""
+        observed = dict(sizes)
+        return (
+            len(observed) == len(sizes)
+            and {"F.Cu", "B.Cu", *required_layers} <= observed.keys()
+            and all(
+                layer in COPPER_LAYERS
+                and isinstance(size, int)
+                and not isinstance(size, bool)
+                and size > 0
+                and size >= minimum_size
+                and (exact_size is None or size == exact_size)
+                for layer, size in observed.items()
+            )
         )
-    )
+
+
+via_sizes_meet = ViaSizesMeet()
 
 
 @dataclass(frozen=True)
 class ElectricalConstraints:
+    """Electrical limits supplied for the branch a route belongs to.
+
+    Inputs:
+        current_a: Worst credible branch current in amperes.
+        current_basis: Source of that current.
+        voltage_difference_v: Worst-case voltage difference to neighboring nets in volts.
+        voltage_basis: Source of that voltage.
+        minimum_clearance: Smallest electrical clearance in nanometres.
+        clearance_voltage_v: Voltage difference in volts the clearance is rated for.
+        clearance_basis: Source of the clearance rating.
+        maximum_voltage_drop_v: Largest voltage drop in volts along the route.
+        resistivity_ohm_mm: Copper resistivity in ohm millimetres.
+        voltage_drop_basis: Source of the voltage-drop budget.
+        tracks: Track limit of each permitted copper layer.
+        via: Limit of each via, or None when no via is permitted.
+    """
+
     current_a: float
     current_basis: str
     voltage_difference_v: float
@@ -119,9 +133,67 @@ class ElectricalConstraints:
     tracks: Mapping[str, TrackLimit]
     via: ViaLimit | None
 
+    @staticmethod
+    def _object(value: object, allowed: set[str], name: str) -> dict[str, Any]:
+        """The value as a dict.
+
+        Raises ValueError unless it is an object whose fields are all in allowed.
+        """
+        if not isinstance(value, dict):
+            raise ValueError(f"{name} must be an object")
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError(f"Unknown {name} fields: {', '.join(sorted(unknown))}")
+        return value
+
+    @staticmethod
+    def _positive(value: object, name: str) -> float:
+        """The value as a float.
+
+        Raises ValueError unless it is a finite number above zero; booleans are refused.
+        """
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be a positive finite number")
+        result = float(value)
+        if not math.isfinite(result) or result <= 0:
+            raise ValueError(f"{name} must be a positive finite number")
+        return result
+
+    @classmethod
+    def _dimension(cls, value: object, name: str) -> int:
+        """Convert a length in millimetres to nanometres.
+
+        Raises ValueError unless the value is a positive finite number with at most
+        nanometre precision.
+        """
+        cls._positive(value, name)
+        result = mm(value)
+        if result <= 0:
+            raise ValueError(f"{name} must be at least one nanometre")
+        return result
+
+    @staticmethod
+    def _basis(value: object, name: str) -> str:
+        """The value stripped of surrounding space.
+
+        Raises ValueError unless it is a nonempty string.
+        """
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{name} needs a nonempty source or assessment basis")
+        return value.strip()
+
     @classmethod
     def from_config(cls, value: object) -> ElectricalConstraints:
-        data = _object(
+        """Build constraints from the electrical object of a routing configuration.
+
+        Inputs:
+            value: Object with dimensions in millimetres, as route_cli documents.
+        Outputs:
+            The constraints. Raises ValueError for an unknown or missing field, an
+            unknown copper layer, a non-positive or malformed number, an empty basis,
+            or a via minimum size that does not exceed its minimum drill.
+        """
+        data = cls._object(
             value,
             {
                 "current_a",
@@ -135,12 +207,12 @@ class ElectricalConstraints:
             },
             "electrical constraints",
         )
-        clearance = _object(
+        clearance = cls._object(
             data.get("clearance"),
             {"min_mm", "max_voltage_difference_v", "basis"},
             "electrical clearance",
         )
-        drop = _object(
+        drop = cls._object(
             data.get("voltage_drop"),
             {"max_v", "copper_resistivity_ohm_mm", "basis"},
             "voltage drop",
@@ -152,20 +224,22 @@ class ElectricalConstraints:
         for layer, item in raw_tracks.items():
             if layer not in COPPER_LAYERS:
                 raise ValueError(f"Unknown electrical track layer: {layer}")
-            entry = _object(
+            entry = cls._object(
                 item,
                 {"min_width_mm", "max_current_a", "copper_thickness_mm", "basis"},
                 f"electrical track {layer}",
             )
             tracks[layer] = TrackLimit(
-                _dimension(entry.get("min_width_mm"), "track minimum width"),
-                _positive(entry.get("max_current_a"), "track maximum current"),
-                _dimension(entry.get("copper_thickness_mm"), "track copper thickness"),
-                _basis(entry.get("basis"), "track limit"),
+                cls._dimension(entry.get("min_width_mm"), "track minimum width"),
+                cls._positive(entry.get("max_current_a"), "track maximum current"),
+                cls._dimension(
+                    entry.get("copper_thickness_mm"), "track copper thickness"
+                ),
+                cls._basis(entry.get("basis"), "track limit"),
             )
         via = None
         if data.get("via") is not None:
-            entry = _object(
+            entry = cls._object(
                 data["via"],
                 {
                     "min_size_mm",
@@ -178,32 +252,36 @@ class ElectricalConstraints:
                 "electrical via",
             )
             via = ViaLimit(
-                _dimension(entry.get("min_size_mm"), "via minimum size"),
-                _dimension(entry.get("min_drill_mm"), "via minimum drill"),
-                _dimension(entry.get("plating_thickness_mm"), "via plating thickness"),
-                _positive(entry.get("max_current_a"), "via maximum current"),
-                _positive(entry.get("max_resistance_ohm"), "via maximum resistance"),
-                _basis(entry.get("basis"), "via limit"),
+                cls._dimension(entry.get("min_size_mm"), "via minimum size"),
+                cls._dimension(entry.get("min_drill_mm"), "via minimum drill"),
+                cls._dimension(
+                    entry.get("plating_thickness_mm"), "via plating thickness"
+                ),
+                cls._positive(entry.get("max_current_a"), "via maximum current"),
+                cls._positive(
+                    entry.get("max_resistance_ohm"), "via maximum resistance"
+                ),
+                cls._basis(entry.get("basis"), "via limit"),
             )
             if via.minimum_size <= via.minimum_drill:
                 raise ValueError(
                     "Via minimum size must be larger than its minimum drill"
                 )
         return cls(
-            _positive(data.get("current_a"), "route current"),
-            _basis(data.get("current_basis"), "route current"),
-            _positive(
+            cls._positive(data.get("current_a"), "route current"),
+            cls._basis(data.get("current_basis"), "route current"),
+            cls._positive(
                 data.get("voltage_difference_v"), "worst-case voltage difference"
             ),
-            _basis(data.get("voltage_basis"), "voltage difference"),
-            _dimension(clearance.get("min_mm"), "minimum electrical clearance"),
-            _positive(
+            cls._basis(data.get("voltage_basis"), "voltage difference"),
+            cls._dimension(clearance.get("min_mm"), "minimum electrical clearance"),
+            cls._positive(
                 clearance.get("max_voltage_difference_v"), "clearance voltage limit"
             ),
-            _basis(clearance.get("basis"), "clearance limit"),
-            _positive(drop.get("max_v"), "maximum voltage drop"),
-            _positive(drop.get("copper_resistivity_ohm_mm"), "copper resistivity"),
-            _basis(drop.get("basis"), "voltage drop limit"),
+            cls._basis(clearance.get("basis"), "clearance limit"),
+            cls._positive(drop.get("max_v"), "maximum voltage drop"),
+            cls._positive(drop.get("copper_resistivity_ohm_mm"), "copper resistivity"),
+            cls._basis(drop.get("basis"), "voltage drop limit"),
             tracks,
             via,
         )
@@ -211,6 +289,17 @@ class ElectricalConstraints:
     def eligible_layers(
         self, layers: list[str], width: int, clearance: int
     ) -> tuple[tuple[str, ...], dict[str, str]]:
+        """Split the requested layers by whether the route meets their supplied track limits.
+
+        Inputs:
+            layers: Requested copper layers.
+            width: Track width in nanometres.
+            clearance: Route clearance in nanometres.
+        Outputs:
+            The eligible layers in order and a dict of excluded layer to reason.
+            Raises ValueError when the clearance is below the supplied minimum, the
+            voltage difference exceeds the clearance rating, or no layer is eligible.
+        """
         if clearance < self.minimum_clearance:
             raise ValueError("Route clearance is below the supplied electrical minimum")
         if self.voltage_difference_v > self.clearance_voltage_v:
@@ -242,6 +331,20 @@ class ElectricalConstraints:
         drill: int,
         existing: tuple[ExistingVia, ...],
     ) -> list[dict[str, Any]]:
+        """Check each via of a route against the supplied via limit.
+
+        Inputs:
+            route: Route to check.
+            net: Net being routed.
+            size: Diameter of each new via in nanometres.
+            drill: Drill of each new via in nanometres.
+            existing: Existing vias of the saved board.
+        Outputs:
+            One record per new or reused via, with dimensions in millimetres; an
+            empty list when the route has no via. Raises ElectricalConstraintViolation
+            when no via limit is supplied, the current exceeds it, or a via is too
+            small or its reused geometry is not established.
+        """
         if not route.vias and not route.reused_vias:
             return []
         limit = self.via
@@ -355,6 +458,16 @@ class ElectricalConstraints:
     def eligible_existing_vias(
         self, existing: tuple[ExistingVia, ...], net: str
     ) -> set[Point]:
+        """Positions of existing vias that the route may reuse.
+
+        Inputs:
+            existing: Existing vias of the saved board.
+            net: Net being routed.
+        Outputs:
+            Positions of through vias of the net that meet the via limit and are the
+            only via of the net at their position; empty when there is no via limit or
+            the current exceeds it.
+        """
         limit = self.via
         if limit is None or self.current_a > limit.maximum_current_a:
             return set()
@@ -380,6 +493,17 @@ class ElectricalConstraints:
         via_checks: list[dict[str, Any]],
         voltage_drop: dict[str, Any],
     ) -> dict[str, Any]:
+        """The electrical assessment record of an accepted route.
+
+        Inputs:
+            layers: Eligible layers the route may use.
+            excluded: Excluded layer and the reason.
+            via_checks: Result of check_vias.
+            voltage_drop: Result of check_voltage_drop.
+        Outputs:
+            A record of the supplied limits, with dimensions in millimetres, and the
+            limits of this screening.
+        """
         return {
             "status": "within_supplied_limits",
             "current_a": self.current_a,

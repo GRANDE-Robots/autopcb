@@ -129,7 +129,7 @@ class ExportContractTests(unittest.TestCase):
                 assert_current_inputs(p, s, {})
 
     def test_replacing_generated_outputs_preserves_controlled_inputs(self):
-        from release.stage_release_inputs import stage
+        from release.stage_release_inputs import ReleaseInputs
 
         with tempfile.TemporaryDirectory() as d:
             p = Path(d).resolve()
@@ -144,7 +144,7 @@ class ExportContractTests(unittest.TestCase):
                 "05_BUILD_AND_ASSEMBLY.md",
             ]:
                 (m / name).write_text("controlled old content")
-            control = stage(p)
+            control = ReleaseInputs.stage(p)
             deps = {f.relative_to(p).as_posix(): sha(f) for f in control.iterdir()}
             for f in m.rglob("*"):
                 if f.is_file():

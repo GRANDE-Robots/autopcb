@@ -3,18 +3,8 @@
  "missing_header": [],
  "missing_docstrings": [],
  "missing_readme": [
-  ".github/workflows",
-  "config",
-  "packaging",
-  "scripts",
-  "scripts/autopcb",
-  "scripts/core",
-  "scripts/pcb",
-  "scripts/pcb/net_routing",
-  "scripts/release",
-  "scripts/review",
-  "scripts/sch",
-  "scripts/utils",
   "scripts/verification"
- ]
+ ],
+ "readme_structure": [],
+ "root_readme_sections": []
 }

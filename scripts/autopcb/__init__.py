@@ -1,1 +1,4 @@
-"""AutoPCB's shared desktop and CLI workflows."""
+"""__init__.py: the AutoPCB package, shared desktop and command-line workflows.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""

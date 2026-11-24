@@ -1,4 +1,11 @@
-"""Measure successive routing implementations on isolated copies of the same design."""
+"""benchmark.py: measure routing arms on isolated copies of one design.
+
+Each arm runs the routing engine from a given scripts folder on a private copy of
+the project under one shared budget. The report records wall time, sampled peak
+memory and open-connection counts so two engines or two settings can be compared.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -37,6 +44,16 @@ class Benchmark:
         arms: tuple,
         storage: ProjectStorage | None = None,
     ):
+        """Prepare a private copy of the project for the arms.
+
+        Inputs:
+            native: KiCad toolchain that runs each routing process.
+            project: Project to copy.
+            budget: Rounds, seconds per batch and memory in GiB shared by every arm.
+            arms: (label, scripts folder, recovery override or None) triples, run in order.
+            storage: Project storage holding the reviewed inputs; the project's own
+                storage when None.
+        """
         self.native, self.budget, self.arms = native, budget, arms
         self.copy = PrivateCopy(project, storage or ProjectStorage(project.root))
 
@@ -83,6 +100,13 @@ class Benchmark:
 
     @staticmethod
     def _peak_rss(process: subprocess.Popen) -> int:
+        """Poll a running process until it exits and report its peak memory.
+
+        Outputs:
+            The highest summed resident set size, in bytes, of the process and its
+            children, sampled every 0.2 s. When the process vanishes before it can be
+            sampled, this waits for it and returns what was sampled so far.
+        """
         peak = 0
         try:
             owner = psutil.Process(process.pid)
@@ -100,6 +124,18 @@ class Benchmark:
         return peak
 
     def _measure(self, label: str, scripts: Path, recovery: dict | None) -> dict:
+        """Run one arm's routing preview on a fresh private copy and record the outcome.
+
+        Inputs:
+            label: Name of the arm in the report.
+            scripts: Scripts folder used as PYTHONPATH and working directory.
+            recovery: Recovery settings overriding the copy's policy, or None.
+        Outputs:
+            A record with the arm label, status, diagnostic, wall time in seconds, sampled
+            peak memory in bytes, saved and preview open counts, the last progress sample
+            and the last check result. When the process prints no JSON the status is
+            ``unavailable`` and the diagnostic is the tail of its error output.
+        """
         with (
             self.copy.open(recovery) as (working, _),
             tempfile.TemporaryFile() as output,
@@ -175,6 +211,13 @@ class Benchmark:
         }
 
     def run(self) -> dict:
+        """Measure every arm in order.
+
+        Outputs:
+            A routing_benchmark report with the shared input hashes, the budget, the
+            toolchain and each arm's record. Its status is ``measured`` when every arm
+            reported a preview open count and ``blocked`` otherwise.
+        """
         results = [self._measure(*arm) for arm in self.arms]
         return {
             "schema_version": 1,

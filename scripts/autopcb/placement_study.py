@@ -1,4 +1,11 @@
-"""Compare fixed placement with permitted moves under one search budget."""
+"""placement_study.py: compare fixed placement with permitted moves under one search budget.
+
+Each arm routes a private copy of the board, applies the result there and reads
+it back through KiCad. The verdict keeps the smallest verified board and counts
+what moving parts cost. Lengths are mm and areas are mm squared.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -19,6 +26,8 @@ MOVE_TOLERANCE_MM = 1e-3
 
 @dataclass(frozen=True)
 class BoardMetrics:
+    """Board area, track length, via count and part poses read from inspected geometry."""
+
     area_mm2: float
     track_length_mm: float
     via_count: int
@@ -26,6 +35,14 @@ class BoardMetrics:
 
     @classmethod
     def from_geometry(cls, geometry: dict) -> BoardMetrics:
+        """Measure the geometry that ``inspect`` reports.
+
+        Inputs:
+            geometry: Inspect geometry with bounds, tracks and footprints.
+        Outputs:
+            The area of the bounds, the length of the tracks that are not vias, the via
+            count, and the (x, y, layer) of every footprint by reference.
+        """
         (x0, y0), (x1, y1) = geometry["bounds"]
         tracks = geometry["tracks"]
         return cls(
@@ -39,6 +56,15 @@ class BoardMetrics:
         )
 
     def moved_from(self, before: BoardMetrics) -> list[dict]:
+        """Find the parts that moved or changed side since an earlier measurement.
+
+        Inputs:
+            before: Metrics of the earlier board.
+        Outputs:
+            A record of reference, shift in mm and side change for every part whose shift
+            exceeds MOVE_TOLERANCE_MM or whose layer changed, sorted by reference. Parts
+            missing from the earlier board are skipped.
+        """
         moved = []
         for ref, (x, y, layer) in sorted(self.poses.items()):
             old = before.poses.get(ref)
@@ -56,6 +82,7 @@ class BoardMetrics:
         return moved
 
     def as_dict(self) -> dict:
+        """The area, track length and via count as report fields, without poses."""
         return {
             "board_area_mm2": self.area_mm2,
             "track_length_mm": self.track_length_mm,
@@ -65,6 +92,8 @@ class BoardMetrics:
 
 @dataclass(frozen=True)
 class ArmResult:
+    """What one arm of the study produced, and whether its saved board passed verification."""
+
     name: str
     preview: dict
     metrics: BoardMetrics
@@ -76,10 +105,12 @@ class ArmResult:
 
     @property
     def passes(self) -> bool:
+        """Whether the preview was applied and verification found zero opens and no findings."""
         return self.applied and self.verified_opens == 0 and self.native_passed
 
     @property
     def rank(self) -> tuple:
+        """Sort key where smaller is better: area, moved part count, track length, vias."""
         return (
             self.metrics.area_mm2,
             len(self.moved_parts),
@@ -88,6 +119,13 @@ class ArmResult:
         )
 
     def added_to(self, base: BoardMetrics) -> dict:
+        """What this arm added to a base board.
+
+        Inputs:
+            base: Metrics of the board to compare with.
+        Outputs:
+            The extra track length in mm, the extra vias and the moved part count.
+        """
         return {
             "track_length_mm": round(
                 self.metrics.track_length_mm - base.track_length_mm, 6
@@ -97,6 +135,7 @@ class ArmResult:
         }
 
     def as_dict(self) -> dict:
+        """The arm as a report record, with its metrics but not its part poses."""
         return {
             "arm": self.name,
             "status": self.preview.get("status"),
@@ -116,10 +155,16 @@ class Verdict:
     """Keep the smallest verified board and measure what moving cost."""
 
     def __init__(self, fixed: ArmResult, moves: ArmResult, original: BoardMetrics):
+        """Inputs:
+        fixed: Result of the arm that kept placement.
+        moves: Result of the arm that could move parts.
+        original: Metrics of the board before routing.
+        """
         self.fixed, self.moves, self.original = fixed, moves, original
 
     @property
     def fixed_stalled(self) -> bool:
+        """Whether the fixed arm did not pass and still had open connections."""
         opens = (
             self.fixed.verified_opens
             or self.fixed.preview.get("best_preview_opens")
@@ -129,6 +174,7 @@ class Verdict:
 
     @property
     def kept(self) -> ArmResult | None:
+        """The passing arm with the smallest rank, or None when neither arm passes."""
         return min(
             (arm for arm in (self.fixed, self.moves) if arm.passes),
             key=lambda a: a.rank,
@@ -136,6 +182,13 @@ class Verdict:
         )
 
     def as_dict(self) -> dict:
+        """The verdict as a report record.
+
+        Outputs:
+            The kept arm, whether the fixed arm stalled, whether the moving arm reached
+            zero opens, whether both held (``criterion_met``), and what moving cost against
+            the original and the fixed result when those arms passed.
+        """
         kept = self.kept
         both = self.fixed.passes and self.moves.passes
         return {
@@ -161,6 +214,13 @@ class StudyArm:
         *,
         allow_placement: bool,
     ):
+        """Inputs:
+        native: KiCad toolchain.
+        copy: Private copy of the project to route.
+        budget: Search budget.
+        allow_placement: Let the router move parts. The arm is named ``moves`` then,
+            and ``fixed`` otherwise.
+        """
         self.native, self.copy, self.budget, self.allow_placement = (
             native,
             copy,
@@ -170,11 +230,20 @@ class StudyArm:
         self.name = "moves" if allow_placement else "fixed"
 
     def measure(self, working: ProjectPaths) -> BoardMetrics:
+        """Inspect a working copy and measure its board."""
         return BoardMetrics.from_geometry(
             jobs.inspect(self.native, working)["geometry"]
         )
 
     def __call__(self, original: BoardMetrics) -> ArmResult:
+        """Route a private copy, apply the best preview there and verify it.
+
+        Inputs:
+            original: Metrics of the board before routing.
+        Outputs:
+            The arm's result. A preview without a run ID or open count is not applied, and
+            a refused apply is recorded as ``apply_error``. Neither is verified.
+        """
         with self.copy.open() as (working, inner):
             start = time.perf_counter()
             routing = Layout(self.native, working, inner)
@@ -212,6 +281,8 @@ class StudyArm:
 
 
 class PlacementStudy:
+    """Run the fixed and the moving arm on private copies of one project."""
+
     def __init__(
         self,
         native: Native,
@@ -219,10 +290,22 @@ class PlacementStudy:
         budget: Budget,
         storage: ProjectStorage | None = None,
     ):
+        """Inputs:
+        native: KiCad toolchain.
+        project: Project to study.
+        budget: Search budget shared by both arms.
+        storage: Storage holding the reviewed inputs; the project's own when None.
+        """
         self.native, self.project, self.budget = native, project, budget
         self.storage = storage or ProjectStorage(project.root)
 
     def run(self) -> dict:
+        """Run both arms from the same inputs.
+
+        Outputs:
+            A placement_study report with the input hashes, the budget, the original
+            metrics, both arms, the verdict and the toolchain.
+        """
         copy = PrivateCopy(self.project, self.storage)
         original = BoardMetrics.from_geometry(
             jobs.inspect(self.native, self.project)["geometry"]
@@ -260,6 +343,13 @@ class VariantStudy:
         seeds: list[int],
         storage: ProjectStorage | None = None,
     ):
+        """Inputs:
+        native: KiCad toolchain.
+        project: Project to study.
+        budget: Search budget used for every study.
+        seeds: Seed of each crowded packing.
+        storage: Storage holding the reviewed inputs; the project's own when None.
+        """
         self.native, self.project, self.budget, self.seeds = (
             native,
             project,
@@ -269,6 +359,13 @@ class VariantStudy:
         self.storage = storage or ProjectStorage(project.root)
 
     def variant(self, seed: int) -> dict:
+        """Crowd a private copy with one seed and study it.
+
+        Inputs:
+            seed: Packing seed.
+        Outputs:
+            The seed, the packing record and the placement study of the packed copy.
+        """
         with PrivateCopy(self.project, self.storage).open() as (working, inner):
             policy = inner.config_file("autopcb.json")
             request, record = (
@@ -292,6 +389,13 @@ class VariantStudy:
         return {"seed": seed, "packing": packing, "study": study}
 
     def run(self) -> dict:
+        """Study every seed and count the outcomes.
+
+        Outputs:
+            A placement_variant_study report with the budget, the seeds, counts of
+            variants, boards unroutable as placed, stalled fixed arms, moving arms that
+            reached zero opens and met criteria, each variant and the toolchain.
+        """
         variants = [self.variant(seed) for seed in self.seeds]
         verdicts = [item["study"]["verdict"] for item in variants]
         return {

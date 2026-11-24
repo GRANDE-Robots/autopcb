@@ -70,8 +70,9 @@ class NativeCommandTests(unittest.TestCase):
             output.unlink()
 
             def produce(*args, **kwargs):
-                """Stand in for the process by writing the report it must produce, after
-                checking that stdin is closed.
+                """Stand in for the process: write the report it must produce.
+
+                The call fails the test unless stdin is closed.
                 """
                 output.write_text("new")
                 self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)

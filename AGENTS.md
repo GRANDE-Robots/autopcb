@@ -15,6 +15,7 @@ AutoPCB follows these rules and, where they apply, the GRANDE agent instructions
 
 - Every source file starts with a header docstring naming the file, its responsibility and `Copyright: GRANDE Robots and Aaron John Sabu`.
 - Every class, function and method has a factual docstring. Add `Inputs:` and `Outputs:` when the signature does not say enough about values, units, state changes or failures.
+- Test methods are named for the behavior they check and need no docstring.
 - The root README uses these sections: Overview, Responsibilities, Requirements, Installation, Usage, Validation, File Structure, License.
 - Every maintained folder has a README with a File Structure table of its immediate entries: File, Relevance, Dependencies, Used by.
 - Update the guide a change affects, and keep a source document and its rendered PDF together.
@@ -24,6 +25,7 @@ AutoPCB follows these rules and, where they apply, the GRANDE agent instructions
 - Keep the code base compatible, complete and working; run the relevant tests before committing.
 - Tests and CI stay, and grow with new behavior. The GRANDE rule against adding tests does not apply here.
 - Report software checks, KiCad verification and hardware evidence separately. Do not call an unmeasured value known.
+- `python scripts/run.py --project . check code` audits the code and documentation rules. Its baseline of older breaches, `scripts/verification/code_rules_baseline.json`, may only shrink.
 
 ## Git
 

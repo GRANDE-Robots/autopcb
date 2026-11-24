@@ -1,4 +1,7 @@
-"""Prove which pads no route can join while every part stays where it is."""
+"""routability.py: prove which pads no route can join while every part stays where it is.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,14 @@ from pcb.topology_bound import UNREACHABLE, minimum_vias
 
 @dataclass(frozen=True)
 class Terminal:
+    """The grid states a pad can start a track from.
+
+    Inputs:
+        label: Pad name as REFERENCE.NUMBER.
+        states: Free grid state indices (layer index times cell count plus cell
+            index) in or beside the pad.
+    """
+
     label: str
     states: tuple[int, ...]
 
@@ -41,6 +52,19 @@ class GridModel:
         saved_copper=False,
         step=mm(0.05),
     ):
+        """Read the board's obstacles and fix the grid.
+
+        Inputs:
+            board: Loaded KiCad board.
+            footprints: Footprint UUID to a detached copy at another pose, or to None
+                to leave its pads out.
+            policy: Routing policy; its route layers and assume_zone_refill option
+                apply, and its widths and clearances apply on top of the net classes.
+            critical_nets: Nets whose reference corridors count as obstacles.
+            saved_copper: Whether the board's tracks and vias count as obstacles.
+            step: Smallest grid pitch in nanometres; it grows until the grid fits
+                MAX_CELLS.
+        """
         self.board, self.footprints, self.policy = board, footprints or {}, policy or {}
         self.saved_copper = saved_copper
         self.layers = tuple(
@@ -65,12 +89,16 @@ class GridModel:
         )
 
     def parts(self):
+        """Yield each footprint of the board, as posed in footprints, leaving out those
+        set to None.
+        """
         for footprint in self.board.GetFootprints():
             part = self.footprints.get(footprint.m_Uuid.AsString(), footprint)
             if part is not None:
                 yield part
 
     def pads(self, net: str) -> list:
+        """The pads of the net on the posed footprints."""
         return [
             pad
             for part in self.parts()
@@ -79,6 +107,13 @@ class GridModel:
         ]
 
     def rules(self, net: str) -> tuple[int, int, int, int]:
+        """The routing rules of a net.
+
+        Outputs:
+            Track width, clearance, via diameter and via drill, all in nanometres:
+            the largest of the net classes of its pads and the policy. Raises
+            ValueError when no pad of the net has a net class.
+        """
         classes = net_classes(self.board)
         limits = [
             classes[pad.GetNetClassName()]
@@ -102,6 +137,9 @@ class GridModel:
         )
 
     def router(self, net: str) -> GridRouter:
+        """A grid router for the net, bounded by the board edge clearance and blocked by
+        the obstacles.
+        """
         width, clearance, via_size, via_drill = self.rules(net)
         # The router keeps a clearance from its bounds; the board needs its copper-to-edge rule.
         inset = max(0, self.edge - clearance)
@@ -213,6 +251,14 @@ class Routability:
     """
 
     def __init__(self, board, *, policy=None, critical_nets=(), step=mm(0.05)):
+        """Remember the board and the routing policy.
+
+        Inputs:
+            board: Loaded KiCad board.
+            policy: Routing policy, or None.
+            critical_nets: Nets whose reference corridors count as obstacles.
+            step: Smallest grid pitch in nanometres.
+        """
         self.board, self.policy, self.critical_nets, self.step = (
             board,
             policy,
@@ -221,6 +267,7 @@ class Routability:
         )
 
     def model(self, footprints=None) -> GridModel:
+        """A grid model of the board, with the given footprints posed or left out."""
         return GridModel(
             self.board,
             footprints=footprints,
@@ -230,6 +277,7 @@ class Routability:
         )
 
     def nets(self) -> list[str]:
+        """Sorted names of the nets that have more than one pad."""
         counts = {}
         for pad in self.board.GetPads():
             name = str(pad.GetNetname())
@@ -238,6 +286,9 @@ class Routability:
         return sorted(name for name, count in counts.items() if count > 1)
 
     def blockers(self, net: str) -> list[str]:
+        """Sorted references of the footprints without a pad on the net whose removal
+        lets every pad of the net connect.
+        """
         result = []
         for footprint in self.board.GetFootprints():
             if any(pad.GetNetname() == net for pad in footprint.Pads()):
@@ -247,6 +298,13 @@ class Routability:
         return sorted(result)
 
     def report(self) -> dict:
+        """Judge every net with more than one pad.
+
+        Outputs:
+            A dict with the grid step in millimetres, the sorted unroutable nets, and
+            for each net its groups of mutually reachable pads and, when it has more
+            than one group, its blockers.
+        """
         model, nets = self.model(), {}
         for name in self.nets():
             groups = model.groups(name)

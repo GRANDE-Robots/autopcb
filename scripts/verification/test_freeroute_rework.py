@@ -28,7 +28,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 self.fail(f"Unexpected operation: {function}")
 
             with patch.object(api, "run_native", side_effect=native):
-                checked = api.checked_copper_repair(
+                checked = api.RepairChecks.checked_copper_repair(
                     Path("."), ground_policy=policy, progress=lambda _: None
                 )
             self.assertEqual(checked["drc"]["open_connections"], 0)
@@ -48,14 +48,14 @@ class CoordinatedRepairTests(unittest.TestCase):
                 if function is api.preview:
                     options.append(kwargs)
                     return {"trial_board": "candidate.kicad_pcb"}
-                if function is api._roundtrip:
+                if function is api.RoutingRoundtrip.roundtrip:
                     return Path("comparison.kicad_pcb")
                 if function is api.filter_proposal:
                     return {"status": "checked"}
                 self.fail(f"Unexpected operation: {function}")
 
             with patch.object(api, "run_native", side_effect=native):
-                result = api._candidate_batch_owned(
+                result = api.CandidateBatch._candidate_batch_owned(
                     Path("."),
                     Path("router"),
                     60,
@@ -85,21 +85,27 @@ class CoordinatedRepairTests(unittest.TestCase):
         )
         before = [old, protected]
         excluded = ("GND", "USB_DP")
-        self.assertFalse(api.rework_copper_preserved(before, [*before, join], excluded))
+        self.assertFalse(
+            api.CopperComparison.rework_copper_preserved(
+                before, [*before, join], excluded
+            )
+        )
         self.assertTrue(
-            api.rework_copper_preserved(
+            api.CopperComparison.rework_copper_preserved(
                 before, [*before, join], excluded, additive_ground=True
             )
         )
         changed = Trace("GND", "B.Cu", 600_000, old.start, old.end)
         for after in ([protected, join], [changed, protected, join], [old, join]):
             self.assertFalse(
-                api.rework_copper_preserved(
+                api.CopperComparison.rework_copper_preserved(
                     before, after, excluded, additive_ground=True
                 )
             )
         with self.assertRaisesRegex(ValueError, "boolean"):
-            api.rework_copper_preserved(before, before, excluded, additive_ground=1)
+            api.CopperComparison.rework_copper_preserved(
+                before, before, excluded, additive_ground=1
+            )
 
     def test_ground_reconnection_after_tree_restoration_requires_a_fresh_native_check(
         self,
@@ -112,7 +118,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
                 def native(function, *args, **kwargs):
                     calls.append(function)
-                    if function is api.restore_unimproved_trees:
+                    if function is api.TreeRenewal.restore_unimproved_trees:
                         return ()
                     if function is api.prepare_ground_access:
                         return {
@@ -130,9 +136,11 @@ class CoordinatedRepairTests(unittest.TestCase):
 
                 with (
                     patch.object(api, "run_native", side_effect=native),
-                    patch.object(api, "interim_drc_acceptable", return_value=True),
+                    patch.object(
+                        api.RepairChecks, "interim_drc_acceptable", return_value=True
+                    ),
                 ):
-                    result = api.checked_tree_fallback(
+                    result = api.RepairChecks.checked_tree_fallback(
                         Path("."),
                         Path("prior"),
                         ("SIGNAL",),
@@ -261,12 +269,14 @@ class CoordinatedRepairTests(unittest.TestCase):
             board.Add(track)
             pcbnew.SaveBoard(str(source), board)
             before = source.read_bytes()
-            result = api.compile_tree_renewal(root, ("SIGNAL",), ("Default",), (), 0, 8)
+            result = api.TreeRenewal.compile_tree_renewal(
+                root, ("SIGNAL",), ("Default",), (), 0, 8
+            )
             self.assertIsNotNone(result)
             self.assertEqual(result.affected, ("SIGNAL",))
             self.assertEqual(result.items, 1)
             self.assertIsNone(
-                api.compile_tree_renewal(
+                api.TreeRenewal.compile_tree_renewal(
                     root,
                     ("SIGNAL",),
                     ("Default",),
@@ -280,7 +290,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             self.assertEqual(guard.differences(result.board, b"sch"), ())
             self.assertEqual(source.read_bytes(), before)
             self.assertIsNone(
-                api.compile_tree_renewal(
+                api.TreeRenewal.compile_tree_renewal(
                     root, ("SIGNAL",), ("Default",), ("SIGNAL",), 0, 8
                 )
             )
@@ -293,12 +303,12 @@ class CoordinatedRepairTests(unittest.TestCase):
             neighbor.SetEnd(pcbnew.VECTOR2I(mm(5), mm(2)))
             board.Add(neighbor)
             pcbnew.SaveBoard(str(source), board)
-            broadened = api.compile_tree_renewal(
+            broadened = api.TreeRenewal.compile_tree_renewal(
                 root, ("SIGNAL",), ("Default",), (), 0, 8, include_connected=True
             )
             self.assertIn("NEIGHBOR", broadened.affected)
             self.assertEqual(guard.differences(broadened.board, b"sch"), ())
-            protected_neighbor = api.compile_tree_renewal(
+            protected_neighbor = api.TreeRenewal.compile_tree_renewal(
                 root,
                 ("SIGNAL",),
                 ("Default",),
@@ -311,7 +321,9 @@ class CoordinatedRepairTests(unittest.TestCase):
             track.SetLocked(True)
             pcbnew.SaveBoard(str(source), board)
             self.assertIsNone(
-                api.compile_tree_renewal(root, ("SIGNAL",), ("Default",), (), 0, 8)
+                api.TreeRenewal.compile_tree_renewal(
+                    root, ("SIGNAL",), ("Default",), (), 0, 8
+                )
             )
 
     def test_tree_neighbors_use_actual_same_layer_copper_not_overlapping_diagonal_boxes(
@@ -344,7 +356,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 board.Add(track)
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
-            plan = api.compile_tree_renewal(
+            plan = api.TreeRenewal.compile_tree_renewal(
                 root, ("SIGNAL",), ("Default",), (), 0, 2, include_connected=True
             )
             self.assertEqual(plan.affected, ("SIGNAL", "Z_NEAR"))
@@ -380,12 +392,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             neutral = source.read_bytes()
             self.assertEqual(
-                api.restore_unimproved_trees(root, prior, ("SIGNAL",)), ("SIGNAL",)
+                api.TreeRenewal.restore_unimproved_trees(root, prior, ("SIGNAL",)),
+                ("SIGNAL",),
             )
             self.assertEqual(read_copper(source), read_copper(prior))
             source.write_bytes(neutral)
             self.assertEqual(
-                api.restore_unimproved_trees(
+                api.TreeRenewal.restore_unimproved_trees(
                     root, prior, ("SIGNAL",), keep_neutral=True
                 ),
                 (),
@@ -396,7 +409,9 @@ class CoordinatedRepairTests(unittest.TestCase):
             add((5, 2), (8, 5))
             pcbnew.SaveBoard(str(source), board)
             completed = source.read_bytes()
-            self.assertEqual(api.restore_unimproved_trees(root, prior, ("SIGNAL",)), ())
+            self.assertEqual(
+                api.TreeRenewal.restore_unimproved_trees(root, prior, ("SIGNAL",)), ()
+            )
             self.assertEqual(source.read_bytes(), completed)
 
     def test_new_native_error_attribution_cannot_select_a_protected_net(self):
@@ -411,17 +426,21 @@ class CoordinatedRepairTests(unittest.TestCase):
             baseline = {"violation_keys": []}
             current = {"violation_keys": [["clearance", "error", [uid, "unknown"]]]}
             self.assertEqual(
-                api.conflicting_replacement_nets(source, baseline, current, ("OTHER",)),
+                api.RepairChecks.conflicting_replacement_nets(
+                    source, baseline, current, ("OTHER",)
+                ),
                 ("OTHER",),
             )
             self.assertEqual(
-                api.conflicting_replacement_nets(
+                api.RepairChecks.conflicting_replacement_nets(
                     source, baseline, current, ("SIGNAL",)
                 ),
                 (),
             )
             self.assertEqual(
-                api.conflicting_replacement_nets(source, current, current, ("OTHER",)),
+                api.RepairChecks.conflicting_replacement_nets(
+                    source, current, current, ("OTHER",)
+                ),
                 (),
             )
 
@@ -461,16 +480,18 @@ class CoordinatedRepairTests(unittest.TestCase):
             }
             self.assertNotIn(
                 "R50",
-                api.eligible_signal_resistors(board, {"kicad_default"}, {"PROTECTED"}),
+                api.BottomPlacement.eligible_signal_resistors(
+                    board, {"kicad_default"}, {"PROTECTED"}
+                ),
             )
             self.assertIn(
                 "R50",
-                api.eligible_signal_resistors(
+                api.BottomPlacement.eligible_signal_resistors(
                     board, {"kicad_default"}, {"PROTECTED"}, allow_protected_anchor=True
                 ),
             )
             self.assertIsNotNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -480,7 +501,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             )
             candidate["movable"][0]["positions_mm"][0][0] += 0.001
             self.assertIsNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -489,7 +510,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 )
             )
             self.assertIsNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -501,7 +522,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_cli_passes_the_selected_krt_release_to_rework(self):
         with (
             patch.object(
-                api, "run_one", return_value={"status": "no_rework_candidate"}
+                api.ReworkRun, "run_one", return_value={"status": "no_rework_candidate"}
             ) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(io.StringIO()),
@@ -525,16 +546,16 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_rework_policy_can_enable_bounded_obstruction_diagnosis(self):
         source = {"recovery": {"obstruction_trials": 2, "obstruction_seconds": 3.0}}
-        fast = api.rework_policy(
+        fast = api.CandidateCompiler.rework_policy(
             source, bottom_placement=False, diagnose_obstructions=False
         )
-        diagnosed = api.rework_policy(
+        diagnosed = api.CandidateCompiler.rework_policy(
             source, bottom_placement=False, diagnose_obstructions=True
         )
-        default = api.rework_policy(
+        default = api.CandidateCompiler.rework_policy(
             {}, bottom_placement=False, diagnose_obstructions=True
         )
-        placement = api.rework_policy(
+        placement = api.CandidateCompiler.rework_policy(
             source, bottom_placement=True, diagnose_obstructions=True
         )
         self.assertEqual(fast["recovery"]["obstruction_trials"], 0)
@@ -549,7 +570,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_cli_passes_obstruction_diagnosis_to_each_batch(self):
         with (
             patch.object(
-                api, "run_one", return_value={"status": "no_rework_candidate"}
+                api.ReworkRun, "run_one", return_value={"status": "no_rework_candidate"}
             ) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(io.StringIO()),
@@ -576,7 +597,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_cli_passes_explicit_package_escape_search(self):
         with (
             patch.object(
-                api, "run_one", return_value={"status": "no_rework_candidate"}
+                api.ReworkRun, "run_one", return_value={"status": "no_rework_candidate"}
             ) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(io.StringIO()),
@@ -600,7 +621,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_cli_accepts_freerouting_for_coordinated_followup(self):
         with (
             patch.object(
-                api, "run_one", return_value={"status": "no_rework_candidate"}
+                api.ReworkRun, "run_one", return_value={"status": "no_rework_candidate"}
             ) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(io.StringIO()),
@@ -625,7 +646,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_cli_passes_a_bounded_followup_count(self):
         with (
             patch.object(
-                api, "run_one", return_value={"status": "no_rework_candidate"}
+                api.ReworkRun, "run_one", return_value={"status": "no_rework_candidate"}
             ) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(io.StringIO()),
@@ -648,7 +669,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["followup_rounds"], 2)
 
     def test_failed_repair_keeps_specific_reasons_for_human_progress(self):
-        failure = api._failed(
+        failure = api.RepairWork.failed(
             "a" * 32,
             "followup",
             {
@@ -670,7 +691,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             "style_reasons": {"staircases": 1},
         }
         self.assertEqual(
-            api.candidate_progress(event),
+            api.CandidateBatch.candidate_progress(event),
             "Checking candidate: 188 opens; 3 proposed items need repair "
             "(nets: SIG; DRC: clearance=2; geometry: staircases=1)",
         )
@@ -709,16 +730,19 @@ class CoordinatedRepairTests(unittest.TestCase):
                 ],
             }
             self.assertNotIn(
-                "R50", api.eligible_signal_resistors(board, {"kicad_default"}, {"GND"})
+                "R50",
+                api.BottomPlacement.eligible_signal_resistors(
+                    board, {"kicad_default"}, {"GND"}
+                ),
             )
             self.assertIn(
                 "R50",
-                api.eligible_signal_resistors(
+                api.BottomPlacement.eligible_signal_resistors(
                     board, {"kicad_default"}, {"GND"}, allow_ground_anchor=True
                 ),
             )
             self.assertIsNotNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -728,7 +752,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             )
             candidate["movable"][0]["positions_mm"][0][0] += 0.001
             self.assertIsNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -744,12 +768,12 @@ class CoordinatedRepairTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             self.assertIn(
                 "R50",
-                api.eligible_signal_resistors(
+                api.BottomPlacement.eligible_signal_resistors(
                     board, {"kicad_default"}, {"GND"}, allow_ground_anchor=True
                 ),
             )
             self.assertIsNotNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -761,12 +785,12 @@ class CoordinatedRepairTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             self.assertNotIn(
                 "R50",
-                api.eligible_signal_resistors(
+                api.BottomPlacement.eligible_signal_resistors(
                     board, {"kicad_default"}, {"GND"}, allow_ground_anchor=True
                 ),
             )
             self.assertIsNone(
-                api.placement_poses(
+                api.BottomPlacement.placement_poses(
                     board,
                     candidate,
                     {"kicad_default"},
@@ -794,26 +818,32 @@ class CoordinatedRepairTests(unittest.TestCase):
             "violation_keys": [["copper_edge_clearance", "error", ["pad", "hole"]]],
             "error_details": [finding("0.4214")],
         }
-        self.assertTrue(api.interim_drc_acceptable(baseline, dict(baseline)))
+        self.assertTrue(
+            api.RepairChecks.interim_drc_acceptable(baseline, dict(baseline))
+        )
         self.assertFalse(
-            api.interim_drc_acceptable(
+            api.RepairChecks.interim_drc_acceptable(
                 baseline,
                 {**baseline, "error_details": [finding("0.3000")]},
             )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(baseline, {**baseline, "exclusions": 1})
+            api.RepairChecks.interim_drc_acceptable(
+                baseline, {**baseline, "exclusions": 1}
+            )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(baseline, {**baseline, "error_details": []})
+            api.RepairChecks.interim_drc_acceptable(
+                baseline, {**baseline, "error_details": []}
+            )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(
+            api.RepairChecks.interim_drc_acceptable(
                 baseline, {**baseline, "ignored_checks": ["clearance"]}
             )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(baseline, {**baseline, "errors": 0})
+            api.RepairChecks.interim_drc_acceptable(baseline, {**baseline, "errors": 0})
         )
 
     def test_interim_rework_allows_identified_unchanged_parity_only(self):
@@ -828,29 +858,35 @@ class CoordinatedRepairTests(unittest.TestCase):
             "parity_keys": keys,
             "parity_blocked_nets": ["ACTUAL", "EXPECTED"],
         }
-        self.assertTrue(api.interim_drc_acceptable(baseline, dict(baseline)))
-        self.assertEqual(api.parity_protected_nets(baseline), ("ACTUAL", "EXPECTED"))
+        self.assertTrue(
+            api.RepairChecks.interim_drc_acceptable(baseline, dict(baseline))
+        )
+        self.assertEqual(
+            api.RepairChecks.parity_protected_nets(baseline), ("ACTUAL", "EXPECTED")
+        )
         self.assertFalse(
-            api.interim_drc_acceptable(
+            api.RepairChecks.interim_drc_acceptable(
                 baseline,
                 {**baseline, "parity_keys": [["net_conflict", "warning", ["other"]]]},
             )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(
+            api.RepairChecks.interim_drc_acceptable(
                 baseline, {**baseline, "parity_blocked_nets": ["ACTUAL"]}
             )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(
+            api.RepairChecks.interim_drc_acceptable(
                 {**baseline, "parity_blocked_nets": None}, dict(baseline)
             )
         )
         self.assertFalse(
-            api.interim_drc_acceptable(baseline, {**baseline, "parity_findings": 0})
+            api.RepairChecks.interim_drc_acceptable(
+                baseline, {**baseline, "parity_findings": 0}
+            )
         )
         with self.assertRaises(RuntimeError):
-            api.parity_protected_nets({**baseline, "parity_keys": []})
+            api.RepairChecks.parity_protected_nets({**baseline, "parity_keys": []})
 
     def test_power_mux_configuration_nets_are_protected(self):
         board, mux = MagicMock(), MagicMock()
@@ -918,7 +954,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             board.write_bytes(b"candidate")
             cache = api.RepairPreparationCache()
             state = {"blocked_nets": {"PAIR": "deferred"}}
-            key = api.preparation_key(
+            key = api.RepairPreparer.preparation_key(
                 {"board": "hash"},
                 {"tool": "hash"},
                 "policy",
@@ -930,7 +966,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
             def native(function, *_args, **_kwargs):
                 calls.append(function)
-                if function is api._focus_deferred:
+                if function is api.FocusScope.focus_deferred:
                     board.write_bytes(b"refilled")
                     return (("TARGET",), ("OTHER",))
                 if function is api.prepare_project:
@@ -938,17 +974,17 @@ class CoordinatedRepairTests(unittest.TestCase):
                 self.fail("Unexpected native operation")
 
             with patch.object(api, "run_native", side_effect=native):
-                first = api.prepare_repair(
+                first = api.RepairPreparer.prepare_repair(
                     directory, state, ("SIGNAL",), key, cache, lambda _: None
                 )
                 board.write_bytes(b"discarded private trial")
-                second = api.prepare_repair(
+                second = api.RepairPreparer.prepare_repair(
                     directory, state, ("SIGNAL",), key, cache, lambda _: None
                 )
                 self.assertEqual(board.read_bytes(), b"refilled")
                 self.assertEqual(first, second)
                 self.assertEqual(len(calls), 2)
-                changed = api.preparation_key(
+                changed = api.RepairPreparer.preparation_key(
                     {"board": "changed"},
                     {"tool": "hash"},
                     "policy",
@@ -956,7 +992,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                     ("SIGNAL",),
                     state,
                 )
-                api.prepare_repair(
+                api.RepairPreparer.prepare_repair(
                     directory, state, ("SIGNAL",), changed, cache, lambda _: None
                 )
                 self.assertEqual(len(calls), 4)
@@ -970,7 +1006,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             focus=("SIGNAL",),
             blocked=None,
         ):
-            return api.preparation_key(
+            return api.RepairPreparer.preparation_key(
                 inputs or {"input": "a"},
                 tools or {"tool": "a"},
                 policy,
@@ -996,7 +1032,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             [{"shared": {}, "nets": [{"name": "A"}, {"name": "C"}]}],
             [{"shared": {}, "nets": [{"name": "D"}], "rip_up": {"A": []}}],
         ]
-        result = api.ordered_requests(queue, ("A", "B", "C", "D"), ("C",))
+        result = api.RepairWork.ordered_requests(queue, ("A", "B", "C", "D"), ("C",))
         self.assertEqual([item["nets"][0]["name"] for item in result], ["C", "A", "B"])
         self.assertEqual(len(queue[0][0]["nets"]), 2)
 
@@ -1018,8 +1054,10 @@ class CoordinatedRepairTests(unittest.TestCase):
         }
         old = [[{"shared": {}, "nets": [{"name": "B"}, {"name": "POWER"}]}]]
         original = json.loads(json.dumps(old))
-        queue = api.repair_work_queue(old, preparation, {})
-        ordered = api.ordered_requests(queue, ("A", "B", "POWER", "PAIR"), ())
+        queue = api.RepairWork.repair_work_queue(old, preparation, {})
+        ordered = api.RepairWork.ordered_requests(
+            queue, ("A", "B", "POWER", "PAIR"), ()
+        )
         self.assertEqual([item["nets"][0]["name"] for item in ordered], ["B", "A"])
         self.assertEqual(old, original)
 
@@ -1031,31 +1069,35 @@ class CoordinatedRepairTests(unittest.TestCase):
             Trace("A", "B.Cu", 300000, (0, 0), (0, 1000000)),
             Via("A", (0, 0), 600000, 300000),
         ]
-        self.assertTrue(api.dimensions_preserved(old, wider, floors))
+        self.assertTrue(api.CopperComparison.dimensions_preserved(old, wider, floors))
         self.assertFalse(
-            api.dimensions_preserved(
+            api.CopperComparison.dimensions_preserved(
                 old, [*old, Trace("A", "B.Cu", 200000, (0, 0), (0, 1000000))], floors
             )
         )
         self.assertFalse(
-            api.dimensions_preserved(
+            api.CopperComparison.dimensions_preserved(
                 old, [*old, Via("A", (0, 0), 550000, 300000)], floors
             )
         )
         self.assertFalse(
-            api.dimensions_preserved(
+            api.CopperComparison.dimensions_preserved(
                 old, [*old, Via("A", (0, 0), 600000, 250000)], floors
             )
         )
-        self.assertTrue(api.dimensions_preserved(old, old, floors))
+        self.assertTrue(api.CopperComparison.dimensions_preserved(old, old, floors))
 
     def test_unchanged_copper_detection_ignores_order_but_counts_duplicates(self):
         trace = Trace("A", "F.Cu", 250000, (0, 0), (1000000, 0))
         via = Via("A", (0, 0), 600000, 300000)
-        self.assertTrue(api.same_copper([trace, via], [via, trace]))
-        self.assertFalse(api.same_copper([trace, via], [trace, via, via]))
+        self.assertTrue(api.CopperComparison.same_copper([trace, via], [via, trace]))
         self.assertFalse(
-            api.same_copper([trace], [Trace("A", "F.Cu", 300000, (0, 0), (1000000, 0))])
+            api.CopperComparison.same_copper([trace, via], [trace, via, via])
+        )
+        self.assertFalse(
+            api.CopperComparison.same_copper(
+                [trace], [Trace("A", "F.Cu", 300000, (0, 0), (1000000, 0))]
+            )
         )
 
     def test_compiler_skips_ground_and_outside_classes_then_builds_checked_plan(self):
@@ -1097,7 +1139,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("TARGET",), (), ("SIGNAL",), (), 0
             )
         self.assertEqual(plan.target, "TARGET")
@@ -1152,7 +1194,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("POWER",), (), ("CORE_POWER",), (), 0
             )
             self.assertIsNotNone(plan)
@@ -1167,13 +1209,13 @@ class CoordinatedRepairTests(unittest.TestCase):
                     }
                 }
             }
-            qualified = api.compile_candidate(
+            qualified = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, explicit, ("POWER",), (), ("CORE_POWER",), (), 0
             )
             self.assertEqual(qualified.floors, {"POWER": (750000, 800000, 400000)})
             compile_routes.reset_mock()
             self.assertIsNone(
-                api.compile_candidate(
+                api.CandidateCompiler.compile_candidate(
                     Path("."), queue, {}, ("POWER",), (), ("CORE_POWER",), ("POWER",), 0
                 )
             )
@@ -1222,7 +1264,9 @@ class CoordinatedRepairTests(unittest.TestCase):
         with (
             patch.object(pcbnew, "LoadBoard", return_value=board),
             patch.object(api, "compile_reroutes", return_value=compiled),
-            patch.object(api, "eligible_signal_resistors", return_value=("R50",)),
+            patch.object(
+                api.BottomPlacement, "eligible_signal_resistors", return_value=("R50",)
+            ),
             patch.object(api, "copper_width", return_value=250000),
             patch.object(
                 api, "copper_removal_changes", return_value=[{"op": "remove"}]
@@ -1233,7 +1277,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "placement_cost", return_value=1.5),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1268,11 +1312,15 @@ class CoordinatedRepairTests(unittest.TestCase):
                 {"reference": "R10", "positions_mm": [[1.0, 1.0]], "rotations_deg": [0]}
             ],
         }
-        self.assertIsNone(api.placement_poses(board, candidate, {"SIGNAL"}, {"GND"}))
+        self.assertIsNone(
+            api.BottomPlacement.placement_poses(board, candidate, {"SIGNAL"}, {"GND"})
+        )
         pad.GetNetname.return_value = "A"
         candidate["nets"] = [{"name": "A"}]
         candidate["movable"][0]["reference"] = "D10"
-        self.assertIsNone(api.placement_poses(board, candidate, {"SIGNAL"}, {"GND"}))
+        self.assertIsNone(
+            api.BottomPlacement.placement_poses(board, candidate, {"SIGNAL"}, {"GND"})
+        )
 
     def test_native_bottom_pose_is_private_and_preserves_top_geometry(self):
         import pcbnew
@@ -1299,9 +1347,11 @@ class CoordinatedRepairTests(unittest.TestCase):
             # The synthetic board has only KiCad's default class; production
             # trials require explicit signal classes before calling the compiler.
             with patch.object(
-                api, "placement_signal_classes", return_value={"kicad_default"}
+                api.BottomPlacement,
+                "placement_signal_classes",
+                return_value={"kicad_default"},
             ):
-                plan = api.compile_candidate(
+                plan = api.CandidateCompiler.compile_candidate(
                     root,
                     [[request]],
                     policy,
@@ -1384,11 +1434,13 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_followup_never_reintroduces_protected_nets(self):
         self.assertEqual(
-            api.followup_exclusions(("FAILED",), ("TARGET",), ("PROTECTED",)),
+            api.RepairWork.followup_exclusions(
+                ("FAILED",), ("TARGET",), ("PROTECTED",)
+            ),
             ("FAILED", "PROTECTED"),
         )
         with self.assertRaisesRegex(ValueError, "protected"):
-            api.followup_exclusions((), ("PROTECTED",), ("PROTECTED",))
+            api.RepairWork.followup_exclusions((), ("PROTECTED",), ("PROTECTED",))
 
     def test_protected_copper_comparison_detects_additions_and_removals(self):
         first = Trace("PROTECTED", "F.Cu", 200000, (0, 0), (1000000, 0))
@@ -1415,12 +1467,14 @@ class CoordinatedRepairTests(unittest.TestCase):
         empty = {"requests": [], "candidates": []}
         with (
             patch.object(pcbnew, "LoadBoard", return_value=board),
-            patch.object(api, "eligible_signal_resistors", return_value=("R1",)),
+            patch.object(
+                api.BottomPlacement, "eligible_signal_resistors", return_value=("R1",)
+            ),
             patch.object(
                 api, "compile_reroutes", return_value=empty
             ) as compile_reroutes,
         ):
-            result = api.compile_candidate(
+            result = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1464,12 +1518,14 @@ class CoordinatedRepairTests(unittest.TestCase):
         ]
         with (
             patch.object(pcbnew, "LoadBoard", return_value=board),
-            patch.object(api, "eligible_signal_resistors", return_value=("R1",)),
+            patch.object(
+                api.BottomPlacement, "eligible_signal_resistors", return_value=("R1",)
+            ),
             patch.object(
                 api, "compile_reroutes", return_value={"requests": [], "candidates": []}
             ) as compile_reroutes,
         ):
-            api.compile_candidate(
+            api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {"exclude_nets": ["DENIED"]},
@@ -1534,7 +1590,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("TARGET",), (), ("SIGNAL",), (), 0
             )
         self.assertIn("BTS_R_EN", plan.excluded)
@@ -1551,7 +1607,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(pcbnew, "LoadBoard", return_value=board),
             patch.object(api, "compile_reroutes") as compile_reroutes,
         ):
-            result = api.compile_candidate(
+            result = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1567,7 +1623,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_unclassified_or_power_net_classes_cannot_authorize_placement(self):
         self.assertEqual(
-            api.placement_signal_classes(
+            api.BottomPlacement.placement_signal_classes(
                 ("CORE_SIGNAL", "FIELD_SIGNAL", "kicad_default", "CORE_POWER")
             ),
             {"CORE_SIGNAL", "FIELD_SIGNAL"},
@@ -1582,7 +1638,8 @@ class CoordinatedRepairTests(unittest.TestCase):
             }[name]
         )
         self.assertEqual(
-            api.placement_outside_classes(board, {"CORE_SIGNAL"}), {"B", "C"}
+            api.BottomPlacement.placement_outside_classes(board, {"CORE_SIGNAL"}),
+            {"B", "C"},
         )
 
     def test_eligible_resistor_inventory_respects_protection_and_side(self):
@@ -1606,14 +1663,16 @@ class CoordinatedRepairTests(unittest.TestCase):
             part.Pads.return_value = [pad]
         board.GetFootprints.return_value = [safe, protected, top]
         self.assertEqual(
-            api.eligible_signal_resistors(board, {"CORE_SIGNAL"}, {"PROTECTED"}),
+            api.BottomPlacement.eligible_signal_resistors(
+                board, {"CORE_SIGNAL"}, {"PROTECTED"}
+            ),
             ("R1",),
         )
 
     def test_placement_search_continues_with_the_next_target_window(self):
         no_candidate = {"status": "no_rework_candidate", "run_id": "a" * 32}
         with (
-            patch.object(api, "run_one", return_value=no_candidate) as run,
+            patch.object(api.ReworkRun, "run_one", return_value=no_candidate) as run,
             patch.object(api, "record_unimproved_batch"),
         ):
             result = api.main(
@@ -1645,7 +1704,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         }
         output = io.StringIO()
         with (
-            patch.object(api, "run_one", return_value=outcome),
+            patch.object(api.ReworkRun, "run_one", return_value=outcome),
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(output),
         ):
@@ -1689,7 +1748,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("FIRST", "SECOND"), (), ("SIGNAL",), (), 1
             )
         self.assertIsNotNone(plan)
@@ -1725,13 +1784,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            second_target = api.compile_candidate(
+            second_target = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("FIRST", "SECOND"), (), ("SIGNAL",), (), 1
             )
-            second_neighborhood = api.compile_candidate(
+            second_neighborhood = api.CandidateCompiler.compile_candidate(
                 Path("."), queue, {}, ("FIRST", "SECOND"), (), ("SIGNAL",), (), 2
             )
-            resumed = api.compile_candidate(
+            resumed = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1740,9 +1799,11 @@ class CoordinatedRepairTests(unittest.TestCase):
                 ("SIGNAL",),
                 (),
                 0,
-                tried_plans=(api.repair_identity("FIRST", frozenset({"track-a"})),),
+                tried_plans=(
+                    api.RepairWork.repair_identity("FIRST", frozenset({"track-a"})),
+                ),
             )
-            next_batch = api.compile_candidate(
+            next_batch = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1751,14 +1812,17 @@ class CoordinatedRepairTests(unittest.TestCase):
                 ("SIGNAL",),
                 (),
                 2,
-                tried_plans=(api.repair_identity("FIRST", frozenset({"track-a"})),),
+                tried_plans=(
+                    api.RepairWork.repair_identity("FIRST", frozenset({"track-a"})),
+                ),
             )
         self.assertEqual(second_target.target, "SECOND")
         self.assertEqual(second_target.cost, 2.0)
         self.assertEqual(resumed.target, "FIRST")
         self.assertEqual(resumed.cost, 3.0)
         self.assertEqual(
-            resumed.attempt_key, api.repair_identity("FIRST", frozenset({"track-b"}))
+            resumed.attempt_key,
+            api.RepairWork.repair_identity("FIRST", frozenset({"track-b"})),
         )
         self.assertEqual(second_neighborhood.target, "FIRST")
         self.assertEqual(second_neighborhood.cost, 3.0)
@@ -1796,7 +1860,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             patch.object(api, "copper_removal_changes", return_value=[]),
             patch.object(api, "CampaignPlanner", return_value=planner),
         ):
-            plan = api.compile_candidate(
+            plan = api.CandidateCompiler.compile_candidate(
                 Path("."),
                 queue,
                 {},
@@ -1816,19 +1880,21 @@ class CoordinatedRepairTests(unittest.TestCase):
         def native(function, *_args, **_kwargs):
             if function is api.preview:
                 return {"trial_board": "trial/candidate.kicad_pcb"}
-            if function is api._roundtrip:
+            if function is api.RoutingRoundtrip.roundtrip:
                 return {}
             if function is api.filter_proposal:
                 raise RuntimeError(reason)
             self.fail(f"Unexpected operation: {function}")
 
         with patch.object(api, "run_native", side_effect=native):
-            result = api._candidate_batch(
+            result = api.CandidateBatch.candidate_batch(
                 Path("."), Path("router"), 10, 10, (), lambda _: None
             )
         self.assertEqual(result["status"], "candidate_rejected")
         self.assertEqual(result["reason"], reason)
-        self.assertEqual(api._failed("a" * 32, "followup", result)["reason"], reason)
+        self.assertEqual(
+            api.RepairWork.failed("a" * 32, "followup", result)["reason"], reason
+        )
 
     def test_unexpected_native_failure_still_stops_the_batch(self):
         with patch.object(
@@ -1837,7 +1903,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             side_effect=RuntimeError("The source changed during filtering"),
         ):
             with self.assertRaisesRegex(RuntimeError, "source changed"):
-                api._candidate_batch(
+                api.CandidateBatch.candidate_batch(
                     Path("."), Path("router"), 10, 10, (), lambda _: None
                 )
 
@@ -1862,7 +1928,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                         }
                     )
 
-                result, tried = api.try_repair_backends(
+                result, tried = api.CandidateBatch.try_repair_backends(
                     board, ("fastroute", "Freerouting"), attempt, messages.append
                 )
                 self.assertEqual(result["status"], "filtered_preview")
@@ -1888,7 +1954,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         RuntimeError, "private repair board changed"
                     ):
-                        api.try_repair_backends(
+                        api.CandidateBatch.try_repair_backends(
                             board, ("fastroute", "Freerouting"), mutate, lambda _: None
                         )
                     board.write_bytes(b"private board")
@@ -1901,7 +1967,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                     self.subTest(failure=failure),
                     self.assertRaisesRegex(type(failure), str(failure)),
                 ):
-                    api.try_repair_backends(
+                    api.CandidateBatch.try_repair_backends(
                         board, ("fastroute", "Freerouting"), attempt, lambda _: None
                     )
                 attempt.assert_called_once_with("fastroute")
@@ -1913,7 +1979,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             attempt = MagicMock(
                 return_value={"status": "candidate_rejected", "reason": "unsafe"}
             )
-            result, tried = api.try_repair_backends(
+            result, tried = api.CandidateBatch.try_repair_backends(
                 board, ("fastroute", "fastroute"), attempt, lambda _: None
             )
             self.assertEqual(tried, ("fastroute",))
@@ -1921,7 +1987,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             attempt.assert_called_once()
             attempt.reset_mock()
             attempt.return_value = {"status": "input_incompatible"}
-            result, tried = api.try_repair_backends(
+            result, tried = api.CandidateBatch.try_repair_backends(
                 board, ("fastroute", "Freerouting"), attempt, lambda _: None
             )
             self.assertEqual(tried, ("fastroute",))
@@ -1939,7 +2005,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                     "trial_board": "trial/candidate.kicad_pcb",
                     "freerouting_jar_sha256": fingerprint,
                 }
-            if function is api._roundtrip:
+            if function is api.RoutingRoundtrip.roundtrip:
                 return Path("trial/roundtrip.kicad_pcb")
             if function is api.filter_proposal:
                 self.assertEqual(kwargs["deferred_nets"], ("PROTECTED",))
@@ -1951,7 +2017,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             self.fail(f"Unexpected operation: {function}")
 
         with patch.object(api, "run_native", side_effect=native):
-            result = api._candidate_batch(
+            result = api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router.jar"),
                 60,
@@ -1982,7 +2048,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(RuntimeError, "router.*changed"),
         ):
-            api._candidate_batch(
+            api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router.jar"),
                 60,
@@ -1996,7 +2062,7 @@ class CoordinatedRepairTests(unittest.TestCase):
     def test_freerouting_timeout_is_an_unresolved_search_not_a_crash(self):
         message = "Freerouting timed out after 60 seconds without a complete checkpoint; try a smaller --max-items."
         with patch.object(api, "run_native", side_effect=RuntimeError(message)):
-            result = api._candidate_batch(
+            result = api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router.jar"),
                 60,
@@ -2021,7 +2087,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
             def native(function, *args, **kwargs):
                 calls.append((function, args, kwargs))
-                if function is krt_adapter.preview:
+                if function is krt_adapter.KrtPreview.preview:
                     self.assertEqual(args[3], ("TARGET", "NEIGHBOR"))
                     return {"board": b"proposal", "tool": fingerprint}
                 if function is api.filter_proposal:
@@ -2033,7 +2099,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 self.fail(f"Unexpected operation: {function}")
 
             with patch.object(api, "run_native", side_effect=native):
-                result = api._candidate_batch(
+                result = api.CandidateBatch.candidate_batch(
                     directory,
                     Path("router"),
                     60,
@@ -2054,7 +2120,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         from pcb.net_routing import krt_adapter
 
         with self.assertRaisesRegex(ValueError, "target"):
-            api._candidate_batch(
+            api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router"),
                 60,
@@ -2071,7 +2137,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             ) as native,
             self.assertRaisesRegex(RuntimeError, "router.*changed"),
         ):
-            api._candidate_batch(
+            api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router"),
                 60,
@@ -2082,7 +2148,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 targets=("TARGET",),
                 expected_tool="a" * 64,
             )
-        self.assertIs(native.call_args.args[0], krt_adapter.preview)
+        self.assertIs(native.call_args.args[0], krt_adapter.KrtPreview.preview)
 
     def test_krt_strict_size_rejection_never_filters_or_retains_the_candidate(self):
         from pcb.net_routing import krt_adapter
@@ -2094,7 +2160,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             "tool": "a" * 64,
         }
         with patch.object(api, "run_native", return_value=raw) as native:
-            result = api._candidate_batch(
+            result = api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router"),
                 60,
@@ -2106,7 +2172,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 expected_tool="a" * 64,
             )
         native.assert_called_once()
-        self.assertIs(native.call_args.args[0], krt_adapter.preview)
+        self.assertIs(native.call_args.args[0], krt_adapter.KrtPreview.preview)
         self.assertEqual(result["status"], "no_safe_proposal")
         self.assertEqual(result["repair_blockers"], {"TARGET": "strict size rules"})
         self.assertNotIn("board", result)
@@ -2128,7 +2194,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             baseline.write_bytes(b"private pruned baseline")
 
             def native(function, *args, **kwargs):
-                if function is krt_adapter.preview:
+                if function is krt_adapter.KrtPreview.preview:
                     self.assertTrue(kwargs["salvage_strict"])
                     return dict(raw)
                 self.assertIs(function, api.filter_proposal)
@@ -2138,7 +2204,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 return {"status": "filtered_preview", "board": b"safe remainder"}
 
             with patch.object(api, "run_native", side_effect=native):
-                result = api._candidate_batch(
+                result = api.CandidateBatch.candidate_batch(
                     root,
                     Path("router"),
                     60,
@@ -2155,7 +2221,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                 patch.object(api, "run_native", return_value=dict(raw)),
                 self.assertRaisesRegex(RuntimeError, "unexpected net"),
             ):
-                api._candidate_batch(
+                api.CandidateBatch.candidate_batch(
                     root,
                     Path("router"),
                     60,
@@ -2174,7 +2240,7 @@ class CoordinatedRepairTests(unittest.TestCase):
             "tool": "a" * 64,
         }
         with patch.object(api, "run_native", return_value=raw) as native:
-            result = api._candidate_batch(
+            result = api.CandidateBatch.candidate_batch(
                 Path("."),
                 Path("router"),
                 60,
@@ -2192,7 +2258,9 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_failed_batch_records_elapsed_time_before_reporting_error(self):
         with (
-            patch.object(api, "run_one", side_effect=RuntimeError("native failure")),
+            patch.object(
+                api.ReworkRun, "run_one", side_effect=RuntimeError("native failure")
+            ),
             patch.object(api, "record_unimproved_batch") as record,
             redirect_stderr(io.StringIO()),
             redirect_stdout(io.StringIO()),
@@ -2214,12 +2282,12 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_failed_net_deferrals_never_hide_a_required_repair_neighbor(self):
         self.assertEqual(
-            api.followup_exclusions(
+            api.RepairWork.followup_exclusions(
                 ("FAILED", "TARGET", "NEIGHBOR"), ("TARGET", "NEIGHBOR")
             ),
             ("FAILED",),
         )
-        self.assertEqual(api.followup_exclusions((), ("TARGET",)), ())
+        self.assertEqual(api.RepairWork.followup_exclusions((), ("TARGET",)), ())
 
     def test_batch_sequence_temporarily_defers_unsuccessful_nets(self):
         results = [
@@ -2232,7 +2300,7 @@ class CoordinatedRepairTests(unittest.TestCase):
         ]
         output = io.StringIO()
         with (
-            patch.object(api, "run_one", side_effect=results) as run,
+            patch.object(api.ReworkRun, "run_one", side_effect=results) as run,
             patch.object(api, "record_unimproved_batch"),
             redirect_stdout(output),
         ):
@@ -2311,7 +2379,7 @@ class CoordinatedRepairTests(unittest.TestCase):
 
                 def native(function, *args, **_kwargs):
                     calls.append((function, args))
-                    if function is api.compile_candidate:
+                    if function is api.CandidateCompiler.compile_candidate:
                         return plan
                     if function is api.prepare_project:
                         return {
@@ -2324,7 +2392,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                                 "error_details": [],
                             }
                         }
-                    if function is api._dimensions_preserved_files:
+                    if function is api.CopperComparison.dimensions_preserved_files:
                         return True
                     if function is api._verify_resume_connectivity:
                         self.assertEqual(args[1], b"retained")
@@ -2346,13 +2414,17 @@ class CoordinatedRepairTests(unittest.TestCase):
                     patch.object(api, "_source_hashes", return_value={}),
                     patch.object(api, "decode_checkpoint", return_value=b"retained"),
                     patch.object(api.ProtectedState, "capture", return_value=guard),
-                    patch.object(api, "prepare_repair", return_value=prepared),
-                    patch.object(api, "repair_work_queue", return_value=[]),
-                    patch.object(api, "_candidate_batch", return_value=candidate),
+                    patch.object(
+                        api.RepairPreparer, "prepare_repair", return_value=prepared
+                    ),
+                    patch.object(api.RepairWork, "repair_work_queue", return_value=[]),
+                    patch.object(
+                        api.CandidateBatch, "candidate_batch", return_value=candidate
+                    ),
                     patch.object(api, "verify_resume_reports"),
                     patch.object(api, "run_native", side_effect=native),
                 ):
-                    result = api.run_one(
+                    result = api.ReworkRun.run_one(
                         project,
                         run_id,
                         ordinal=0,
@@ -2425,9 +2497,9 @@ class CoordinatedRepairTests(unittest.TestCase):
                 retained = []
 
                 def native(function, *args, **kwargs):
-                    if function is krt_adapter.validate_installation:
+                    if function is krt_adapter.KrtInstallation.validate_installation:
                         return next(fingerprints)
-                    if function is api.compile_candidate:
+                    if function is api.CandidateCompiler.compile_candidate:
                         return plan
                     if function is api.prepare_project:
                         return {
@@ -2440,7 +2512,7 @@ class CoordinatedRepairTests(unittest.TestCase):
                                 "error_details": [],
                             }
                         }
-                    if function is api._dimensions_preserved_files:
+                    if function is api.CopperComparison.dimensions_preserved_files:
                         return True
                     if function is api._verify_resume_connectivity:
                         return None
@@ -2458,11 +2530,13 @@ class CoordinatedRepairTests(unittest.TestCase):
                     patch.object(api, "_source_hashes", return_value={}),
                     patch.object(api, "decode_checkpoint", return_value=b"retained"),
                     patch.object(api.ProtectedState, "capture", return_value=guard),
-                    patch.object(api, "prepare_repair", return_value=prepared),
-                    patch.object(api, "repair_work_queue", return_value=[]),
                     patch.object(
-                        api,
-                        "_candidate_batch",
+                        api.RepairPreparer, "prepare_repair", return_value=prepared
+                    ),
+                    patch.object(api.RepairWork, "repair_work_queue", return_value=[]),
+                    patch.object(
+                        api.CandidateBatch,
+                        "candidate_batch",
                         return_value={
                             "status": "filtered_preview",
                             "board": b"candidate",
@@ -2482,9 +2556,9 @@ class CoordinatedRepairTests(unittest.TestCase):
                     )
                     if changed:
                         with self.assertRaisesRegex(RuntimeError, "router.*changed"):
-                            api.run_one(project, run_id, **kwargs)
+                            api.ReworkRun.run_one(project, run_id, **kwargs)
                     else:
-                        result = api.run_one(project, run_id, **kwargs)
+                        result = api.ReworkRun.run_one(project, run_id, **kwargs)
                         self.assertEqual(result["status"], "private_preview_retained")
                 self.assertEqual(route.call_args.kwargs["targets"], ("TARGET",))
                 self.assertEqual(route.call_args.kwargs["expected_tool"], fingerprint)
@@ -2538,15 +2612,15 @@ class CoordinatedRepairTests(unittest.TestCase):
             retained = []
 
             def native(function, *args, **kwargs):
-                if function is api.compile_candidate:
+                if function is api.CandidateCompiler.compile_candidate:
                     return plan
                 if function is api.prepare_project:
                     return next(preparations)
-                if function is api._focus_deferred:
+                if function is api.FocusScope.focus_deferred:
                     return (("TARGET",), ())
-                if function is api._same_copper_files:
+                if function is api.CopperComparison.same_copper_files:
                     return False
-                if function is api._dimensions_preserved_files:
+                if function is api.CopperComparison.dimensions_preserved_files:
                     return True
                 if function is api._verify_resume_connectivity:
                     return None
@@ -2565,14 +2639,20 @@ class CoordinatedRepairTests(unittest.TestCase):
                 patch.object(api, "_source_hashes", return_value={}),
                 patch.object(api, "decode_checkpoint", return_value=b"retained"),
                 patch.object(api.ProtectedState, "capture", return_value=guard),
-                patch.object(api, "prepare_repair", return_value=prepared),
-                patch.object(api, "repair_work_queue", return_value=[]),
-                patch.object(api, "interim_drc_acceptable", return_value=True),
+                patch.object(
+                    api.RepairPreparer, "prepare_repair", return_value=prepared
+                ),
+                patch.object(api.RepairWork, "repair_work_queue", return_value=[]),
+                patch.object(
+                    api.RepairChecks, "interim_drc_acceptable", return_value=True
+                ),
                 patch.object(api, "verify_resume_reports"),
-                patch.object(api, "_candidate_batch", side_effect=batches) as route,
+                patch.object(
+                    api.CandidateBatch, "candidate_batch", side_effect=batches
+                ) as route,
                 patch.object(api, "run_native", side_effect=native),
             ):
-                result = api.run_one(
+                result = api.ReworkRun.run_one(
                     project,
                     run_id,
                     ordinal=0,
@@ -2638,17 +2718,17 @@ class CoordinatedRepairTests(unittest.TestCase):
             retained = []
 
             def native(function, *args, **kwargs):
-                if function is krt_adapter.validate_installation:
+                if function is krt_adapter.KrtInstallation.validate_installation:
                     return fingerprint
-                if function is api.compile_candidate:
+                if function is api.CandidateCompiler.compile_candidate:
                     return plan
                 if function is api.prepare_project:
                     return next(preparations)
-                if function is api._focus_deferred:
+                if function is api.FocusScope.focus_deferred:
                     return (("TARGET",), ())
-                if function is api._same_copper_files:
+                if function is api.CopperComparison.same_copper_files:
                     return False
-                if function is api._dimensions_preserved_files:
+                if function is api.CopperComparison.dimensions_preserved_files:
                     return True
                 if function is api._verify_resume_connectivity:
                     return None
@@ -2667,18 +2747,22 @@ class CoordinatedRepairTests(unittest.TestCase):
                 patch.object(api, "_source_hashes", return_value={}),
                 patch.object(api, "decode_checkpoint", return_value=b"retained"),
                 patch.object(api.ProtectedState, "capture", return_value=guard),
-                patch.object(api, "prepare_repair", return_value=prepared),
-                patch.object(api, "repair_work_queue", return_value=[]),
                 patch.object(
-                    api,
+                    api.RepairPreparer, "prepare_repair", return_value=prepared
+                ),
+                patch.object(api.RepairWork, "repair_work_queue", return_value=[]),
+                patch.object(
+                    api.RepairChecks,
                     "interim_drc_acceptable",
                     side_effect=(not rejected_initial, True),
                 ),
                 patch.object(api, "verify_resume_reports"),
-                patch.object(api, "_candidate_batch", side_effect=batches) as route,
+                patch.object(
+                    api.CandidateBatch, "candidate_batch", side_effect=batches
+                ) as route,
                 patch.object(api, "run_native", side_effect=native),
             ):
-                result = api.run_one(
+                result = api.ReworkRun.run_one(
                     project,
                     run_id,
                     ordinal=0,
@@ -2801,9 +2885,9 @@ class CoordinatedRepairTests(unittest.TestCase):
                 focus_exclusions = []
 
                 def native(function, *args, **_kwargs):
-                    if function is krt_adapter.validate_installation:
+                    if function is krt_adapter.KrtInstallation.validate_installation:
                         return "a" * 64
-                    if function is api._focus_deferred:
+                    if function is api.FocusScope.focus_deferred:
                         focus_calls.append(snapshot.board_path.read_bytes())
                         focus_exclusions.append(args[3])
                         return (
@@ -2812,10 +2896,10 @@ class CoordinatedRepairTests(unittest.TestCase):
                         )
                     if function is api.prepare_project:
                         return next(preparations)
-                    if function is api.compile_candidate:
+                    if function is api.CandidateCompiler.compile_candidate:
                         self.assertEqual(args[4], ())
                         return plan
-                    if function is api._same_copper_files:
+                    if function is api.CopperComparison.same_copper_files:
                         return unchanged
                     self.fail(f"Unexpected native operation: {function}")
 
@@ -2830,9 +2914,11 @@ class CoordinatedRepairTests(unittest.TestCase):
                     patch.object(api, "decode_checkpoint", return_value=b"retained"),
                     patch.object(api.ProtectedState, "capture", return_value=guard),
                     patch.object(api, "run_native", side_effect=native),
-                    patch.object(api, "_candidate_batch", side_effect=batches) as route,
+                    patch.object(
+                        api.CandidateBatch, "candidate_batch", side_effect=batches
+                    ) as route,
                 ):
-                    result = api.run_one(
+                    result = api.ReworkRun.run_one(
                         project,
                         run_id,
                         ordinal=0,

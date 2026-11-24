@@ -18,19 +18,27 @@ class ExternalBatchTests(unittest.TestCase):
             "policy",
             {"seconds": 30},
         )
-        key = fast.fast_retry_signature(state, inputs, tools, policy, settings)
+        key = fast.RetryMemory.fast_retry_signature(
+            state, inputs, tools, policy, settings
+        )
         receipt = {"key": key, "settings": settings, "attempt": "a" * 64}
-        fast.remember_rework_attempt(state, inputs, tools, policy, receipt)
-        fast.remember_rework_attempt(state, inputs, tools, policy, receipt)
+        fast.RetryMemory.remember_rework_attempt(state, inputs, tools, policy, receipt)
+        fast.RetryMemory.remember_rework_attempt(state, inputs, tools, policy, receipt)
         import json
 
         restored = json.loads(json.dumps(state))
-        self.assertEqual(fast.rework_attempts(restored, key), ("a" * 64,))
+        self.assertEqual(fast.RetryMemory.rework_attempts(restored, key), ("a" * 64,))
         for changed in (
-            fast.fast_retry_signature(state, inputs, {"script": "b"}, policy, settings),
-            fast.fast_retry_signature(state, {"source": "b"}, tools, policy, settings),
-            fast.fast_retry_signature(state, inputs, tools, policy, {"seconds": 60}),
-            fast.fast_retry_signature(
+            fast.RetryMemory.fast_retry_signature(
+                state, inputs, {"script": "b"}, policy, settings
+            ),
+            fast.RetryMemory.fast_retry_signature(
+                state, {"source": "b"}, tools, policy, settings
+            ),
+            fast.RetryMemory.fast_retry_signature(
+                state, inputs, tools, policy, {"seconds": 60}
+            ),
+            fast.RetryMemory.fast_retry_signature(
                 {"checkpoint": {"candidate_sha256": "other"}},
                 inputs,
                 tools,
@@ -38,9 +46,9 @@ class ExternalBatchTests(unittest.TestCase):
                 settings,
             ),
         ):
-            self.assertEqual(fast.rework_attempts(restored, changed), ())
+            self.assertEqual(fast.RetryMemory.rework_attempts(restored, changed), ())
         with self.assertRaisesRegex(RuntimeError, "context changed"):
-            fast.remember_rework_attempt(
+            fast.RetryMemory.remember_rework_attempt(
                 state, inputs, {"script": "changed"}, policy, receipt
             )
         full = {
@@ -53,28 +61,34 @@ class ExternalBatchTests(unittest.TestCase):
             },
         }
         with self.assertRaisesRegex(RuntimeError, "budget is exhausted"):
-            fast.remember_rework_attempt(full, inputs, tools, policy, receipt)
+            fast.RetryMemory.remember_rework_attempt(
+                full, inputs, tools, policy, receipt
+            )
         for invalid in (["bad"], ["a" * 64, "a" * 64], [True]):
             with self.assertRaises(ValueError):
-                fast.rework_attempts(
+                fast.RetryMemory.rework_attempts(
                     {"rework_retry": {"key": key, "attempts": invalid}}, key
                 )
 
     def test_elapsed_evidence_distinguishes_completed_and_interrupted_trials(self):
-        self.assertIsNone(fast._elapsed_evidence(False, None))
-        self.assertIn("interrupted", fast._elapsed_evidence(True, None))
+        self.assertIsNone(fast.UnimprovedBatchRecord._elapsed_evidence(False, None))
+        self.assertIn(
+            "interrupted", fast.UnimprovedBatchRecord._elapsed_evidence(True, None)
+        )
         self.assertEqual(
-            fast._elapsed_evidence(True, " completed private trial "),
+            fast.UnimprovedBatchRecord._elapsed_evidence(
+                True, " completed private trial "
+            ),
             "completed private trial",
         )
         with self.assertRaises(ValueError):
-            fast._elapsed_evidence(True, " ")
+            fast.UnimprovedBatchRecord._elapsed_evidence(True, " ")
 
     def setUp(self):
         recorder = patch.object(fast, "record_unimproved_batch")
         self.record = recorder.start()
         self.addCleanup(recorder.stop)
-        loader = patch.object(fast, "load_fast_retry", return_value={})
+        loader = patch.object(fast.RetryMemory, "load_fast_retry", return_value={})
         loader.start()
         self.addCleanup(loader.stop)
 
@@ -95,8 +109,8 @@ class ExternalBatchTests(unittest.TestCase):
             },
             {"status": "no_improvement", "preview_opens": 240},
         ]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            outcome = fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            outcome = fast.FastBatches.run_batches(
                 Path("."), first, batches=10, items=80, timeout=180
             )
         self.assertEqual(outcome["run_id"], third)
@@ -109,9 +123,13 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_rejects_invalid_batch_budget(self):
         with self.assertRaises(ValueError):
-            fast.run_batches(Path("."), "a" * 32, batches=0, items=80, timeout=180)
+            fast.FastBatches.run_batches(
+                Path("."), "a" * 32, batches=0, items=80, timeout=180
+            )
         with self.assertRaises(ValueError):
-            fast.run_batches(Path("."), "a" * 32, batches=1, items=-1, timeout=180)
+            fast.FastBatches.run_batches(
+                Path("."), "a" * 32, batches=1, items=-1, timeout=180
+            )
 
     def test_failed_plot_update_keeps_the_already_saved_measurement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -127,7 +145,7 @@ class ExternalBatchTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     RuntimeError, "measurement was saved.*plot"
                 ):
-                    fast._publish_recorded_progress(
+                    fast.UnimprovedBatchRecord._publish_recorded_progress(
                         Path(directory), {}, state_path, state
                     )
             self.assertEqual(
@@ -143,15 +161,17 @@ class ExternalBatchTests(unittest.TestCase):
             "PAIR": "SIGNAL",
         }
         opens = {"OPEN": 1, "POWER": 2, "PAIR": 1}
-        targets, deferred = fast.focus_open_nets(
+        targets, deferred = fast.FocusScope.focus_open_nets(
             members, classes, opens, ("SIGNAL",), {"PAIR"}
         )
         self.assertEqual(targets, ("OPEN",))
         self.assertEqual(set(deferred), {"CONNECTED", "POWER", "PAIR"})
         with self.assertRaisesRegex(ValueError, "unidentified"):
-            fast.focus_open_nets(members, classes, {"<unknown>": 1}, ("SIGNAL",), set())
+            fast.FocusScope.focus_open_nets(
+                members, classes, {"<unknown>": 1}, ("SIGNAL",), set()
+            )
         with self.assertRaisesRegex(ValueError, "export"):
-            fast.focus_open_nets(
+            fast.FocusScope.focus_open_nets(
                 members - {"OPEN"}, classes, opens, ("SIGNAL",), {"PAIR"}
             )
 
@@ -196,12 +216,14 @@ class ExternalBatchTests(unittest.TestCase):
                 patch.object(fast, "unconnected_by_net", return_value={"OPEN": 1}),
                 patch.object(fast, "_dsn_scope", return_value=(None, network)),
             ):
-                first = fast._focus_deferred(project, {}, ("SIGNAL",), ())
-                second = fast._focus_deferred(project, {}, ("SIGNAL",), ())
+                first = fast.FocusScope.focus_deferred(project, {}, ("SIGNAL",), ())
+                second = fast.FocusScope.focus_deferred(project, {}, ("SIGNAL",), ())
                 with patch.object(
                     fast, "unqualified_working_nets", return_value={"OPEN"}
                 ):
-                    protected = fast._focus_deferred(project, {}, ("SIGNAL",), ())
+                    protected = fast.FocusScope.focus_deferred(
+                        project, {}, ("SIGNAL",), ()
+                    )
         self.assertEqual(first, (("OPEN",), ("CONNECTED",)))
         self.assertEqual(first, second)
         self.assertEqual(protected, ((), ("CONNECTED", "OPEN")))
@@ -235,7 +257,7 @@ class ExternalBatchTests(unittest.TestCase):
                 patch.object(pcbnew, "ImportSpecctraSES", side_effect=import_session),
                 patch.object(pcbnew, "SaveBoard", return_value=True),
             ):
-                result = fast._roundtrip(
+                result = fast.RoutingRoundtrip.roundtrip(
                     trial / "input.kicad_pcb",
                     trial,
                     trial / "router.exe",
@@ -251,17 +273,19 @@ class ExternalBatchTests(unittest.TestCase):
             fast, "unqualified_working_nets", return_value={"POWER", "NOT_EXPORTED"}
         ):
             self.assertEqual(
-                fast.protected_export_members(board, {"SIGNAL", "POWER"}, ()),
+                fast.FocusScope.protected_export_members(
+                    board, {"SIGNAL", "POWER"}, ()
+                ),
                 ("POWER",),
             )
 
     def test_focus_option_is_passed_to_the_search(self):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
-            patch.object(fast, "run_one", return_value=result) as run,
-            patch.object(fast, "load_fast_retry", return_value={}),
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}),
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -275,12 +299,12 @@ class ExternalBatchTests(unittest.TestCase):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
             patch(
-                "pcb.net_routing.krt_adapter.validate_installation",
+                "pcb.net_routing.krt_adapter.KrtInstallation.validate_installation",
                 return_value="tool-id",
             ) as verify,
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -296,7 +320,7 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_krt_rejects_unsupported_optimizer_and_multiple_starts(self):
         with self.assertRaisesRegex(ValueError, "optimizer"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -306,7 +330,7 @@ class ExternalBatchTests(unittest.TestCase):
                 optimizer=True,
             )
         with self.assertRaisesRegex(ValueError, "Multiple starts"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -320,13 +344,13 @@ class ExternalBatchTests(unittest.TestCase):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
             patch(
-                "pcb.net_routing.krt_adapter.validate_installation",
+                "pcb.net_routing.krt_adapter.KrtInstallation.validate_installation",
                 return_value="tool-id",
             ),
-            patch.object(fast, "load_fast_retry", return_value={}) as load,
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}) as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -343,13 +367,13 @@ class ExternalBatchTests(unittest.TestCase):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
             patch(
-                "pcb.net_routing.krt_adapter.validate_installation",
+                "pcb.net_routing.krt_adapter.KrtInstallation.validate_installation",
                 return_value="tool-id",
             ),
-            patch.object(fast, "load_fast_retry", return_value={}) as load,
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}) as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -362,7 +386,7 @@ class ExternalBatchTests(unittest.TestCase):
         self.assertTrue(run.call_args.kwargs["router_full"])
         self.assertTrue(load.call_args.args[2]["router_full"])
         with self.assertRaisesRegex(ValueError, "only.*krt"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -375,10 +399,10 @@ class ExternalBatchTests(unittest.TestCase):
     def test_optimizer_mode_is_forwarded_and_has_distinct_retry_settings(self):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
-            patch.object(fast, "run_one", return_value=result) as run,
-            patch.object(fast, "load_fast_retry", return_value={}) as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}) as load,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -390,17 +414,17 @@ class ExternalBatchTests(unittest.TestCase):
         self.assertTrue(run.call_args.kwargs["optimizer"])
         self.assertTrue(load.call_args.args[2]["optimizer"])
         with self.assertRaisesRegex(ValueError, "optimizer"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), "a" * 32, batches=1, items=80, timeout=70, optimizer="yes"
             )
 
     def test_pad_neckdown_is_forwarded_and_bound_to_failed_attempt_memory(self):
         result = {"status": "no_improvement", "preview_opens": 3}
         with (
-            patch.object(fast, "run_one", return_value=result) as run,
-            patch.object(fast, "load_fast_retry", return_value={}) as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}) as load,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -416,7 +440,7 @@ class ExternalBatchTests(unittest.TestCase):
                 self.subTest(invalid=invalid),
                 self.assertRaisesRegex(ValueError, "search_pad_neckdown"),
             ):
-                fast.run_batches(
+                fast.FastBatches.run_batches(
                     Path("."),
                     "a" * 32,
                     batches=1,
@@ -425,7 +449,7 @@ class ExternalBatchTests(unittest.TestCase):
                     search_pad_neckdown=invalid,
                 )
         with self.assertRaisesRegex(ValueError, "fastroute or Freerouting"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -437,24 +461,24 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_retry_identity_changes_with_inputs_tools_or_search_settings(self):
         state = {"checkpoint": {"candidate_sha256": "board-a"}}
-        signature = fast.fast_retry_signature(
+        signature = fast.RetryMemory.fast_retry_signature(
             state, {"pcb": "a"}, {"router": "one"}, "policy", {"timeout": 30}
         )
         self.assertNotEqual(
             signature,
-            fast.fast_retry_signature(
+            fast.RetryMemory.fast_retry_signature(
                 state, {"pcb": "b"}, {"router": "one"}, "policy", {"timeout": 30}
             ),
         )
         self.assertNotEqual(
             signature,
-            fast.fast_retry_signature(
+            fast.RetryMemory.fast_retry_signature(
                 state, {"pcb": "a"}, {"router": "two"}, "policy", {"timeout": 30}
             ),
         )
         self.assertNotEqual(
             signature,
-            fast.fast_retry_signature(
+            fast.RetryMemory.fast_retry_signature(
                 state, {"pcb": "a"}, {"router": "one"}, "policy", {"timeout": 60}
             ),
         )
@@ -468,10 +492,10 @@ class ExternalBatchTests(unittest.TestCase):
             "preview_opens": 191,
         }
         with (
-            patch.object(fast, "load_fast_retry", return_value=cached),
-            patch.object(fast, "run_one") as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value=cached),
+            patch.object(fast.FastBatch, "run_one") as run,
         ):
-            result = fast.run_batches(
+            result = fast.FastBatches.run_batches(
                 Path("."),
                 run_id,
                 batches=2,
@@ -499,10 +523,12 @@ class ExternalBatchTests(unittest.TestCase):
             "repair_blockers": {"B": "no safe route"},
         }
         with (
-            patch.object(fast, "load_fast_retry", return_value=cached) as load,
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(
+                fast.RetryMemory, "load_fast_retry", return_value=cached
+            ) as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), run_id, batches=1, items=0, timeout=70, engine="fastroute"
             )
         load.assert_called_once()
@@ -514,10 +540,10 @@ class ExternalBatchTests(unittest.TestCase):
     def test_explicit_retry_can_run_an_exhausted_focused_search(self):
         result = {"status": "no_improvement", "preview_opens": 191}
         with (
-            patch.object(fast, "load_fast_retry") as load,
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry") as load,
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -537,10 +563,10 @@ class ExternalBatchTests(unittest.TestCase):
             "dominant_class": "SIGNAL",
         }
         with (
-            patch.object(fast, "load_fast_retry", return_value={}),
-            patch.object(fast, "run_one", return_value=result) as run,
+            patch.object(fast.RetryMemory, "load_fast_retry", return_value={}),
+            patch.object(fast.FastBatch, "run_one", return_value=result) as run,
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=2,
@@ -554,7 +580,7 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_full_pass_requires_a_bounded_fastroute_run(self):
         with self.assertRaisesRegex(ValueError, "time-bounded"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -563,15 +589,15 @@ class ExternalBatchTests(unittest.TestCase):
                 engine="Freerouting",
             )
         with self.assertRaisesRegex(ValueError, "time-bounded"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), "a" * 32, batches=1, items=0, timeout=10, engine="fastroute"
             )
         with patch.object(
-            fast,
+            fast.FastBatch,
             "run_one",
             return_value={"status": "no_improvement", "preview_opens": 231},
         ) as run:
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), "a" * 32, batches=1, items=0, timeout=70, engine="fastroute"
             )
         self.assertEqual(run.call_args.kwargs["items"], 0)
@@ -591,8 +617,8 @@ class ExternalBatchTests(unittest.TestCase):
                 "preview_opens": 245,
             },
         ]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            result = fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            result = fast.FastBatches.run_batches(
                 Path("."), first, batches=2, items=80, timeout=180
             )
         self.assertEqual(result["run_id"], second)
@@ -603,8 +629,8 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_default_class_deferral_uses_the_exported_class_name(self):
         result = {"status": "no_improvement", "preview_opens": 203}
-        with patch.object(fast, "run_one", return_value=result) as run:
-            fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", return_value=result) as run:
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -614,7 +640,7 @@ class ExternalBatchTests(unittest.TestCase):
             )
         self.assertEqual(run.call_args.kwargs["ignore_net_classes"], ("kicad_default",))
         with self.assertRaisesRegex(ValueError, "distinct"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -640,8 +666,8 @@ class ExternalBatchTests(unittest.TestCase):
                 "repair_blockers": {},
             },
         ]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            result = fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            result = fast.FastBatches.run_batches(
                 Path("."), first, batches=2, items=80, timeout=180
             )
         self.assertEqual(result["run_id"], second)
@@ -659,8 +685,10 @@ class ExternalBatchTests(unittest.TestCase):
             }
             for i in range(3)
         ] + [{"status": "no_improvement", "run_id": ids[3], "preview_opens": 248}]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            fast.run_batches(Path("."), "a" * 32, batches=4, items=80, timeout=180)
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            fast.FastBatches.run_batches(
+                Path("."), "a" * 32, batches=4, items=80, timeout=180
+            )
         self.assertEqual(run.call_args_list[1].kwargs["ignore_nets"], ("SYS5_CORE",))
         self.assertEqual(run.call_args_list[2].kwargs["ignore_nets"], ("SYS5_CORE",))
         self.assertEqual(run.call_args_list[3].kwargs["ignore_nets"], ())
@@ -675,8 +703,8 @@ class ExternalBatchTests(unittest.TestCase):
             }
             for i in range(3)
         ] + [{"status": "no_improvement", "run_id": ids[3], "preview_opens": 248}]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=4,
@@ -699,8 +727,8 @@ class ExternalBatchTests(unittest.TestCase):
                 "preview_opens": 249,
             },
         ]
-        with patch.object(fast, "run_one", side_effect=results) as run:
-            result = fast.run_batches(
+        with patch.object(fast.FastBatch, "run_one", side_effect=results) as run:
+            result = fast.FastBatches.run_batches(
                 Path("."), first, batches=2, items=80, timeout=70, engine="fastroute"
             )
         self.assertEqual(result["run_id"], second)
@@ -709,11 +737,11 @@ class ExternalBatchTests(unittest.TestCase):
     def test_last_short_batch_does_not_claim_a_full_pass_will_run(self):
         messages = []
         with patch.object(
-            fast,
+            fast.FastBatch,
             "run_one",
             return_value={"status": "no_safe_proposal", "preview_opens": 214},
         ):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -729,11 +757,11 @@ class ExternalBatchTests(unittest.TestCase):
     def test_passes_the_selected_engine_to_each_batch(self):
         run_id = "a" * 32
         with patch.object(
-            fast,
+            fast.FastBatch,
             "run_one",
             return_value={"status": "no_improvement", "preview_opens": 245},
         ) as run:
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), run_id, batches=1, items=80, timeout=180, engine="fastroute"
             )
         self.assertEqual(run.call_args.kwargs["engine"], "fastroute")
@@ -741,11 +769,11 @@ class ExternalBatchTests(unittest.TestCase):
 
     def test_can_compare_two_router_orders_without_changing_validation(self):
         with patch.object(
-            fast,
+            fast.FastBatch,
             "run_one",
             return_value={"status": "no_improvement", "preview_opens": 211},
         ) as run:
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 "a" * 32,
                 batches=1,
@@ -756,18 +784,18 @@ class ExternalBatchTests(unittest.TestCase):
             )
         self.assertEqual(run.call_args.kwargs["starts"], 2)
         with self.assertRaisesRegex(ValueError, "starts"):
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."), "a" * 32, batches=1, items=80, timeout=70, starts=0
             )
 
     def test_auto_engine_preserves_explicit_jar_compatibility(self):
         run_id = "a" * 32
         with patch.object(
-            fast,
+            fast.FastBatch,
             "run_one",
             return_value={"status": "no_improvement", "preview_opens": 245},
         ) as run:
-            fast.run_batches(
+            fast.FastBatches.run_batches(
                 Path("."),
                 run_id,
                 batches=1,
@@ -785,7 +813,7 @@ class ExternalBatchTests(unittest.TestCase):
             return {"status": "private_preview_retained"}
 
         with patch.object(fast, "retain_candidate", side_effect=retain):
-            result, returned = fast._retain_in_worker(
+            result, returned = fast.FastBatch._retain_in_worker(
                 Path("project"),
                 "a" * 32,
                 Path("candidate"),
@@ -812,14 +840,14 @@ class ExternalBatchTests(unittest.TestCase):
         ]
         messages = []
         with (
-            patch.object(fast, "run_one", side_effect=results),
+            patch.object(fast.FastBatch, "run_one", side_effect=results),
             patch.object(
                 fast.time,
                 "monotonic",
                 side_effect=[100.0, 101.0, 160.0, 161.0, 189.0, 190.0],
             ),
         ):
-            result = fast.run_batches(
+            result = fast.FastBatches.run_batches(
                 Path("."),
                 first,
                 batches=2,
@@ -837,11 +865,15 @@ class ExternalBatchTests(unittest.TestCase):
     def test_failed_batch_records_its_elapsed_time_before_reporting_error(self):
         run_id = "a" * 32
         with (
-            patch.object(fast, "run_one", side_effect=RuntimeError("router failed")),
+            patch.object(
+                fast.FastBatch, "run_one", side_effect=RuntimeError("router failed")
+            ),
             patch.object(fast.time, "monotonic", side_effect=[100.0, 101.0, 131.0]),
         ):
             with self.assertRaisesRegex(RuntimeError, "router failed"):
-                fast.run_batches(Path("."), run_id, batches=1, items=80, timeout=180)
+                fast.FastBatches.run_batches(
+                    Path("."), run_id, batches=1, items=80, timeout=180
+                )
         self.assertEqual(self.record.call_args.args[1:], (run_id, 30.0))
 
 

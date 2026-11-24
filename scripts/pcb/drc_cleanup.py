@@ -663,7 +663,7 @@ class DrcCleanup:
             publication.
         """
         import pcbnew
-        from pcb.branch_widths import compile_widths
+        from pcb.branch_widths import WidthRules
         from pcb.net_routing.controller import encode_checkpoint
         from pcb.net_routing.isolation import run_native
         from pcb.net_routing.native import Snapshot
@@ -713,7 +713,7 @@ class DrcCleanup:
                 if candidate == filled_source:
                     return {"status": "no_eligible_contact_repairs", **counts}
                 original_board = pcbnew.LoadBoard(str(snapshot.board_path))
-                before_rules, _ = compile_widths(original_board, config)
+                before_rules, _ = WidthRules.compile(original_board, config)
                 prior = snapshot.directory / "prior.kicad_pcb"
                 prior.write_bytes(snapshot.original)
                 snapshot.board_path.write_bytes(candidate)
@@ -725,7 +725,7 @@ class DrcCleanup:
                     save_refill=keepouts,
                 )
                 candidate_board = pcbnew.LoadBoard(str(snapshot.board_path))
-                after_rules, _ = compile_widths(candidate_board, config)
+                after_rules, _ = WidthRules.compile(candidate_board, config)
                 EditProofs.tap_proofs(before_rules, after_rules)
                 zones = {
                     str(z.GetNetname())

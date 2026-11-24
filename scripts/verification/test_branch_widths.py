@@ -4,11 +4,7 @@ import unittest
 from pathlib import Path
 import tempfile
 
-from pcb.branch_widths import (
-    bounded_leaves,
-    check_unchanged_other_rules,
-    compile_widths,
-)
+from pcb.branch_widths import BranchGraph, WidthRuleCheck, WidthRules
 from core.toolchain import kicad_cli
 from core.compat import strict_zip
 
@@ -18,9 +14,9 @@ class BranchWidthTests(unittest.TestCase):
         self,
     ):
         import pcbnew
-        from pcb.branch_widths import tap_selector
+        from pcb.branch_widths import WidthRules
         from pcb.route_validation import _drc
-        from pcb.width_repair import required_widths
+        from pcb.width_repair import DrcFindings
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as folder:
@@ -39,9 +35,11 @@ class BranchWidthTests(unittest.TestCase):
             tap, trunk = trace(0), trace(1000000)
             for item in (tap, trunk):
                 board.Add(item)
-            condition = tap_selector(board, tap, (tap, trunk))
+            condition = WidthRules.tap_selector(board, tap, (tap, trunk))
             self.assertIsNotNone(condition)
-            self.assertIsNone(tap_selector(board, tap, (tap, trunk, trace(1))))
+            self.assertIsNone(
+                WidthRules.tap_selector(board, tap, (tap, trunk, trace(1)))
+            )
             pcbnew.SaveBoard(str(source), board)
             source.with_suffix(".kicad_dru").write_text(
                 '(version 1)\n(rule "trunk" (condition "A.NetName == \'SIGNAL\'") '
@@ -50,7 +48,9 @@ class BranchWidthTests(unittest.TestCase):
                 encoding="utf-8",
             )
             report = _drc(kicad_cli(), source, Path(folder) / "native.json")
-            self.assertEqual(required_widths(report), {trunk.m_Uuid.AsString(): 600000})
+            self.assertEqual(
+                DrcFindings.required_widths(report), {trunk.m_Uuid.AsString(): 600000}
+            )
 
     def test_multiple_upstream_items_at_one_exact_port_are_one_branch_junction(self):
         graph = {
@@ -63,7 +63,7 @@ class BranchWidthTests(unittest.TestCase):
         }
         ports = {("tap", "a"): (5000000, 2000000), ("tap", "b"): (5000000, 2000000)}
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 graph,
                 {"source", "unknown", "sense"},
                 {"sense": 0.001},
@@ -74,7 +74,7 @@ class BranchWidthTests(unittest.TestCase):
         )
         ports[("tap", "b")] = (5000000, 4000000)
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 graph,
                 {"source", "unknown", "sense"},
                 {"sense": 0.001},
@@ -85,7 +85,7 @@ class BranchWidthTests(unittest.TestCase):
         )
         ports.pop(("tap", "b"))
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 graph,
                 {"source", "unknown", "sense"},
                 {"sense": 0.001},
@@ -108,20 +108,27 @@ class BranchWidthTests(unittest.TestCase):
         pads = {"source", "load", "sense"}
         loads = {"sense": 0.01}
         tracks = {"root", "feed", "a", "b"}
-        self.assertEqual(bounded_leaves(graph, pads, loads, tracks), {"feed": 0.01})
         self.assertEqual(
-            bounded_leaves(graph, pads, loads, tracks, include_downstream=True),
+            BranchGraph.bounded_leaves(graph, pads, loads, tracks), {"feed": 0.01}
+        )
+        self.assertEqual(
+            BranchGraph.bounded_leaves(
+                graph, pads, loads, tracks, include_downstream=True
+            ),
             {"feed": 0.01, "a": 0.01, "b": 0.01},
         )
         graph["b"].add("load")
         graph["load"].add("b")
         self.assertEqual(
-            bounded_leaves(graph, pads, loads, tracks, include_downstream=True), {}
+            BranchGraph.bounded_leaves(
+                graph, pads, loads, tracks, include_downstream=True
+            ),
+            {},
         )
 
     def test_native_contact_port_requires_a_unique_endpoint_contact(self):
         import pcbnew
-        from pcb.branch_widths import contact_port
+        from pcb.branch_widths import CopperContacts
 
         board = pcbnew.BOARD()
 
@@ -134,26 +141,36 @@ class BranchWidthTests(unittest.TestCase):
 
         spur = track((5000000, 2000000), (5000000, 4000000))
         self.assertEqual(
-            contact_port(spur, track((2000000, 2000000), (5000000, 2000000))),
+            CopperContacts.contact_port(
+                spur, track((2000000, 2000000), (5000000, 2000000))
+            ),
             (5000000, 2000000),
         )
         self.assertEqual(
-            contact_port(spur, track((5000000, 2000000), (8000000, 2000000))),
+            CopperContacts.contact_port(
+                spur, track((5000000, 2000000), (8000000, 2000000))
+            ),
             (5000000, 2000000),
         )
         self.assertIsNone(
-            contact_port(spur, track((2000000, 3000000), (8000000, 3000000)))
+            CopperContacts.contact_port(
+                spur, track((2000000, 3000000), (8000000, 3000000))
+            )
         )
         self.assertIsNone(
-            contact_port(spur, track((5000000, 1000000), (5000000, 3000000)))
+            CopperContacts.contact_port(
+                spur, track((5000000, 1000000), (5000000, 3000000))
+            )
         )
         self.assertIsNone(
-            contact_port(spur, track((4900000, 1000000), (4900000, 5000000)))
+            CopperContacts.contact_port(
+                spur, track((4900000, 1000000), (4900000, 5000000))
+            )
         )
 
     def test_secondary_contact_requires_a_common_physical_landing(self):
         import pcbnew
-        from pcb.branch_widths import common_copper_landing
+        from pcb.branch_widths import CopperContacts
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as folder:
@@ -171,14 +188,14 @@ class BranchWidthTests(unittest.TestCase):
 
             leaf = trace((2000000, 2000000), (5000000, 2000000), 400000)
             overlap = trace((1500000, 1800000), (2150000, 1800000), 200000)
-            self.assertTrue(common_copper_landing(leaf, (pad, overlap)))
+            self.assertTrue(CopperContacts.common_landing(leaf, (pad, overlap)))
             overlap.SetEnd(pcbnew.VECTOR2I(3400000, 1800000))
-            self.assertFalse(common_copper_landing(leaf, (pad, overlap)))
+            self.assertFalse(CopperContacts.common_landing(leaf, (pad, overlap)))
 
             transverse = trace((2050000, 1200000), (2050000, 2800000), 800000)
-            self.assertTrue(common_copper_landing(leaf, (transverse,)))
+            self.assertTrue(CopperContacts.common_landing(leaf, (transverse,)))
             parallel = trace((1200000, 2050000), (2800000, 2050000), 800000)
-            self.assertFalse(common_copper_landing(leaf, (parallel,)))
+            self.assertFalse(CopperContacts.common_landing(leaf, (parallel,)))
 
     def test_rectangular_landing_proves_group_and_rejects_exposed_second_contact(self):
         import pcbnew
@@ -250,7 +267,7 @@ class BranchWidthTests(unittest.TestCase):
                 }
             ],
         }
-        block, counts = compile_widths(board, config)
+        block, counts = WidthRules.compile(board, config)
         self.assertEqual(counts, {"PWR": 2})
         for uid in branch:
             self.assertIn(f"PWR tap {uid}", block)
@@ -259,7 +276,7 @@ class BranchWidthTests(unittest.TestCase):
         # beyond the original landing. The branch allowance is no longer proven.
         rectangle((4.3, 5.8), (5.3, 6.65))
         with self.assertRaisesRegex(ValueError, "local load path unproven"):
-            compile_widths(board, config)
+            WidthRules.compile(board, config)
 
     def test_a_track_with_two_upstream_contacts_cannot_borrow_a_sense_tap_limit(self):
         # Removing this whole copper item isolates the sense terminal, but the
@@ -274,7 +291,7 @@ class BranchWidthTests(unittest.TestCase):
             "sense": {"wide"},
         }
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 graph, {"source", "unknown", "sense"}, {"sense": 0.001}, {"wide"}
             ),
             {},
@@ -326,9 +343,9 @@ class BranchWidthTests(unittest.TestCase):
             "items": [{"uuid": "power"}],
         }
         after = {**before, "violations": [width]}
-        check_unchanged_other_rules(before, after)
+        WidthRuleCheck.unchanged_other_rules(before, after)
         with self.assertRaises(RuntimeError):
-            check_unchanged_other_rules(
+            WidthRuleCheck.unchanged_other_rules(
                 before, {**before, "violations": [{**width, "type": "shorting_items"}]}
             )
 
@@ -346,7 +363,7 @@ class BranchWidthTests(unittest.TestCase):
             "required_components": [{"reference": "R147", "value": "2.61k"}],
         }
         with self.assertRaisesRegex(ValueError, "R147"):
-            compile_widths(board, config)
+            WidthRules.compile(board, config)
 
     def test_native_rail_inventory_and_search_compiler_agree(self):
         import pcbnew
@@ -372,7 +389,7 @@ class BranchWidthTests(unittest.TestCase):
                     }
                 ],
             }
-            block, _ = compile_widths(board, config)
+            block, _ = WidthRules.compile(board, config)
             path = Path(folder) / "rules.kicad_dru"
             path.write_text("(version 1)\n" + block, encoding="utf-8")
             rules = RoutingRules(
@@ -389,7 +406,7 @@ class BranchWidthTests(unittest.TestCase):
             )
             config["rails"][0]["terminals"].pop()
             with self.assertRaisesRegex(ValueError, "terminal inventory changed"):
-                compile_widths(board, config)
+                WidthRules.compile(board, config)
 
     def test_only_leaf_path_receives_the_known_load(self):
         graph = {
@@ -400,7 +417,7 @@ class BranchWidthTests(unittest.TestCase):
             "tap2": {"tap1", "sense"},
             "sense": {"tap2"},
         }
-        found = bounded_leaves(
+        found = BranchGraph.bounded_leaves(
             graph,
             {"source", "load", "sense"},
             {"sense": 0.001},
@@ -463,7 +480,7 @@ class BranchWidthTests(unittest.TestCase):
                 trace.SetWidth(width)
                 board.Add(trace)
                 traces.append(trace)
-            block, counts = compile_widths(
+            block, counts = WidthRules.compile(
                 board, {"schema": 1, "electrically_verified": False, "taps": groups}
             )
             self.assertEqual(counts, {"SIGNAL": 2})
@@ -476,7 +493,7 @@ class BranchWidthTests(unittest.TestCase):
                     )
                 )
             board.Remove(traces[0])
-            _, isolated = compile_widths(
+            _, isolated = WidthRules.compile(
                 board, {"schema": 1, "electrically_verified": False, "taps": groups}
             )
             self.assertEqual(isolated, {"SIGNAL": 0})
@@ -489,7 +506,7 @@ class BranchWidthTests(unittest.TestCase):
             "b": {"feed"},
         }
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 graph, {"source", "a", "b"}, {"a": 0.002, "b": 0.003}, {"feed"}
             ),
             {"feed": 0.005},
@@ -503,7 +520,10 @@ class BranchWidthTests(unittest.TestCase):
             "sense": {"a", "b"},
         }
         self.assertEqual(
-            bounded_leaves(mesh, {"source", "sense"}, {"sense": 0.001}, {"a", "b"}), {}
+            BranchGraph.bounded_leaves(
+                mesh, {"source", "sense"}, {"sense": 0.001}, {"a", "b"}
+            ),
+            {},
         )
         unknown = {
             "source": {"feed"},
@@ -512,7 +532,7 @@ class BranchWidthTests(unittest.TestCase):
             "unknown": {"feed"},
         }
         self.assertEqual(
-            bounded_leaves(
+            BranchGraph.bounded_leaves(
                 unknown, {"source", "sense", "unknown"}, {"sense": 0.001}, {"feed"}
             ),
             {},
@@ -521,7 +541,10 @@ class BranchWidthTests(unittest.TestCase):
     def test_disconnected_sense_island_has_no_demonstrated_source(self):
         graph = {"source": set(), "tap": {"sense"}, "sense": {"tap"}}
         self.assertEqual(
-            bounded_leaves(graph, {"source", "sense"}, {"sense": 0}, {"tap"}), {}
+            BranchGraph.bounded_leaves(
+                graph, {"source", "sense"}, {"sense": 0}, {"tap"}
+            ),
+            {},
         )
 
 

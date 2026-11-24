@@ -1,5 +1,6 @@
-"""test_autoroute_checkpoint.py: check that automatic small-island checkpoints advance multi-terminal nets
-safely.
+"""test_autoroute_checkpoint.py: check small-island routing checkpoints.
+
+Automatic small-island checkpoints advance multi-terminal nets safely.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -31,7 +32,7 @@ class SiteFactory:
 
 
 class CheckpointRoutingTests(unittest.TestCase):
-    """Tests for checkpoint selection, search windows and native-checked partial routing."""
+    """Tests for checkpoint selection, search windows and partial routing."""
 
     def test_checkpoint_uses_nearest_of_all_retained_access_sites(self):
         from pcb.net_routing.checkpoint import choose_checkpoint
@@ -56,8 +57,9 @@ class CheckpointRoutingTests(unittest.TestCase):
         for _ in range(30):
 
             def make_site():
-                """Return a Site at a random position inside a 100 mm square on a random layer
-                of F.Cu, B.Cu, In1.Cu and In2.Cu.
+                """Return a Site at a random point of a 100 mm square on a random layer.
+
+                The layer is one of F.Cu, B.Cu, In1.Cu and In2.Cu.
                 """
                 return Site(
                     Point(rng.randrange(100_000_000), rng.randrange(100_000_000)),

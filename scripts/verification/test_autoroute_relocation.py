@@ -1,5 +1,6 @@
-"""test_autoroute_relocation.py: check native witnesses for obstacle diagnosis and transactional bottom-part
-movement.
+"""test_autoroute_relocation.py: check obstacle diagnosis and bottom-part movement.
+
+Native witnesses for obstacle diagnosis and transactional bottom movement.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -38,14 +39,14 @@ BOTTOM_ONLY = {"sides": ["bottom"]}
 
 
 class ObstructionHitsTests(unittest.TestCase):
-    """Tests for which nets ObstructionScan.hits reports as blocking a route."""
+    """Tests for the nets ObstructionScan.hits reports as blocking."""
 
     def test_same_net_copper_is_not_mistaken_for_a_blocking_trace(self):
         class Profile:
-            """Routing profile stub with a 0.2 mm track width and a 0.2 mm clearance."""
+            """Routing profile stub with a 0.2 mm width and a 0.2 mm clearance."""
 
             def pieces(self, segment):
-                """Return the segment as one piece with a width of 0.2 mm."""
+                """Return the segment as one piece of 0.2 mm width."""
                 return ((segment, mm(0.2)),)
 
             def clearance_at(self, segment, shape, *, width):
@@ -75,10 +76,10 @@ class ObstructionHitsTests(unittest.TestCase):
 
     def test_new_vias_still_consider_nearby_existing_same_net_vias(self):
         class Profile:
-            """Routing profile stub with a 0.2 mm track width and a 0.2 mm clearance."""
+            """Routing profile stub with a 0.2 mm width and a 0.2 mm clearance."""
 
             def pieces(self, segment):
-                """Return the segment as one piece with a width of 0.2 mm."""
+                """Return the segment as one piece of 0.2 mm width."""
                 return ((segment, mm(0.2)),)
 
             def clearance_at(self, segment, shape, *, width):
@@ -110,7 +111,7 @@ class ObstructionHitsTests(unittest.TestCase):
 
 
 class BoardBuilder:
-    """Adds tracks and multi-net components to native boards for the relocation tests."""
+    """Adds tracks and multi-net components to native boards for the tests."""
 
     @staticmethod
     def add_track(board, net, start, end, *, bottom=False, width=0.25):
@@ -136,8 +137,10 @@ class BoardBuilder:
 
     @staticmethod
     def add_multinet_component(board):
-        """Add a bottom-side component U50 at (3, 3) mm with seven extra pads, each on
-        its own new net INCIDENT_1 to INCIDENT_7.
+        """Add a bottom-side component with pads on eight nets and return the nets.
+
+        The component U50 sits at (3, 3) mm. Besides its first pad it has seven pads,
+        each on its own new net INCIDENT_1 to INCIDENT_7.
 
         Inputs:
             board: native board that already holds the SIGNAL net.
@@ -164,7 +167,7 @@ class BoardBuilder:
 
 
 class RelocationTests(unittest.TestCase):
-    """Tests for obstruction diagnosis, anchor poses and placement moves of bottom-side parts."""
+    """Tests for obstruction diagnosis, anchor poses and bottom-part moves."""
 
     def test_protected_anchor_candidates_leave_protected_pad_and_copper_untouched(self):
         from pcb.net_routing.relocation import AnchorRequests, protected_anchor_pose
@@ -493,7 +496,7 @@ class RelocationTests(unittest.TestCase):
 
     def test_local_escape_finds_only_copper_trapping_the_pad(self):
         def box(x1, y1, x2, y2, net):
-            """Return a copper Obstacle on F.Cu and the given net spanning two corners.
+            """Return a copper Obstacle on F.Cu spanning two corners.
 
             Inputs:
                 x1, y1, x2, y2: opposite corners in mm.
@@ -854,7 +857,9 @@ class RelocationTests(unittest.TestCase):
         # Locked walls close the top layer and leave one bottom-layer gap,
         # which R50 fills. Two nearer bottom parts block nothing.
         def part(board, reference, at, size, net, *, bottom, locked=False):
-            """Add a single-pad footprint with a rectangular pad and hidden texts and return it.
+            """Add a footprint with one rectangular pad and return it.
+
+            The footprint's reference and value texts are hidden.
 
             Inputs:
                 board: native board that already holds the net.

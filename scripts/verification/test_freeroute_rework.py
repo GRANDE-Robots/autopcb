@@ -1,4 +1,9 @@
-"""Tests for coordinated external repair safeguards."""
+"""test_freeroute_rework.py: check coordinated external repair.
+
+Tests for the safeguards of coordinated external repair.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from contextlib import redirect_stderr, redirect_stdout
 import io
@@ -15,11 +20,19 @@ from core.compat import strict_zip
 
 
 class CoordinatedRepairTests(unittest.TestCase):
+    """Tests for coordinated external repair, its filtering and its resume checks."""
+
     def test_local_copper_ground_repair_is_followed_by_an_independent_check(self):
         for policy in (None, {"working_scope": {}}):
             calls = []
 
             def native(function, *_args, **_kwargs):
+                """Answer ground access and project preparation with fixed results.
+
+                Stand-in for run_native. Ground access reports one proposed stitch and
+                project preparation reports zero open connections. The operation is
+                recorded; any other operation fails the test.
+                """
                 calls.append(function)
                 if function is api.prepare_ground_access:
                     return {"proposed_stitches": 1, "before": 2, "after": 0}
@@ -44,6 +57,12 @@ class CoordinatedRepairTests(unittest.TestCase):
             calls = []
 
             def native(function, *args, **kwargs):
+                """Answer the preview, roundtrip and proposal filter.
+
+                Stand-in for run_native. The operation is recorded and the preview
+                options are kept. The three operations return fixed results; any other
+                operation fails the test.
+                """
                 calls.append(function)
                 if function is api.preview:
                     options.append(kwargs)
@@ -117,6 +136,13 @@ class CoordinatedRepairTests(unittest.TestCase):
                 after = {"drc": {"open_connections": 3}}
 
                 def native(function, *args, **kwargs):
+                    """Answer tree restoration, ground access and preparation.
+
+                    Stand-in for run_native. The operation is recorded. No tree is
+                    restored, ground access reports the proposed stitches, and project
+                    preparation returns the before result at first and the after result
+                    on later calls. Any other operation fails the test.
+                    """
                     calls.append(function)
                     if function is api.TreeRenewal.restore_unimproved_trees:
                         return ()
@@ -246,6 +272,11 @@ class CoordinatedRepairTests(unittest.TestCase):
     def setUp(self):
         # Pipeline tests use byte sentinels and mock native DRC. Whole-net
         # stability itself has independent real-file tests in test_autoroute_resume.
+        """Replace stable_connection_items with an empty result for each test.
+
+        The pipeline tests use byte sentinels and mocked DRC. The replacement is undone
+        when the test ends.
+        """
         proof = patch.object(api, "stable_connection_items", return_value={})
         self.addCleanup(proof.stop)
         proof.start()
@@ -374,6 +405,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             board = pcbnew.LoadBoard(str(source))
 
             def add(a, b):
+                """Add an F.Cu track of net SIGNAL and return it.
+
+                The track is 0.2 mm wide.
+
+                Inputs:
+                    a, b: (x, y) end points in mm.
+                """
                 track = pcbnew.PCB_TRACK(board)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 track.SetLayer(pcbnew.F_Cu)
@@ -801,6 +839,11 @@ class CoordinatedRepairTests(unittest.TestCase):
 
     def test_interim_rework_accepts_only_identical_existing_native_errors(self):
         def finding(actual):
+            """Return the sorted JSON of a pad-to-hole copper-edge clearance error.
+
+            Inputs:
+                actual: measured clearance in mm named in the description.
+            """
             return json.dumps(
                 {
                     "type": "copper_edge_clearance",
@@ -965,6 +1008,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             calls = []
 
             def native(function, *_args, **_kwargs):
+                """Answer the focus step and project preparation.
+
+                Stand-in for run_native. The operation is recorded. The focus step
+                rewrites the board and returns the focus net TARGET and the deferred net
+                OTHER, and project preparation reports three open connections. Any other
+                operation fails the test.
+                """
                 calls.append(function)
                 if function is api.FocusScope.focus_deferred:
                     board.write_bytes(b"refilled")
@@ -1006,6 +1056,17 @@ class CoordinatedRepairTests(unittest.TestCase):
             focus=("SIGNAL",),
             blocked=None,
         ):
+            """Return the preparation key of the given inputs.
+
+            An argument that is left out takes a fixed default.
+
+            Inputs:
+                inputs, tools: source and tool hashes.
+                policy: policy digest text.
+                board: board bytes.
+                focus: names of the focused nets.
+                blocked: mapping of blocked nets.
+            """
             return api.RepairPreparer.preparation_key(
                 inputs or {"input": "a"},
                 tools or {"tool": "a"},
@@ -1878,6 +1939,12 @@ class CoordinatedRepairTests(unittest.TestCase):
         reason = "Resumed candidate broke an existing copper connection"
 
         def native(function, *_args, **_kwargs):
+            """Answer the preview and roundtrip and reject at the proposal filter.
+
+            Stand-in for run_native. The preview and the roundtrip return fixed results
+            and the proposal filter raises RuntimeError with the test's reason. Any
+            other operation fails the test.
+            """
             if function is api.preview:
                 return {"trial_board": "trial/candidate.kicad_pcb"}
             if function is api.RoutingRoundtrip.roundtrip:
@@ -1917,6 +1984,14 @@ class CoordinatedRepairTests(unittest.TestCase):
                 calls, messages = [], []
 
                 def attempt(engine):
+                    """Record the engine and return the result of a repair attempt.
+
+                    The private board must be unchanged. The engine fastroute returns
+                    the rejected status; any other engine returns a filtered preview.
+
+                    Inputs:
+                        engine: name of the routing backend.
+                    """
                     calls.append(engine)
                     self.assertEqual(board.read_bytes(), b"stripped private board")
                     return (
@@ -1948,6 +2023,11 @@ class CoordinatedRepairTests(unittest.TestCase):
                 with self.subTest(result=result):
 
                     def mutate(_engine):
+                        """Overwrite the private board and return the result under test.
+
+                        Inputs:
+                            _engine: name of the routing backend, unused.
+                        """
                         board.write_bytes(b"unexpected mutation")
                         return result
 
@@ -1999,6 +2079,13 @@ class CoordinatedRepairTests(unittest.TestCase):
         messages = []
 
         def native(function, *args, **kwargs):
+            """Answer the Freerouting preview, roundtrip and proposal filter.
+
+            Stand-in for run_native. The operation is recorded. The preview returns a
+            trial board with the router fingerprint, the roundtrip returns a path, and
+            the proposal filter checks its options, forwards three progress events and
+            returns a filtered preview. Any other operation fails the test.
+            """
             calls.append((function, args, kwargs))
             if function is api.preview:
                 return {
@@ -2086,6 +2173,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             calls = []
 
             def native(function, *args, **kwargs):
+                """Answer the KRT preview and the proposal filter.
+
+                Stand-in for run_native. The operation is recorded. The KRT preview
+                checks its targeted nets and returns a proposal with the tool
+                fingerprint. The proposal filter checks its arguments and returns a
+                filtered preview. Any other operation fails the test.
+                """
                 calls.append((function, args, kwargs))
                 if function is krt_adapter.KrtPreview.preview:
                     self.assertEqual(args[3], ("TARGET", "NEIGHBOR"))
@@ -2194,6 +2288,12 @@ class CoordinatedRepairTests(unittest.TestCase):
             baseline.write_bytes(b"private pruned baseline")
 
             def native(function, *args, **kwargs):
+                """Answer the KRT preview and the proposal filter.
+
+                Stand-in for run_native. The preview returns a copy of the raw result.
+                The proposal filter checks the deferred nets and the salvaged board and
+                returns a filtered preview.
+                """
                 if function is krt_adapter.KrtPreview.preview:
                     self.assertTrue(kwargs["salvage_strict"])
                     return dict(raw)
@@ -2378,6 +2478,14 @@ class CoordinatedRepairTests(unittest.TestCase):
                 calls = []
 
                 def native(function, *args, **_kwargs):
+                    """Answer candidate compilation, preparation and retention.
+
+                    Stand-in for run_native. The operation and its arguments are
+                    recorded. Candidate compilation, project preparation, dimension
+                    comparison and retention return fixed results, and connectivity
+                    verification raises RuntimeError when the case is broken. Any other
+                    operation fails the test.
+                    """
                     calls.append((function, args))
                     if function is api.CandidateCompiler.compile_candidate:
                         return plan
@@ -2497,6 +2605,14 @@ class CoordinatedRepairTests(unittest.TestCase):
                 retained = []
 
                 def native(function, *args, **kwargs):
+                    """Answer tool validation, compilation and retention.
+
+                    Stand-in for run_native. Tool validation returns the next
+                    fingerprint. Candidate compilation, project preparation, dimension
+                    comparison, connectivity verification and retention return fixed
+                    results, and the retention keywords are recorded. Any other
+                    operation fails the test.
+                    """
                     if function is krt_adapter.KrtInstallation.validate_installation:
                         return next(fingerprints)
                     if function is api.CandidateCompiler.compile_candidate:
@@ -2612,6 +2728,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             retained = []
 
             def native(function, *args, **kwargs):
+                """Answer compilation, preparation and retention.
+
+                Stand-in for run_native. Candidate compilation, the next project
+                preparation, focus, copper comparison, connectivity verification and
+                retention return fixed results, and the retention keywords are recorded.
+                Any other operation fails the test.
+                """
                 if function is api.CandidateCompiler.compile_candidate:
                     return plan
                 if function is api.prepare_project:
@@ -2672,6 +2795,11 @@ class CoordinatedRepairTests(unittest.TestCase):
                 self._check_mixed_router_improvement(rejected_initial)
 
     def _check_mixed_router_improvement(self, rejected_initial):
+        """Run a fastroute batch with a KRT follow-up and check both stages are kept.
+
+        Inputs:
+            rejected_initial: when true the interim DRC check rejects the first batch.
+        """
         from pcb.net_routing import krt_adapter
 
         with tempfile.TemporaryDirectory() as folder:
@@ -2718,6 +2846,13 @@ class CoordinatedRepairTests(unittest.TestCase):
             retained = []
 
             def native(function, *args, **kwargs):
+                """Answer tool validation, compilation and retention.
+
+                Stand-in for run_native. Tool validation, candidate compilation, the
+                next project preparation, focus, copper comparison, connectivity
+                verification and retention return fixed results, and the retention
+                keywords are recorded. Any other operation fails the test.
+                """
                 if function is krt_adapter.KrtInstallation.validate_installation:
                     return fingerprint
                 if function is api.CandidateCompiler.compile_candidate:
@@ -2851,6 +2986,14 @@ class CoordinatedRepairTests(unittest.TestCase):
                 )
 
                 def drc(opens):
+                    """Return a checked DRC summary with the given open connections.
+
+                    The summary has no errors, exclusions, parity findings or
+                    violations.
+
+                    Inputs:
+                        opens: number of open connections.
+                    """
                     return {
                         "open_connections": opens,
                         "errors": 0,
@@ -2885,6 +3028,13 @@ class CoordinatedRepairTests(unittest.TestCase):
                 focus_exclusions = []
 
                 def native(function, *args, **_kwargs):
+                    """Answer tool validation, focus and preparation.
+
+                    Stand-in for run_native. Tool validation, focus, the next project
+                    preparation, candidate compilation and copper comparison return
+                    fixed results, and the board and exclusions seen by the focus step
+                    are recorded. Any other operation fails the test.
+                    """
                     if function is krt_adapter.KrtInstallation.validate_installation:
                         return "a" * 64
                     if function is api.FocusScope.focus_deferred:

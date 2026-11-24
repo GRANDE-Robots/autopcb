@@ -1,4 +1,6 @@
-"""test_routing_progress.py: run focused checks of the saved-board routing progress recorder.
+"""test_routing_progress.py: check the routing progress recorder.
+
+Focused checks for the saved-board routing progress recorder.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """

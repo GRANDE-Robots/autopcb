@@ -1,4 +1,9 @@
-"""Regression coverage for portable project selection and the native product flow."""
+"""test_product.py: check project selection and the native product flow.
+
+Regression coverage for portable project selection and the native product flow.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from hashlib import sha256
 import json
@@ -29,6 +34,8 @@ from pcb.route_validation import _copy_inputs, _inputs
 
 
 class ProjectIntakeTests(unittest.TestCase):
+    """Tests for project selection, hierarchy copying and source snapshots."""
+
     def test_explicit_selection_and_hierarchy_survive_a_private_copy(self):
         with (
             tempfile.TemporaryDirectory() as folder,
@@ -80,6 +87,8 @@ class ProjectIntakeTests(unittest.TestCase):
 
 
 class WorkspaceTests(unittest.TestCase):
+    """Tests for the command line workspace, its exit codes and managed projects."""
+
     def test_route_exit_status_distinguishes_zero_opens_from_exhaustion(self):
         with mock.patch("signal.signal"), mock.patch("builtins.print"):
             for status, code in (
@@ -274,6 +283,8 @@ assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
 
 
 class RequirementsTests(unittest.TestCase):
+    """Tests that incomplete or unapproved design requests block generation."""
+
     def test_unknown_supply_unsupported_signal_and_unapproved_edits_block_generation(
         self,
     ):
@@ -292,11 +303,26 @@ class RequirementsTests(unittest.TestCase):
 
 
 class ReferenceRoutingBudgetTests(unittest.TestCase):
+    """Tests for the budgets of the reference routing qualification run."""
+
     def start_patch(self, patch):
+        """Start a patcher and stop it when the test ends.
+
+        Inputs:
+            patch: unstarted mock patcher.
+        Outputs:
+            The patched object.
+        """
         self.addCleanup(patch.stop)
         return patch.start()
 
     def setUp(self):
+        """Patch the qualification collaborators and prepare a layout comparison.
+
+        The layout, apply exercise, job verification and source snapshot capture are
+        patched. The layout comparison shows one footprint moved from (10, 12) to (10,
+        14).
+        """
         self.case = {}
         self.baseline = mock.Mock()
         self.layout = self.start_patch(
@@ -315,6 +341,13 @@ class ReferenceRoutingBudgetTests(unittest.TestCase):
         }
 
     def route(self, rounds=5):
+        """Run the reference routing and return the first element of its result.
+
+        The run uses 10 seconds and 2 GiB.
+
+        Inputs:
+            rounds: number of routing rounds.
+        """
         initial = {"native": {"open_connections": 3}}
         return qualification.ReferenceRouting.run(
             mock.sentinel.native,
@@ -396,6 +429,8 @@ class ReferenceRoutingBudgetTests(unittest.TestCase):
 
 
 class ElectricalEvidenceTests(unittest.TestCase):
+    """Tests for the electrical review evidence of the reference findings."""
+
     def test_current_reference_findings_cannot_be_omitted_or_reused(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -430,6 +465,12 @@ class ElectricalEvidenceTests(unittest.TestCase):
             }
 
             def evidence():
+                """Write the review record and profile and return the evidence.
+
+                Outputs:
+                    The electrical review evidence for the current source and reference
+                    findings.
+                """
                 review.write_text(json.dumps(record), encoding="utf-8")
                 profile.write_text(
                     json.dumps(
@@ -461,8 +502,15 @@ class ElectricalEvidenceTests(unittest.TestCase):
 
 
 class NativeProductTests(unittest.TestCase):
+    """Tests for building products with the matched native toolchain."""
+
     @classmethod
     def setUpClass(cls):
+        """Find the matched native toolchain.
+
+        Outputs:
+            Raises SkipTest when the toolchain is unavailable.
+        """
         try:
             cls.native = Native.discover()
             cls.native.footprints()

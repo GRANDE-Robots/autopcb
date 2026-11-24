@@ -1,4 +1,6 @@
-"""test_track_capsule.py: exercise exact trace envelopes without modifying a live KiCad board.
+"""test_track_capsule.py: check exact trace envelopes.
+
+The tests do not modify a live KiCad board.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -28,7 +30,7 @@ from verification import test_route_optimizer as route_tests
 
 
 class CapsuleGeometry:
-    """Builds points and the diagonal copper capsule the track capsule tests use."""
+    """Builds points and a diagonal copper capsule for the tests."""
 
     @staticmethod
     def point(x, y):
@@ -41,10 +43,10 @@ class CapsuleGeometry:
 
     @staticmethod
     def capsule():
-        """Return a B.Cu copper Obstacle of net OTHER shaped as a capsule.
+        """Return a diagonal capsule obstacle of net OTHER on B.Cu.
 
-        The centerline runs from (1, 1) mm to (2, 2) mm with a copper radius of
-        0.1 mm inside the box (0.9, 0.9) mm to (2.1, 2.1) mm.
+        The centerline runs from (1, 1) mm to (2, 2) mm with a copper radius of 0.1 mm
+        inside the box from (0.9, 0.9) mm to (2.1, 2.1) mm.
         """
         return Obstacle(
             CapsuleGeometry.point(0.9, 0.9),
@@ -90,7 +92,7 @@ class TrackCapsuleTests(unittest.TestCase):
         calls = 0
 
         def counted(*args):
-            """Count the call and return the result of the point-to-segment test."""
+            """Count the call and return the point-to-segment test result."""
             nonlocal calls
             calls += 1
             return _point_near_segment(*args)
@@ -226,8 +228,8 @@ class TrackCapsuleTests(unittest.TestCase):
             """Return the earlier lower bound, which ignores the diagonal weight.
 
             Inputs:
-                dx, dy, step, axial, diagonal: the arguments of the octilinear lower bound;
-                    diagonal is ignored.
+                dx, dy, step, axial, diagonal: the arguments of the octilinear lower
+                    bound; diagonal is ignored.
             """
             del diagonal
             return (max(dx, dy) + (math.sqrt(2) - 1) * min(dx, dy)) * step * axial
@@ -407,7 +409,7 @@ class TrackCapsuleTests(unittest.TestCase):
         import pcbnew
 
         class ViaWithForbiddenWidth:
-            """Stand-in via that fails the test when its width is read."""
+            """Stand-in via that fails when its width is read."""
 
             def GetStart(self):
                 """Return the start position (0, 0)."""

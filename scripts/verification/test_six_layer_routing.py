@@ -1,4 +1,9 @@
-"""Exercise native six-layer access, return references and fixed placement."""
+"""test_six_layer_routing.py: check routing on six copper layers.
+
+The tests exercise native six-layer access, return references and fixed placement.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -15,6 +20,8 @@ from verification.test_autoroute_protection import BOARD
 
 
 class SixLayerRoutingTests(unittest.TestCase):
+    """Tests for routing on six copper layers."""
+
     def test_single_route_defaults_to_every_enabled_layer(self):
         from pcb import route_cli
         from pcb.route_optimizer import Route

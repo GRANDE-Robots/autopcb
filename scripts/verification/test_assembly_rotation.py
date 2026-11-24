@@ -1,5 +1,7 @@
-"""test_assembly_rotation.py: check source- and identity-bound factory angle corrections that leave CAD
-and coordinates unedited.
+"""test_assembly_rotation.py: check source-bound factory angle corrections.
+
+Factory angle corrections must stay bound to the part source and identity and must not
+edit CAD or coordinates.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -15,7 +17,7 @@ from core.assembly_rotation import POLICY_FILE, AssemblyRotation
 
 
 class RotationFixture:
-    """Builds the parts, placement rows, geometry map and policy the rotation tests share."""
+    """Builds the parts, placement rows, geometry map and policy the tests share."""
 
     @staticmethod
     def build():
@@ -23,8 +25,8 @@ class RotationFixture:
 
         Outputs:
             A tuple (parts, cpl, geometry, policy). parts and cpl list J16, J17 and R1
-            on the top layer at rotation 0 degrees. geometry maps each designator to
-            the string "shape". policy holds one qualified 90 degree offset for J16.
+            on the top layer at rotation 0 degrees. geometry maps each designator to the
+            string "shape". policy holds one qualified 90 degree offset for J16.
         """
         parts = [
             {

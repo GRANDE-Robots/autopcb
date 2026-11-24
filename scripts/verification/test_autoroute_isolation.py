@@ -1,5 +1,6 @@
-"""test_autoroute_isolation.py: check that native objects and failed workers never outlive a routing
-transaction.
+"""test_autoroute_isolation.py: check isolation of native routing workers.
+
+Native objects and failed workers must not outlive a routing transaction.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -22,11 +23,12 @@ class NativeOperations:
 
     @staticmethod
     def announce(*, progress):
-        """Send one stage event to the parent and return the worker process id with a
-        payload of 100000 characters.
+        """Send one stage event and return the worker process id with a large payload.
 
         Inputs:
             progress: callback that forwards one event to the parent.
+        Outputs:
+            A dictionary with the worker pid and a payload of 100000 characters.
         """
         progress({"event": "stage", "message": "native check"})
         return {"pid": os.getpid(), "payload": "x" * 100000}
@@ -53,8 +55,9 @@ class NativeOperations:
 
     @staticmethod
     def wait_for_cancel(*, progress):
-        """Send one stage event to the parent, then sleep for 30 seconds so the parent
-        can interrupt the worker.
+        """Send one stage event, then sleep for 30 seconds.
+
+        The parent is expected to interrupt the worker during the sleep.
 
         Inputs:
             progress: callback that forwards one event to the parent.
@@ -64,7 +67,7 @@ class NativeOperations:
 
 
 class NativeIsolationTests(unittest.TestCase):
-    """Tests for run_native: result delivery, error types, crash detection and worker cleanup."""
+    """Tests for run_native: results, error types, crashes and worker cleanup."""
 
     def test_large_operation_does_not_replay_an_unimportable_parent_entrypoint(self):
         script = (
@@ -122,7 +125,7 @@ class NativeIsolationTests(unittest.TestCase):
         before = {p.pid for p in multiprocessing.active_children()}
 
         def interrupt(_):
-            """Raise KeyboardInterrupt as the parent's reaction to the first progress event."""
+            """Raise KeyboardInterrupt as the parent's reaction to a progress event."""
             raise KeyboardInterrupt
 
         with self.assertRaises(KeyboardInterrupt):

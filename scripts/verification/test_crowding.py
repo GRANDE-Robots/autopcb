@@ -1,5 +1,6 @@
-"""test_crowding.py: check that crowded packings move only parts the policy lets move and never
-overlap courtyards.
+"""test_crowding.py: check crowded packings.
+
+Crowded packings move only parts the policy lets move and never overlap courtyards.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -21,15 +22,17 @@ from verification import test_route_optimizer as boards
 
 
 class CourtyardBuilder:
-    """Draws square courtyards on footprints of native boards for the crowding tests."""
+    """Draws square courtyards on footprints of native boards for the tests."""
 
     @staticmethod
     def add_to(footprint, half=0.6):
         """Add a square courtyard rectangle to a footprint.
 
+        The rectangle is drawn on F.CrtYd with a line width of 0.05 mm and is centered
+        on the footprint position.
+
         Inputs:
-            footprint: native footprint that receives an F.CrtYd rectangle of 0.05 mm
-                line width centered on its position.
+            footprint: native footprint that receives the rectangle.
             half: half the side length of the rectangle in mm.
         """
         at = footprint.GetPosition()

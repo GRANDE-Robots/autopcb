@@ -1,4 +1,9 @@
-"""Check that batch routing continues only from retained private previews."""
+"""test_freeroute_fast.py: check fast external-router batches.
+
+Batch routing continues only from retained private previews.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -10,6 +15,8 @@ from core.toolchain import RouterCache
 
 
 class ExternalBatchTests(unittest.TestCase):
+    """Tests for fast external-router batches, their retry memory and focus scope."""
+
     def test_rework_receipts_survive_restart_and_require_the_same_context(self):
         state = {"checkpoint": {"candidate_sha256": "board"}}
         inputs, tools, policy, settings = (
@@ -85,6 +92,10 @@ class ExternalBatchTests(unittest.TestCase):
             fast.UnimprovedBatchRecord._elapsed_evidence(True, " ")
 
     def setUp(self):
+        """Replace the unimproved-batch recorder and the saved fast-retry loader.
+
+        Both replacements are undone when the test ends.
+        """
         recorder = patch.object(fast, "record_unimproved_batch")
         self.record = recorder.start()
         self.addCleanup(recorder.stop)
@@ -194,6 +205,16 @@ class ExternalBatchTests(unittest.TestCase):
         outputs = []
 
         def drc(_cli, _board, output, **_kwargs):
+            """Stand-in for the native DRC that writes an empty report.
+
+            The report file must not exist yet. Its path is recorded and an empty JSON
+            object is written there.
+
+            Inputs:
+                output: report path the DRC would create.
+            Outputs:
+                An empty dictionary.
+            """
             self.assertFalse(
                 output.exists(), "native DRC cannot overwrite its own output"
             )
@@ -202,6 +223,7 @@ class ExternalBatchTests(unittest.TestCase):
             return {}
 
         def export(_board, path):
+            """Stand-in for the Specctra export: write the text dsn, report success."""
             Path(path).write_text("dsn", encoding="utf-8")
             return True
 
@@ -238,6 +260,11 @@ class ExternalBatchTests(unittest.TestCase):
             trial = Path(directory)
 
             def run(command, **_kwargs):
+                """Stand-in for the router process that writes a session file.
+
+                The file goes to the path that follows -do and holds a placement section
+                and a network_out section. The result has exit status 0.
+                """
                 Path(command[command.index("-do") + 1]).write_text(
                     "(session x (base_design x) (placement (component FOO)) "
                     "(routes (network_out)))",
@@ -246,6 +273,11 @@ class ExternalBatchTests(unittest.TestCase):
                 return MagicMock(returncode=0)
 
             def import_session(_board, path):
+                """Stand-in for the session import that checks the session text.
+
+                The text must have no placement section and must keep the network_out
+                section.
+                """
                 data = Path(path).read_text(encoding="utf-8")
                 self.assertNotIn("(placement", data)
                 self.assertIn("(network_out)", data)
@@ -809,6 +841,13 @@ class ExternalBatchTests(unittest.TestCase):
         cache = {}
 
         def retain(*_args, saved_checks_cache, **_kwargs):
+            """Stand-in for retain_candidate that fills the saved-checks cache.
+
+            Inputs:
+                saved_checks_cache: dictionary the worker returns to its caller.
+            Outputs:
+                A retained private preview result.
+            """
             saved_checks_cache.update(key="source", drc={"errors": 0})
             return {"status": "private_preview_retained"}
 

@@ -1,4 +1,9 @@
-"""Check that external-router proposals do not replace saved copper."""
+"""test_freeroute_delta.py: check external-router proposals.
+
+External-router proposals must not replace saved copper.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 from collections import Counter
@@ -25,6 +30,8 @@ from pcb.net_routing.style import Staircase, StyleReport
 
 
 class FreerouteDeltaTests(unittest.TestCase):
+    """Tests for turning external-router proposals into additions to saved copper."""
+
     def test_only_new_copper_fully_covered_by_a_same_net_convex_smd_pad_is_removed(
         self,
     ):
@@ -146,9 +153,20 @@ class FreerouteDeltaTests(unittest.TestCase):
         )
 
         def profile(item):
+            """Return the routing profile of the item's net at the item's width.
+
+            The profile has no clearance.
+            """
             return rules.profile(item.net, item.width, 0)
 
         def materialize(items):
+            """Return the traces of a proposal after saved rule widths are applied.
+
+            Fails the test when materialization is blocked.
+
+            Inputs:
+                items: traces of the proposal.
+            """
             result, _, blocked = ProposalEdits.materialize_saved_widths(
                 Delta(tuple(items), (), (), 0), profile
             )
@@ -156,6 +174,7 @@ class FreerouteDeltaTests(unittest.TestCase):
             return result.traces
 
         def allowed(items):
+            """Return whether every item is as wide as its saved rule requires."""
             return all(
                 item.width >= profile(item).width_at(TraceShape.segment(item))
                 for item in items
@@ -226,6 +245,10 @@ class FreerouteDeltaTests(unittest.TestCase):
         original = Delta((inside, trunk, logic), (via,), ("PROTECTED",), 0)
 
         def profile(item):
+            """Return the routing profile of the item's net at the item's width.
+
+            The profile has no clearance.
+            """
             return rules.profile(item.net, item.width, 0)
 
         result, changed, blocked = ProposalEdits.materialize_saved_widths(
@@ -267,6 +290,7 @@ class FreerouteDeltaTests(unittest.TestCase):
         delta = Delta((item,), (), (), 0)
 
         def unsupported(_item):
+            """Raise ValueError as a saved rule that cannot be represented."""
             raise ValueError("Unsupported saved rule")
 
         result, changed, blocked = ProposalEdits.materialize_saved_widths(
@@ -338,6 +362,7 @@ class FreerouteDeltaTests(unittest.TestCase):
             calls = []
 
             def clear(path):
+                """Record the path and accept only the second path offered."""
                 calls.append(path)
                 return len(calls) == 2
 
@@ -492,6 +517,11 @@ class FreerouteDeltaTests(unittest.TestCase):
         check = LocalRepair.local_context_checker("SIG", old, lambda *_: False)
 
         def candidate(end):
+            """Return a one-segment F.Cu route from (2000000, 1000000) nm to end.
+
+            Inputs:
+                end: (x, y) end point in nm.
+            """
             segment = Segment(Point(2_000_000, 1_000_000), Point(*end), "F.Cu")
             return Route((segment,), (), (), 1, 0, 0, 0)
 
@@ -872,6 +902,14 @@ class FreerouteDeltaTests(unittest.TestCase):
         delta = Delta((first, last), (via,), (), 0)
 
         def anchors(vias):
+            """Return a contact check for the given vias.
+
+            Inputs:
+                vias: vias that count as contact points.
+            Outputs:
+                A function (net, layer, point) that is true when point lies inside a via
+                of that net.
+            """
             return lambda net, _layer, point: any(
                 item.net == net
                 and sum((point[i] - item.at[i]) ** 2 for i in (0, 1))
@@ -906,9 +944,18 @@ class FreerouteDeltaTests(unittest.TestCase):
         delta = Delta((first, last), (via,), (), 0)
 
         def anchors(_vias):
+            """Return a contact check that finds no contact."""
             return lambda *_: False
 
         def call(original, via_safe):
+            """Try to snap the proposal's new via onto an existing endpoint.
+
+            Inputs:
+                original: saved traces and vias.
+                via_safe: check that allows or forbids moving the via.
+            Outputs:
+                The pair returned by snap_new_vias_to_existing_endpoints.
+            """
             return ViaSnapping.snap_new_vias_to_existing_endpoints(
                 delta, original, anchors, via_safe, lambda *_: True, lambda *_: False
             )
@@ -947,6 +994,14 @@ class FreerouteDeltaTests(unittest.TestCase):
         pad = (63_150_000, 51_300_000)
 
         def anchors(vias):
+            """Return a contact check for the given vias.
+
+            Inputs:
+                vias: vias that count as contact points.
+            Outputs:
+                A function (net, layer, point) that is true at the pad position or
+                inside a via of that net.
+            """
             return lambda net, _layer, point: (
                 point == pad
                 or any(
@@ -1089,6 +1144,7 @@ class FreerouteDeltaTests(unittest.TestCase):
         }
 
         def deadline():
+            """Return None, the budget check of a search without a deadline."""
             return None
 
         with patch("pcb.route_cli.plan", return_value=result) as plan:
@@ -1273,6 +1329,14 @@ class FreerouteDeltaTests(unittest.TestCase):
             calls = []
 
             def search(same_layer):
+                """Record the layer restriction and fail on the same-layer search.
+
+                Inputs:
+                    same_layer: true for the search restricted to one layer.
+                Outputs:
+                    The tuple ("all-layer candidate", ()) when same_layer is false.
+                    Otherwise raises the failure of the enclosing loop.
+                """
                 calls.append(same_layer)
                 if same_layer:
                     raise failure
@@ -1493,6 +1557,16 @@ class FreerouteDeltaTests(unittest.TestCase):
         proposed = {}
 
         def track(first, last, is_new):
+            """Add a horizontal F.Cu track on net A and return it with its record.
+
+            The track is 200000 nm wide and lies on y = 0.
+
+            Inputs:
+                first, last: x positions of the ends in nm.
+                is_new: when true the track is recorded as proposed copper.
+            Outputs:
+                The native track and its Trace record.
+            """
             item = pcbnew.PCB_TRACK(board)
             item.SetStart(pcbnew.VECTOR2I(first, 0))
             item.SetEnd(pcbnew.VECTOR2I(last, 0))
@@ -1532,6 +1606,17 @@ class FreerouteDeltaTests(unittest.TestCase):
         proposed = {}
 
         def track(start, end, layer, is_new):
+            """Add a horizontal track on net A and return it with its record.
+
+            The track is 200000 nm wide and lies on y = 0.
+
+            Inputs:
+                start, end: x positions of the ends in nm.
+                layer: native layer of the track.
+                is_new: when true the track is recorded as proposed copper.
+            Outputs:
+                The native track and its Trace record.
+            """
             item = pcbnew.PCB_TRACK(board)
             item.SetStart(pcbnew.VECTOR2I(start, 0))
             item.SetEnd(pcbnew.VECTOR2I(end, 0))
@@ -2083,6 +2168,11 @@ class FreerouteDeltaTests(unittest.TestCase):
         def allowed(pieces):
             # The first 16-way samples are 187,500 nm apart.  This gap is
             # halfway between them and cannot be found by the coarse pass.
+            """Accept only three pieces whose first piece ends at x = 93750 nm.
+
+            That point lies between the coarse samples, so only the refining pass
+            reaches it.
+            """
             return len(pieces) == 3 and pieces[0].end == (93_750, 0)
 
         result = simplify_terminal_chains(
@@ -2133,6 +2223,7 @@ class FreerouteDeltaTests(unittest.TestCase):
 
         # Represent a clearance screen that permits only short local changes.
         def allowed(pieces):
+            """Accept only pieces that span at most 2000000 nm in x and in y."""
             return all(
                 max(abs(t.end[0] - t.start[0]), abs(t.end[1] - t.start[1])) <= 2_000_000
                 for t in pieces
@@ -2238,6 +2329,13 @@ class FreerouteDeltaTests(unittest.TestCase):
         calls = []
 
         def search(limit):
+            """Record the limit and route (0, 0) mm to (9, 9) mm under that limit.
+
+            Inputs:
+                limit: maximum number of node expansions.
+            Outputs:
+                The route the grid router returns with that limit.
+            """
             calls.append(limit)
             model = GridRouter(
                 Point.from_mm([-2, -2]),
@@ -2268,6 +2366,15 @@ class FreerouteDeltaTests(unittest.TestCase):
         calls = []
 
         def search(step, limit):
+            """Record the grid step and limit and fail on the 0.2 mm grid.
+
+            Inputs:
+                step: grid step in mm.
+                limit: maximum number of node expansions.
+            Outputs:
+                The string "candidate" for any step but 0.2 mm; for 0.2 mm it raises
+                NoGridRoute.
+            """
             calls.append((step, limit))
             if step == 0.2:
                 raise NoGridRoute("blocked on coarse grid")
@@ -2281,6 +2388,12 @@ class FreerouteDeltaTests(unittest.TestCase):
         from pcb.route_optimizer import NoGridRoute, SearchLimitReached
 
         def mixed(step, _limit):
+            """Raise SearchLimitReached on the 0.2 mm grid and NoGridRoute on any other.
+
+            Inputs:
+                step: grid step in mm.
+                _limit: maximum number of node expansions, unused.
+            """
             if step == 0.2:
                 raise SearchLimitReached("limit", expanded=5)
             raise NoGridRoute("blocked")
@@ -2289,6 +2402,14 @@ class FreerouteDeltaTests(unittest.TestCase):
             LocalRepair.retry_local_grids(mixed)
 
         def eventually_exhausted(step, limit):
+            """Raise SearchLimitReached at 0.2 mm and 15000 expansions only.
+
+            Any other step or limit raises NoGridRoute.
+
+            Inputs:
+                step: grid step in mm.
+                limit: maximum number of node expansions.
+            """
             if step == 0.2 and limit == 15_000:
                 raise SearchLimitReached("pilot limit", expanded=5)
             raise NoGridRoute("blocked")
@@ -2307,6 +2428,16 @@ class FreerouteDeltaTests(unittest.TestCase):
         calls = []
 
         def search(step, limit):
+            """Record the step and limit; succeed only on 0.2 mm with a large limit.
+
+            Inputs:
+                step: grid step in mm.
+                limit: maximum number of node expansions.
+            Outputs:
+                The string "candidate" for 0.2 mm with a limit of at least 400000.
+                Otherwise raises NoGridRoute for other steps or SearchLimitReached for a
+                smaller limit.
+            """
             calls.append((step, limit))
             if step != 0.2:
                 raise NoGridRoute("grid exhausted")
@@ -2330,6 +2461,13 @@ class FreerouteDeltaTests(unittest.TestCase):
         calls = []
 
         def search(limit):
+            """Record the limit and route (0, 0) mm to (9, 9) mm under that limit.
+
+            Inputs:
+                limit: maximum number of node expansions.
+            Outputs:
+                The route the grid router returns with that limit.
+            """
             calls.append(limit)
             model = GridRouter(
                 Point.from_mm([-2, -2]),
@@ -2360,6 +2498,11 @@ class FreerouteDeltaTests(unittest.TestCase):
         calls = []
 
         def search(limit):
+            """Record the limit and raise NoGridRoute.
+
+            Inputs:
+                limit: maximum number of node expansions.
+            """
             calls.append(limit)
             raise NoGridRoute("no path in this grid")
 

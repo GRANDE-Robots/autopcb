@@ -1,4 +1,9 @@
-"""Work-in-progress saves require a real, independently checked improvement."""
+"""test_working_save.py: check work-in-progress saves.
+
+Work-in-progress saves require a real, independently checked improvement.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -12,6 +17,8 @@ from pcb.net_routing.working_save import save_working, WorkingQualification
 
 
 class WorkingSaveTests(unittest.TestCase):
+    """Tests for saving routing progress only after a checked improvement."""
+
     def test_saved_checkpoint_replans_only_current_unfinished_nets(self):
         from pcb.net_routing import working_save as api
 
@@ -57,6 +64,12 @@ class WorkingSaveTests(unittest.TestCase):
         self.assertEqual(state["queue"][0][0]["nets"][0]["name"], "ALREADY_CLOSED")
 
     def setUp(self):
+        """Create the saved copper and the check summaries before and after a cleanup.
+
+        The copper is two traces and a via. The before summary has 10 open connections,
+        5 warnings and 2.0 mm of track; the cleaned summary has 10 open connections, 4
+        warnings and 1.0 mm of track.
+        """
         self.trace = Trace("A", "B.Cu", 200_000, (0, 0), (1_000_000, 0))
         self.other = Trace("B", "F.Cu", 200_000, (0, 0), (0, 1_000_000))
         self.via = Via("B", (0, 1_000_000), 600_000, 300_000)
@@ -135,6 +148,11 @@ class WorkingSaveTests(unittest.TestCase):
 
     def test_equal_open_junction_cleanup_requires_recomputed_geometry(self):
         def trace(start, end):
+            """Return a Trace on net A and layer B.Cu of width 200000 nm.
+
+            Inputs:
+                start, end: (x, y) end points in nm.
+            """
             return Trace("A", "B.Cu", 200_000, start, end)
 
         trunk = trace((0, 0), (4_000_000, 0))

@@ -1,4 +1,9 @@
-"""Zero opens must never conceal incomplete electrical or CAD verification."""
+"""test_autoroute_completion.py: check the completion gate.
+
+Zero open connections must never conceal incomplete electrical or CAD verification.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -8,13 +13,21 @@ from dataclasses import replace
 
 
 class CompletionGateTests(unittest.TestCase):
+    """Tests that the completion gate refuses evidence with gaps."""
+
     def api(self):
+        """Return the pcb.net_routing.completion module, asserting that it exists."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.completion"))
         from pcb.net_routing import completion
 
         return completion
 
     def evidence(self):
+        """Return VerificationEvidence in which every check passes.
+
+        No connection is open and there are no errors or warnings; coverage, geometry,
+        electrical, reference copper and view checks all pass.
+        """
         api = self.api()
         self.assertIn(
             "unassigned_copper", api.VerificationEvidence.__dataclass_fields__

@@ -1,4 +1,9 @@
-"""Read-only ERC checks do not copy or modify the native project."""
+"""test_schematic_erc.py: check read-only ERC runs.
+
+Read-only ERC checks do not copy or modify the native project.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,16 @@ from verification.audit_schematic_erc import ErcAudit, audit, main
 
 
 class ReadOnlyErcTests(unittest.TestCase):
+    """Tests for running the electrical rules check without changing the project."""
+
     def project(self, root: Path) -> ProjectPaths:
+        """Write the schematic, board, rules and settings files of a project.
+
+        Inputs:
+            root: existing folder.
+        Outputs:
+            The ProjectPaths of the project.
+        """
         project = ProjectPaths(root / "Imported design.kicad_pro")
         project.schematic.write_text("schematic")
         project.board.write_text("board")
@@ -36,6 +50,13 @@ class ReadOnlyErcTests(unittest.TestCase):
 
     @staticmethod
     def result(command, **_kwargs):
+        """Stand-in for the ERC process that writes a report with one warning.
+
+        Inputs:
+            command: command line that names the report path after -o.
+        Outputs:
+            A successful process result.
+        """
         report = Path(command[command.index("-o") + 1])
         report.write_text(
             json.dumps(
@@ -86,6 +107,11 @@ class ReadOnlyErcTests(unittest.TestCase):
             project = self.project(Path(work))
 
             def change_source(command, **kwargs):
+                """Stand-in for the ERC process that edits the schematic afterwards.
+
+                The report is produced, then the schematic is rewritten as an outside
+                edit.
+                """
                 result = self.result(command, **kwargs)
                 project.schematic.write_text("changed externally")
                 return result
@@ -102,6 +128,7 @@ class ReadOnlyErcTests(unittest.TestCase):
             project = self.project(Path(work))
 
             def malformed(command, **_kwargs):
+                """ERC stand-in that writes a report without a violation list."""
                 Path(command[command.index("-o") + 1]).write_text('{"sheets": [{}]}')
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 

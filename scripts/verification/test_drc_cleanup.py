@@ -1,9 +1,16 @@
-"""Endpoint cleanup preserves exact routing headings and electrical connectivity."""
+"""test_drc_cleanup.py: check endpoint cleanup of routed copper.
+
+Endpoint cleanup preserves exact routing headings and electrical connectivity.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
 
 class DrcCleanupTests(unittest.TestCase):
+    """Tests for ContactRepair.center_solution, which intersects track support lines."""
+
     def test_misaligned_via_and_three_track_ends_share_an_exact_axis_intersection(self):
         from pcb.drc_cleanup import ContactRepair
 

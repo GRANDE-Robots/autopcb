@@ -1,4 +1,6 @@
-"""test_move_scope.py: check which footprints the placement policy lets routing move.
+"""test_move_scope.py: check which footprints routing may move.
+
+The placement policy decides which footprints routing may move.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -10,7 +12,7 @@ from pcb.move_scope import MoveScope
 
 
 class BoardText:
-    """Builds the footprint and board S-expression text the move scope tests parse."""
+    """Builds the footprint and board S-expression texts the tests parse."""
 
     @staticmethod
     def footprint(reference, layer="F.Cu", pads=("smd",), extra=""):
@@ -32,7 +34,7 @@ class BoardText:
 
     @staticmethod
     def board(*footprints):
-        """Return the S-expression text of a board holding the given footprint texts.
+        """Return the S-expression text of a board holding the given footprints.
 
         Inputs:
             footprints: footprint texts from footprint.
@@ -41,10 +43,10 @@ class BoardText:
 
 
 class MoveScopeTests(unittest.TestCase):
-    """Tests for which footprints MoveScope lets move and how it refuses the rest."""
+    """Tests for which footprints MoveScope lets move and why it refuses the rest."""
 
     def refusal(self, scope, text):
-        """Return the refusal reason of the first footprint in the board text.
+        """Return the refusal reason for the first footprint of a board text.
 
         Inputs:
             scope: the MoveScope under test.

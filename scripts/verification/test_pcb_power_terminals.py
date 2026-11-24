@@ -1,4 +1,9 @@
-"""Verify the power audit never reports missing DRC evidence as a clean result."""
+"""test_pcb_power_terminals.py: check the power terminal audit.
+
+The power audit never reports missing DRC evidence as a clean result.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -15,7 +20,15 @@ from verification import audit_pcb_power_terminals as power
 
 
 class PowerAuditTests(unittest.TestCase):
+    """Tests for the power terminal audit and its handling of missing evidence."""
+
     def pads(self):
+        """Return a pad map that satisfies the audit.
+
+        Outputs:
+            A dictionary from (reference, pin) to net holding every expected J1 pin and
+            every required terminal.
+        """
         result = {("J1", pin): net for pin, net in power.EXPECTED_J1.items()}
         for net, terminals in power.REQUIRED_TERMINALS.items():
             for terminal in terminals:
@@ -23,6 +36,16 @@ class PowerAuditTests(unittest.TestCase):
         return result
 
     def run_audit(self, pads, arguments=()):
+        """Run the audit's main on a temporary board file and parse its JSON.
+
+        Board loading and the pad map are replaced, so the audit sees the given pads.
+
+        Inputs:
+            pads: dictionary from (reference, pin) to net.
+            arguments: extra command line arguments after --json.
+        Outputs:
+            A tuple (exit code, parsed JSON report).
+        """
         output = io.StringIO()
         with (
             tempfile.TemporaryDirectory(prefix="power-board-test-") as directory,

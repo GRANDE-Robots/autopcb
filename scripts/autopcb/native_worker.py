@@ -1,4 +1,11 @@
-"""Internal native worker. It handles only files selected by a product job."""
+"""native_worker.py: run one native KiCad operation on files a product job selected.
+
+The process runs inside KiCad's Python and is started by autopcb.native. It reads
+and reports through files only: ``inspect``, ``generate``, ``compare``,
+``reference``, ``apply``, ``pair-seed`` and ``crowd``. Lengths in reports are mm.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -26,15 +33,26 @@ class BoardGeometry:
     """Read a saved board's geometry for comparisons and reports."""
 
     def __init__(self, source: Path):
+        """Load a saved board.
+
+        Inputs:
+            source: Board file. Raises ValueError when KiCad cannot load it.
+        """
         self.board = pcb.LoadBoard(str(source))
         if self.board is None:
             raise ValueError("KiCad could not load the board")
 
     @staticmethod
     def point(item) -> list[float]:
+        """A KiCad position or size as [x, y] in mm."""
         return [pcb.ToMM(item.x), pcb.ToMM(item.y)]
 
     def contours(self, polygons) -> list:
+        """Polygon rings of a polygon set as lists of [x, y] points in mm.
+
+        Outputs:
+            Each outline ring is followed by the rings of its holes.
+        """
         rings = []
         for index in range(polygons.OutlineCount()):
             outline = polygons.Outline(index)
@@ -49,6 +67,16 @@ class BoardGeometry:
         return rings
 
     def pad(self, pad, stack) -> dict:
+        """One pad's number, net, position and size in mm, contours and drill.
+
+        Inputs:
+            pad: KiCad pad.
+            stack: Enabled copper layers in stack order.
+        Outputs:
+            The contours are the pad's copper on the first stack layer it lies on, empty
+            when it lies on none. ``hole`` is present for a drilled pad and gives the slot's
+            start, end and width in mm.
+        """
         layer = next((layer for layer in stack if pad.IsOnLayer(layer)), None)
         result = {
             "number": pad.GetNumber(),
@@ -69,6 +97,7 @@ class BoardGeometry:
         return result
 
     def drawn(self, item, layer: int) -> list:
+        """Contours in mm of a drawn item on a layer, approximated within 0.01 mm."""
         shape = pcb.SHAPE_POLY_SET()
         item.TransformShapeToPolygon(
             shape, layer, 0, pcb.FromMM(0.01), pcb.ERROR_INSIDE
@@ -76,6 +105,11 @@ class BoardGeometry:
         return self.contours(shape)
 
     def track(self, track) -> dict:
+        """One track, arc or via with its net, layer, ends, width and length in mm.
+
+        Outputs:
+            A via also carries its drill diameter in mm and an arc carries its contours.
+        """
         layer = track.GetLayer()
         result = {
             "net": track.GetNetname(),
@@ -94,6 +128,14 @@ class BoardGeometry:
         return result
 
     def as_dict(self) -> dict:
+        """The board's geometry for comparison and display.
+
+        Outputs:
+            Enabled copper layers, thickness and edge bounds in mm, the closed board
+            outline (empty when the edge is not closed), every footprint sorted by
+            reference with its position, lock, layer, label position, front silkscreen and
+            pads, and every track.
+        """
         board = self.board
         edges = board.GetBoardEdgesBoundingBox()
         outline = pcb.SHAPE_POLY_SET()
@@ -134,9 +176,23 @@ class BoardGenerator:
     DIELECTRIC_MM = {2: [1.53], 4: [0.18, 1.10, 0.18]}
 
     def __init__(self, path: Path, spec: dict):
+        """Remember the board file and the generation spec.
+
+        Inputs:
+            path: Board file to create.
+            spec: Layer count, exported netlist and footprint library folder, schematic
+                links, outline size in mm, components and optional compact outline.
+        """
         self.path, self.spec = path, spec
 
     def write(self) -> None:
+        """Write the board file, its project settings and its stackup.
+
+        Outputs:
+            None. Raises ValueError for a missing footprint, an invalid footprint
+            identifier, a missing schematic connection or pads, or an unknown layer count,
+            and RuntimeError when KiCad cannot save the board.
+        """
         # KiCad will not save project settings once the board is open.
         ProjectSettings(self.path).write()
         board = pcb.BOARD()
@@ -151,6 +207,11 @@ class BoardGenerator:
         self._stackup(enabled_copper_layers(board))
 
     def _nets(self, board) -> tuple[dict, dict]:
+        """Add every net of the exported netlist to the board.
+
+        Outputs:
+            The net objects by name, and the net name of each (reference, pin).
+        """
         nets, assignments = {}, {}
         for row in ET.parse(self.spec["netlist"]).findall("./nets/net"):
             name = row.attrib["name"]
@@ -163,6 +224,16 @@ class BoardGenerator:
     def _place(
         self, board, reference: str, component: dict, nets: dict, assignments: dict
     ) -> None:
+        """Load one footprint, fill its fields, place it and assign its nets.
+
+        Inputs:
+            board: Board being built.
+            reference: Reference designator.
+            component: Catalog part with footprint, value, manufacturer, MPN, source,
+                position, optional side, nets and pins.
+            nets: Net objects by name.
+            assignments: Net name of each (reference, pin).
+        """
         group, footprint = component["footprint"].split(":", 1)
         item = pcb.FootprintLoad(
             str(Path(self.spec["footprints"]) / f"{group}.pretty"), footprint
@@ -213,6 +284,15 @@ class BoardGenerator:
             )
 
     def _fit_outline(self, board, outline):
+        """Fit the compact outline around the placed footprints.
+
+        Inputs:
+            board: Board with every footprint placed.
+            outline: Compact outline limits and movable groups in mm.
+        Outputs:
+            Width and height in mm. Footprints of the movable groups are moved on the
+            board. Raises ValueError when no tested placement fits.
+        """
         from autopcb.placement import Envelope, OutlineFitter
 
         origin = pcb.FromMM(self.OFFSET_MM)
@@ -249,6 +329,7 @@ class BoardGenerator:
         return width, height
 
     def _outline(self, board) -> None:
+        """Draw the rectangular Edge.Cuts outline, fitted or at the catalog size."""
         outline = self.spec.get("compact_outline")
         width, height = (
             self._fit_outline(board, outline) if outline else self.spec["size_mm"]
@@ -270,6 +351,13 @@ class BoardGenerator:
             board.Add(line)
 
     def _stackup(self, copper: tuple[str, ...]) -> None:
+        """Write an explicit stackup into the saved board's setup.
+
+        Inputs:
+            copper: Enabled copper layer names.
+        Outputs:
+            None. Raises ValueError when the catalog has no stack model for the layer count.
+        """
         # KiCad 10's descriptor is opaque in SWIG. Write the native setup
         # explicitly so validation and later edits keep the same layer model.
         dielectric = self.DIELECTRIC_MM.get(len(copper))
@@ -304,6 +392,12 @@ class ReferenceScreen:
     STEP_MM = 0.1
 
     def __init__(self, entry: Path):
+        """Open the project's saved board.
+
+        Inputs:
+            entry: Native project entry. Raises ValueError when KiCad cannot reopen the
+                board.
+        """
         from core.project import ProjectPaths
 
         self.paths = ProjectPaths(entry)
@@ -350,6 +444,18 @@ class ReferenceScreen:
     def gap_spans(
         track, through_pads, signal_layer: int, reference_layer: int
     ) -> list[dict]:
+        """Describe the runs of a track that lack sampled reference copper.
+
+        Inputs:
+            track: A sampled reference track.
+            through_pads: Through-hole pads of the track's net.
+            signal_layer: KiCad ID of the track's layer.
+            reference_layer: KiCad ID of the reference layer.
+        Outputs:
+            One record per run with its first and last sample distance along the track and
+            its position in mm, its missing sample count, and the through-hole pads at an
+            end where the run starts at the pad edge.
+        """
         x0, y0, x1, y1, _ = track.geometry
         last_station = len(track.samples) // 3 - 1
         spacing = math.hypot(pcb.ToMM(x1 - x0), pcb.ToMM(y1 - y0)) / max(
@@ -396,6 +502,12 @@ class ReferenceScreen:
 
     @classmethod
     def _gap(cls, track, pads, signal_layer, reference_layer):
+        """Summarize a track's reference gaps.
+
+        Outputs:
+            The unreferenced length in mm, the launch pad as ``REF.PIN`` when exactly one
+            pad starts the gaps (otherwise None), the gap spans and their positions.
+        """
         spans = cls.gap_spans(track, pads, signal_layer, reference_layer)
         x0, y0, x1, y1, _ = track.geometry
         length = math.hypot(pcb.ToMM(x1 - x0), pcb.ToMM(y1 - y0))
@@ -420,6 +532,14 @@ class ReferenceScreen:
         }
 
     def run(self) -> dict:
+        """Screen the return copper under every declared pair.
+
+        Outputs:
+            A record with its status (``blocked``, ``not_applicable``, ``needs_review`` or
+            ``sampled``), electrically_verified False, the length, widths, segment and
+            via count of each pair member, the findings, the blockers, the reference net
+            and the sampling step in mm.
+        """
         from pcb.net_routing.reference import sample_reference
 
         board = self.board
@@ -539,9 +659,21 @@ class PreviewComparison:
     """Inspect the saved board and a stored routing preview side by side."""
 
     def __init__(self, entry: Path, run_id: str):
+        """Remember the project entry and the preview to compare.
+
+        Inputs:
+            entry: Native project entry.
+            run_id: ID of a stored routing preview.
+        """
         self.entry, self.run_id = entry, run_id
 
     def run(self) -> dict:
+        """Rebuild the stored preview's board and read both boards' geometry.
+
+        Outputs:
+            The geometry of the saved board (before) and of the preview (after). Raises
+            ValueError when the run record is invalid or still running.
+        """
         from autopcb.layout import Layout
         from core.paths import asset_root, config_path, stored_result
         from core.project import ProjectPaths
@@ -590,6 +722,11 @@ class NativeWorker:
     )
 
     def __init__(self, argv: list[str] | None = None):
+        """Read the operation, board, record and optional argument.
+
+        Inputs:
+            argv: Arguments to parse; the process arguments when None.
+        """
         parser = argparse.ArgumentParser()
         parser.add_argument("operation", choices=self.OPERATIONS)
         parser.add_argument("board", type=Path)
@@ -598,15 +735,20 @@ class NativeWorker:
         self.args = parser.parse_args(argv)
 
     def _result(self) -> dict | None:
+        """Run the chosen operation.
+
+        Outputs:
+            The record to write, or None for ``generate``, which writes the board itself.
+        """
         args = self.args
         if args.operation == "inspect":
             return BoardGeometry(args.board).as_dict()
         if args.operation == "reference":
             return ReferenceScreen(args.board).run()
         if args.operation == "pair-seed":
-            from autopcb.pair_seed import seed
+            from autopcb.pair_seed import PairSeed
 
-            return seed(
+            return PairSeed.run(
                 args.board, json.loads(Path(args.argument).read_text(encoding="utf-8"))
             )
         if args.operation == "crowd":
@@ -637,6 +779,11 @@ class NativeWorker:
         return None
 
     def run(self) -> int:
+        """Run the operation and write its record.
+
+        Outputs:
+            Exit status 0. The record file is written when the operation returned one.
+        """
         with quiet_duplicate_image_handlers():
             result = self._result()
         if result is not None:

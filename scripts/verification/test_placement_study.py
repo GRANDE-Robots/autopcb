@@ -165,6 +165,22 @@ class VerdictTests(unittest.TestCase):
         )
         self.assertEqual((result["kept"], result["criterion_met"]), (None, False))
 
+    def test_verified_zero_opens_overrides_a_stale_fixed_preview(self):
+        result = verdict(
+            arm("fixed", opens=0, passed=False, preview={"best_preview_opens": 3}),
+            arm("moves", opens=0, moved=("R1",)),
+        )
+        self.assertEqual(result["kept"], "moves")
+        self.assertFalse(result["fixed_stalled"])
+        self.assertFalse(result["criterion_met"])
+
+    def test_unverified_fixed_arm_uses_its_preview_open_count(self):
+        result = verdict(
+            arm("fixed", opens=None, applied=False, preview={"best_preview_opens": 3}),
+            arm("moves", opens=0, moved=("R1",)),
+        )
+        self.assertTrue(result["fixed_stalled"])
+
     def test_both_complete_prefers_fixed_unless_moves_is_smaller(self):
         fixed, moves = (
             arm("fixed", opens=0),

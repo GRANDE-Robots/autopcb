@@ -164,13 +164,11 @@ class Verdict:
 
     @property
     def fixed_stalled(self) -> bool:
-        """Whether the fixed arm did not pass and still had open connections."""
-        opens = (
-            self.fixed.verified_opens
-            or self.fixed.preview.get("best_preview_opens")
-            or 0
-        )
-        return not self.fixed.passes and opens > 0
+        """Use the verified open count when available, falling back to the preview."""
+        opens = self.fixed.verified_opens
+        if opens is None:
+            opens = self.fixed.preview.get("best_preview_opens")
+        return opens is not None and opens > 0
 
     @property
     def kept(self) -> ArmResult | None:

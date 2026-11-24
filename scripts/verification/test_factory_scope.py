@@ -1,51 +1,85 @@
-"""Required-system partition, exact purchasing identity and native pad safety."""
+"""test_factory_scope.py: tests of the required-system partition and native pad safety.
+
+Required-system partition, exact purchasing identity and native pad safety.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
 from core.factory_scope import FactoryScope
 
 
-def part(ref, **overrides):
-    result = dict(
-        Designator=ref,
-        Comment="function",
-        Footprint="alias_a",
-        Manufacturer="Exact Maker",
-        MPN="EXACT",
-        Quantity=1,
-        **{"LCSC Part #": "C1"},
-    )
-    result.update(overrides)
-    return result
+class ScopeFixtures:
+    """Builds the BOM rows and the assembly policy the scope tests use."""
 
+    @staticmethod
+    def part(ref, **overrides):
+        """Build one BOM row.
 
-def policy():
-    return {
-        "schema": 1,
-        "all_system_parts_required": True,
-        "default": {
-            "required": True,
-            "supply_owner": "JLCPCB",
-            "assembly_stage": "FACTORY_ASSEMBLY",
-        },
-        "overrides": {
-            "U3": {
+        Inputs:
+            ref: Designator.
+            overrides: Row fields that replace the defaults.
+        Outputs:
+            A row with quantity 1, footprint alias_a, manufacturer Exact Maker, MPN
+            EXACT and LCSC part C1 unless overridden.
+        """
+        result = dict(
+            Designator=ref,
+            Comment="function",
+            Footprint="alias_a",
+            Manufacturer="Exact Maker",
+            MPN="EXACT",
+            Quantity=1,
+            **{"LCSC Part #": "C1"},
+        )
+        result.update(overrides)
+        return result
+
+    @staticmethod
+    def policy():
+        """Return an assembly policy that requires every system part.
+
+        Outputs:
+            A policy whose default stage is factory assembly by JLCPCB and whose only
+            override makes U3 an owner-supplied, owner-installed part.
+        """
+        return {
+            "schema": 1,
+            "all_system_parts_required": True,
+            "default": {
                 "required": True,
-                "supply_owner": "OWNER",
-                "assembly_stage": "OWNER_INSTALL",
-                "expected_manufacturer": "Exact Maker",
-                "expected_mpn": "EXACT",
-                "required_finishing": "Plug the prepared module into fitted sockets.",
-                "acceptance_status": "Required; physical fit unconfirmed.",
-            }
-        },
-    }
+                "supply_owner": "JLCPCB",
+                "assembly_stage": "FACTORY_ASSEMBLY",
+            },
+            "overrides": {
+                "U3": {
+                    "required": True,
+                    "supply_owner": "OWNER",
+                    "assembly_stage": "OWNER_INSTALL",
+                    "expected_manufacturer": "Exact Maker",
+                    "expected_mpn": "EXACT",
+                    "required_finishing": "Plug the prepared module into fitted sockets.",
+                    "acceptance_status": "Required; physical fit unconfirmed.",
+                }
+            },
+        }
 
 
 class FactoryScopeTests(unittest.TestCase):
+    """Tests that the factory scope partitions the required system and consolidates only
+    exactly equivalent parts.
+    """
+
     def test_required_owner_part_retained_and_new_factory_part_included(self):
         factory, owner, audit = FactoryScope.partition(
-            [part("R1"), part("U3"), part("U99")], policy(), ["U3"]
+            [
+                ScopeFixtures.part("R1"),
+                ScopeFixtures.part("U3"),
+                ScopeFixtures.part("U99"),
+            ],
+            ScopeFixtures.policy(),
+            ["U3"],
         )
         self.assertEqual({p["Designator"] for p in factory}, {"R1", "U99"})
         self.assertEqual([p["Designator"] for p in owner], ["U3"])
@@ -53,37 +87,50 @@ class FactoryScopeTests(unittest.TestCase):
 
     def test_native_dnp_cannot_be_used_as_owner_scope(self):
         with self.assertRaisesRegex(RuntimeError, "DNP"):
-            FactoryScope.partition([part("U3", DNP=True)], policy(), ["U3"])
+            FactoryScope.partition(
+                [ScopeFixtures.part("U3", DNP=True)], ScopeFixtures.policy(), ["U3"]
+            )
 
     def test_native_policy_conflict_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "conflicts"):
             FactoryScope.partition(
-                [part("U3")],
-                policy(),
+                [ScopeFixtures.part("U3")],
+                ScopeFixtures.policy(),
                 ["U3"],
                 {"U3": {"Assembly_Stage": "FACTORY_ASSEMBLY"}},
             )
 
     def test_owner_policy_cannot_silently_follow_changed_mpn(self):
         with self.assertRaisesRegex(RuntimeError, "different MPN"):
-            FactoryScope.partition([part("U3", MPN="DIFFERENT")], policy(), ["U3"])
+            FactoryScope.partition(
+                [ScopeFixtures.part("U3", MPN="DIFFERENT")],
+                ScopeFixtures.policy(),
+                ["U3"],
+            )
 
     def test_disappeared_policy_ref_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "disappeared"):
-            FactoryScope.partition([part("R1")], policy())
+            FactoryScope.partition([ScopeFixtures.part("R1")], ScopeFixtures.policy())
 
     def test_new_module_requires_explicit_policy(self):
         with self.assertRaisesRegex(RuntimeError, "explicit assembly policy"):
-            FactoryScope.partition([part("U3"), part("U99")], policy(), ["U3", "U99"])
+            FactoryScope.partition(
+                [ScopeFixtures.part("U3"), ScopeFixtures.part("U99")],
+                ScopeFixtures.policy(),
+                ["U3", "U99"],
+            )
 
     def test_duplicate_system_reference_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Duplicate"):
-            FactoryScope.partition([part("U3"), part("U3")], policy())
+            FactoryScope.partition(
+                [ScopeFixtures.part("U3"), ScopeFixtures.part("U3")],
+                ScopeFixtures.policy(),
+            )
 
     def test_comment_and_footprint_alias_do_not_split_exact_equivalent_parts(self):
         parts = [
-            part("R1"),
-            part("R2", Comment="different function", Footprint="alias_b"),
+            ScopeFixtures.part("R1"),
+            ScopeFixtures.part("R2", Comment="different function", Footprint="alias_b"),
         ]
         rows, evidence, splits = FactoryScope.consolidate(
             parts, {"R1": "geometry", "R2": "geometry"}
@@ -104,29 +151,43 @@ class FactoryScopeTests(unittest.TestCase):
         ]:
             with self.subTest(field=field):
                 rows, _, _ = FactoryScope.consolidate(
-                    [part("R1"), part("R2", **{field: value})],
+                    [
+                        ScopeFixtures.part("R1"),
+                        ScopeFixtures.part("R2", **{field: value}),
+                    ],
                     {"R1": "same", "R2": "same"},
                 )
                 self.assertEqual(len(rows), 2)
 
     def test_same_mpn_different_pad_geometry_stays_separate(self):
         rows, _, splits = FactoryScope.consolidate(
-            [part("R1"), part("R2")], {"R1": "padA", "R2": "padB"}
+            [ScopeFixtures.part("R1"), ScopeFixtures.part("R2")],
+            {"R1": "padA", "R2": "padB"},
         )
         self.assertEqual(len(rows), 2)
         self.assertEqual(splits[0]["Geometry_groups"], 2)
 
     def test_absent_native_geometry_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Missing native footprint"):
-            FactoryScope.consolidate([part("R1")], {})
+            FactoryScope.consolidate([ScopeFixtures.part("R1")], {})
 
     def test_duplicate_factory_reference_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Duplicate factory"):
-            FactoryScope.consolidate([part("R1"), part("R1")], {"R1": "same"})
+            FactoryScope.consolidate(
+                [ScopeFixtures.part("R1"), ScopeFixtures.part("R1")], {"R1": "same"}
+            )
 
 
 class NativeGeometryTests(unittest.TestCase):
+    """Tests of the native pad geometry key and the native connection requirements."""
+
     def footprint(self):
+        """Build a board with one footprint that has two SMD pads.
+
+        Outputs:
+            The board and the footprint; pads 1 and 2 sit at x = -0.775 mm and x = 0.775
+            mm.
+        """
         import pcbnew
 
         board = pcbnew.BOARD()

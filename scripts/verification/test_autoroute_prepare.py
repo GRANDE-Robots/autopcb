@@ -1,4 +1,9 @@
-"""Prepare a complete, source-bound board inventory without editing the source."""
+"""test_autoroute_prepare.py: tests of the source-bound board inventory.
+
+Prepare a complete, source-bound board inventory without editing the source.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,8 @@ from core.toolchain import kicad_cli
 
 
 class PrepareTests(unittest.TestCase):
+    """Tests of the board preparation: parity conflicts, DRC findings and the inventory."""
+
     def test_parity_conflicts_identify_both_sides_or_fail_closed(self):
         api = self.api()
         helper = getattr(api, "parity_blocked_nets", None)
@@ -72,6 +79,7 @@ class PrepareTests(unittest.TestCase):
                 _drc(cli, source, Path(tmp) / "drc.json", schematic_parity=True)
 
     def api(self):
+        """Return the ``pcb.net_routing.prepare`` module, which must exist."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.prepare"))
         from pcb.net_routing import prepare
 

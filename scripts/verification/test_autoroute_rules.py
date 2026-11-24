@@ -1,4 +1,8 @@
-"""Saved-rule, search/materialization and renewal consistency regressions."""
+"""test_autoroute_rules.py: saved-rule, search/materialization and renewal consistency
+regressions.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import copy
 import tempfile
@@ -33,29 +37,53 @@ RULES = """(version 1)
 """
 
 
-def compiler(source=RULES):
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "sample.kicad_dru"
-        path.write_text(source)
-        rules = read_rules(path)
-    courtyard = Courtyard(
-        "U1", "F.Cu", tuple(Point.from_mm(p) for p in [(1, 1), (3, 1), (3, 3), (1, 3)])
-    )
-    return RoutingRules(
-        rules,
-        (courtyard,),
-        {
-            "Default": (mm(0.25), mm(0.2)),
-            "SIGNAL": (mm(0.25), mm(0.2)),
-            "POWER": (mm(0.5), mm(0.2)),
-        },
-        {"S": "SIGNAL", "P": "POWER"},
-        mm(0.1),
-        0,
-    )
+class RuleCompiler:
+    """Compiles custom-rule text into the routing rules that the tests query."""
+
+    def __call__(self, source=RULES):
+        """Read rule text and build routing rules for a small board.
+
+        Inputs:
+            source: Text of a ``.kicad_dru`` file; ``RULES`` by default.
+        Outputs:
+            RoutingRules with the parsed rules, a 2 mm square courtyard for U1 on F.Cu,
+            the net classes Default and SIGNAL (0.25 mm track, 0.2 mm clearance) and
+            POWER
+            (0.5 mm track, 0.2 mm clearance), the nets S and P assigned to SIGNAL and
+            POWER,
+            a 0.1 mm minimum width and no minimum clearance.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.kicad_dru"
+            path.write_text(source)
+            rules = read_rules(path)
+        courtyard = Courtyard(
+            "U1",
+            "F.Cu",
+            tuple(Point.from_mm(p) for p in [(1, 1), (3, 1), (3, 3), (1, 3)]),
+        )
+        return RoutingRules(
+            rules,
+            (courtyard,),
+            {
+                "Default": (mm(0.25), mm(0.2)),
+                "SIGNAL": (mm(0.25), mm(0.2)),
+                "POWER": (mm(0.5), mm(0.2)),
+            },
+            {"S": "SIGNAL", "P": "POWER"},
+            mm(0.1),
+            0,
+        )
+
+
+compiler = RuleCompiler()
 
 
 class RuleConsistencyTests(unittest.TestCase):
+    """Tests that saved custom rules, net classes and courtyards give the search and the
+    native checks the same widths and clearances.
+    """
+
     def test_maximum_width_excludes_an_unrelated_power_rule(self):
         source = """(version 1)
         (rule "signal" (condition "A.NetClass == 'SIGNAL'")
@@ -190,7 +218,10 @@ class RuleConsistencyTests(unittest.TestCase):
 
     def test_wrapped_native_keys_are_normalized(self):
         class NativeName:
+            """Net name wrapper whose text form is the net name."""
+
             def __str__(self):
+                """Return the net name POWER."""
                 return "POWER"
 
         value = object()
@@ -960,6 +991,10 @@ class RuleConsistencyTests(unittest.TestCase):
 
 
 class RetryConsistencyTests(unittest.TestCase):
+    """Tests of the search budget, the net order trials and the renewal of retried
+    batches.
+    """
+
     def test_multi_net_search_reuses_unused_time_for_remaining_nets(self):
         from pcb.net_routing.model import NetPlan
 
@@ -971,6 +1006,9 @@ class RetryConsistencyTests(unittest.TestCase):
             nets = tuple(fixtures.make_net(name, [(0, 0), (1, 0)]) for name in "ABC")
 
             def solve(net, prior):
+                """Advance the fake clock by 8 s for net C and 1 s for the others, check
+                the budget and return one plan.
+                """
                 clock[0] += 8 if net.name == "C" else 1
                 budget.check()
                 return (NetPlan(net.name, fixtures.route()),)
@@ -1094,6 +1132,7 @@ class RetryConsistencyTests(unittest.TestCase):
         budget = Budget(Limits(seconds=10, order_trials=1))
 
         def limited_failure(net, prior):
+            """Record a net-time limit on the budget and return no plan."""
             budget.hit_limit("tree_seconds")
             return ()
 
@@ -1107,6 +1146,7 @@ class RetryConsistencyTests(unittest.TestCase):
         calls = []
 
         def solve(net, prior):
+            """Record the net name and the number of prior plans, and return no plan."""
             calls.append((net.name, len(prior)))
             return ()
 
@@ -1122,6 +1162,9 @@ class RetryConsistencyTests(unittest.TestCase):
         clock = [0.0]
 
         def solve(net, prior):
+            """Jump the fake clock to 20 s and check the budget for the HARD net, then
+            return one plan.
+            """
             if net.name == "HARD":
                 clock[0] = 20.0
                 budget.check()
@@ -1146,6 +1189,7 @@ class RetryConsistencyTests(unittest.TestCase):
         calls = []
 
         def solve(net, prior):
+            """Record the net name and return one plan."""
             calls.append(net.name)
             return (fixtures.NetPlan(net.name, fixtures.route()),)
 
@@ -1168,6 +1212,11 @@ class RetryConsistencyTests(unittest.TestCase):
         budget = Budget(Limits(seconds=30, order_trials=3), started=0.0)
 
         def solve(net, prior):
+            """Record the net name and prior plan count. The first search of net A moves
+            the clock to 11 s and returns no plan if the budget check raises
+            BudgetExhausted; net B without prior plans returns no plan; any other search
+            returns one plan.
+            """
             calls.append((net.name, len(prior)))
             if net.name == "A" and calls.count(("A", 0)) == 1:
                 clock[0] = 11.0
@@ -1200,6 +1249,9 @@ class RetryConsistencyTests(unittest.TestCase):
         budget = Budget(Limits(seconds=30, order_trials=3), started=0.0)
 
         def solve(net, prior):
+            """Record the net name and prior plan count. The search of net A moves the
+            clock to 11 s and checks the budget; every search returns no plan.
+            """
             calls.append((net.name, len(prior)))
             if net.name == "A":
                 clock[0] = 11.0
@@ -1222,6 +1274,10 @@ class RetryConsistencyTests(unittest.TestCase):
 
 
 class NativeRuleConsistencyTests(unittest.TestCase):
+    """Tests that the native DRC and the search apply the same saved-rule widths and
+    clearances on a saved board.
+    """
+
     def test_native_drc_and_search_both_apply_stricter_crossing_width(self):
         import pcbnew
 

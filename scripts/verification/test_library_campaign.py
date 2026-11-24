@@ -1,4 +1,9 @@
-"""Exercise guarded library campaigns on disposable KiCad projects."""
+"""test_library_campaign.py: tests of guarded library campaigns on disposable projects.
+
+Exercise guarded library campaigns on disposable KiCad projects.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -21,11 +26,6 @@ CLI = toolchain.kicad_cli.locate(None)
 CLI_AVAILABLE = CLI is not None and CLI.is_file()
 
 
-def _kicad_python() -> Path:
-    """The KiCad Python the product picks for this CLI, as in the macOS app bundle."""
-    return toolchain.native_python_candidates(CLI)[0]
-
-
 FOOTPRINT = (
     '(footprint "Probe" (version 20221018) (generator "pcbnew") (layer "F.Cu") '
     '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask")))'
@@ -42,7 +42,14 @@ SYMBOL = (
 
 
 class LibraryCampaignTests(unittest.TestCase):
+    """Tests of library edits: plan, preview and apply on a temporary project."""
+
     def setUp(self) -> None:
+        """Create a temporary project that holds a library campaign.
+
+        The project has a footprint, a symbol, a board and a schematic. The campaign
+        holds one change that replaces the size of pad 1 of the footprint.
+        """
         self.temporary = tempfile.TemporaryDirectory(
             prefix="jessie-library-campaign-test-"
         )
@@ -74,12 +81,18 @@ class LibraryCampaignTests(unittest.TestCase):
         )
 
     def prepare_mocked(self):
+        """Prepare the footprint edit with native validation mocked.
+
+        Outputs:
+            The prepared edit of the campaign.
+        """
         with mock.patch("core.library_campaign_cli.validate_library"):
             return LibraryCampaign.prepare(
                 self.root, self.campaign.name, self.document, self.fake_cli
             )
 
     def apply_arguments(self, edit):
+        """Return the keyword arguments that apply a prepared edit: its preview hash."""
         return {"preview_sha256": edit.preview_sha256}
 
     def test_plan_replaces_only_selected_expression_without_writing(self) -> None:
@@ -201,6 +214,7 @@ class LibraryCampaignTests(unittest.TestCase):
 
     def test_preview_rejects_source_changes_during_native_validation(self) -> None:
         def change_source(*args, **kwargs):
+            """Stand in for the native validation by rewriting the board file."""
             self.board.write_text("(kicad_pcb changed)", encoding="utf-8")
 
         with mock.patch(
@@ -245,6 +259,11 @@ class LibraryCampaignTests(unittest.TestCase):
         calls = []
 
         def incomplete_export(command, **kwargs):
+            """Stand in for the KiCad export of one symbol.
+
+            Record the symbol name, write an SVG only for the symbol Probe and report
+            success.
+            """
             name = command[command.index("--symbol") + 1]
             calls.append(name)
             if name == "Probe":
@@ -318,7 +337,7 @@ class LibraryCampaignTests(unittest.TestCase):
     @unittest.skipUnless(CLI_AVAILABLE, "KiCad CLI is unavailable")
     def test_standard_campaign_can_add_a_library_change(self) -> None:
         scripts = Path(__file__).resolve().parents[1]
-        kicad_python = _kicad_python()
+        kicad_python = self.kicad_python()
         base = [
             str(kicad_python),
             "-B",
@@ -370,7 +389,7 @@ class LibraryCampaignTests(unittest.TestCase):
     @unittest.skipUnless(CLI_AVAILABLE, "KiCad CLI is unavailable")
     def test_single_entrypoint_dispatches_library_preview(self) -> None:
         scripts = Path(__file__).resolve().parents[1]
-        kicad_python = _kicad_python()
+        kicad_python = self.kicad_python()
         result = subprocess.run(
             [
                 str(kicad_python),
@@ -400,6 +419,11 @@ class LibraryCampaignTests(unittest.TestCase):
         self.assertIn("--- libraries/Probe.pretty/Probe.kicad_mod", result.stdout)
         self.assertIn("(size 2 1)", result.stdout)
         self.assertEqual(self.footprint.read_text(encoding="utf-8"), FOOTPRINT)
+
+    @staticmethod
+    def kicad_python() -> Path:
+        """The KiCad Python the product picks for this CLI, as in the macOS app bundle."""
+        return toolchain.native_python_candidates(CLI)[0]
 
 
 if __name__ == "__main__":

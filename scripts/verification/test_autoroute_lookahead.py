@@ -1,4 +1,9 @@
-"""A neutral preview is disposable until a better board passes every check."""
+"""test_autoroute_lookahead.py: tests of the disposable neutral-preview lookahead.
+
+A neutral preview is disposable until a better board passes every check.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -10,36 +15,63 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 
-def digest(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
+class PreviewCandidates:
+    """Builds validated-preview dicts like those the neutral lookahead consumes."""
 
+    @staticmethod
+    def digest(value: bytes) -> str:
+        """Return the SHA-256 hex digest of the bytes."""
+        return hashlib.sha256(value).hexdigest()
 
-def candidate(source: bytes, board: bytes, opens: int, **validation):
-    return {
-        "status": "validated_preview",
-        "source_sha256": digest(source),
-        "candidate_sha256": digest(board),
-        "changes": [{"bytes": board}],
-        "new_style_issues": (),
-        "candidate_reference": {"high_speed_nets": ["USB"]},
-        "candidate_geometry": {},
-        "nets": ["A"],
-        "attempts": [],
-        "validation": {
-            "status": "no_new_drc_violations",
-            "schematic_parity_checked": True,
-            "candidate_unconnected": opens,
-            "reference_comparison": {"status": "unverified"},
-            **validation,
-        },
-    }
+    @classmethod
+    def candidate(cls, source: bytes, board: bytes, opens: int, **validation):
+        """Build a validated-preview dict for a candidate board.
+
+        Inputs:
+            source: Bytes of the source board.
+            board: Bytes of the candidate board, carried as the one change.
+            opens: Open connections left on the candidate.
+            validation: Entries that override or extend the validation dict.
+        Outputs:
+            The preview dict with the source and candidate digests.
+        """
+        return {
+            "status": "validated_preview",
+            "source_sha256": cls.digest(source),
+            "candidate_sha256": cls.digest(board),
+            "changes": [{"bytes": board}],
+            "new_style_issues": (),
+            "candidate_reference": {"high_speed_nets": ["USB"]},
+            "candidate_geometry": {},
+            "nets": ["A"],
+            "attempts": [],
+            "validation": {
+                "status": "no_new_drc_violations",
+                "schematic_parity_checked": True,
+                "candidate_unconnected": opens,
+                "reference_comparison": {"status": "unverified"},
+                **validation,
+            },
+        }
 
 
 class FakeSnapshot:
+    """Stand-in for the runner's Snapshot that fails on exit when the source changed."""
+
     def __init__(self, source):
+        """Remember the source board.
+
+        Inputs:
+            source: Board file to copy.
+        """
         self.source = Path(source)
 
     def __enter__(self):
+        """Copy the board and a protected schematic into a temporary folder.
+
+        Outputs:
+            This snapshot, with ``directory`` and ``board_path`` set.
+        """
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
         self.board_path = self.directory / "v4.1.kicad_pcb"
@@ -49,10 +81,14 @@ class FakeSnapshot:
         return self
 
     def check(self):
+        """Raise RuntimeError when the source board no longer holds its original bytes."""
         if self.source.read_bytes() != self.original:
             raise RuntimeError("Routing sources changed")
 
     def __exit__(self, exc_type, exc, tb):
+        """Check the source when the block raised nothing, then remove the temporary
+        folder.
+        """
         try:
             if exc_type is None:
                 self.check()
@@ -61,16 +97,24 @@ class FakeSnapshot:
 
 
 class AutoLookaheadTests(unittest.TestCase):
+    """Tests that the neutral lookahead promotes only a fully rechecked reduction and
+    never changes the original checkpoint.
+    """
+
     def test_only_checked_neutral_previews_can_be_stepping_stones(self):
         from pcb.net_routing.runner import PreviewJudge
 
-        good = candidate(b"best", b"neutral", 10)
+        good = PreviewCandidates.candidate(b"best", b"neutral", 10)
         self.assertTrue(PreviewJudge.neutral_eligible(good, 10))
         for bad in (
-            candidate(b"best", b"x", 9),
-            candidate(b"best", b"x", 11),
-            candidate(b"best", b"x", 10, schematic_parity_checked=False),
-            candidate(b"best", b"x", 10, reference_comparison={"status": "degraded"}),
+            PreviewCandidates.candidate(b"best", b"x", 9),
+            PreviewCandidates.candidate(b"best", b"x", 11),
+            PreviewCandidates.candidate(
+                b"best", b"x", 10, schematic_parity_checked=False
+            ),
+            PreviewCandidates.candidate(
+                b"best", b"x", 10, reference_comparison={"status": "degraded"}
+            ),
             {**good, "new_style_issues": ("staircases",)},
             {**good, "status": "rejected"},
         ):
@@ -121,6 +165,16 @@ class AutoLookaheadTests(unittest.TestCase):
         self.assertEqual(seen.count("follow-up from neutral"), 1)
 
     def _exercise(self, mode):
+        """Run the runner's neutral lookahead with scripted stubs.
+
+        Inputs:
+            mode: ``improved``, ``neutral``, ``degraded``, ``exception``, ``interrupt``,
+                ``source_change``, ``alternatives`` or ``unrelated``; it sets how the
+                stubbed follow-up round behaves.
+        Outputs:
+            The lookahead result, the final bytes of the source board and the stages the
+            stubs saw.
+        """
         from pcb.net_routing import runner
 
         seen = []
@@ -129,12 +183,15 @@ class AutoLookaheadTests(unittest.TestCase):
             source.write_bytes(b"best")
             (source.parent / "v4.1.kicad_sch").write_bytes(b"protected schematic")
             outer = SimpleNamespace(board_path=source, directory=source.parent)
-            neutral = candidate(b"best", b"neutral", 10)
+            neutral = PreviewCandidates.candidate(b"best", b"neutral", 10)
             if mode == "alternatives":
                 neutral["nets"] = ["A", "B"]
             request = {"nets": [{"name": "A"}], "search": {"seconds": 5}}
 
             def replan(*args, **kwargs):
+                """Stub for the replanning step: one round with the request for net A,
+                plus one for net B in the ``alternatives`` and ``unrelated`` modes.
+                """
                 other = {"nets": [{"name": "B"}], "search": {"seconds": 5}}
                 return {
                     "rounds": [
@@ -145,13 +202,27 @@ class AutoLookaheadTests(unittest.TestCase):
                 }
 
             def planner(directory):
+                """Stub for the campaign planner factory: return a planner that has a
+                plan method.
+                """
+
                 def plan(kind, changes):
+                    """Return a plan whose result is the bytes of the first change."""
                     image = changes[0]["bytes"]
-                    return SimpleNamespace(after=image, result_sha256=digest(image))
+                    return SimpleNamespace(
+                        after=image, result_sha256=PreviewCandidates.digest(image)
+                    )
 
                 return SimpleNamespace(plan=plan)
 
             def native(function, *args, **kwargs):
+                """Stub for the native runner: answer a follow-up preview round or a
+                cumulative reference check as the mode says.
+
+                Inputs:
+                    function: Runner function being called; any other raises
+                        AssertionError.
+                """
                 if function is runner.NativePreview.preview_round:
                     self.assertEqual(
                         (args[0] / "v4.1.kicad_pcb").read_bytes(), b"neutral"
@@ -171,7 +242,7 @@ class AutoLookaheadTests(unittest.TestCase):
                         return {"status": "no_candidate_found"}
                     if mode == "unrelated":
                         return {"status": "no_candidate_found"}
-                    return candidate(
+                    return PreviewCandidates.candidate(
                         b"neutral", b"improved", 10 if mode == "neutral" else 9
                     )
                 if function is runner._verify_cumulative_reference_native:
@@ -182,6 +253,10 @@ class AutoLookaheadTests(unittest.TestCase):
                 raise AssertionError(function)
 
             def verify(branch, project, expected_opens, *, progress=None):
+                """Stub for the final board verification: check the source is still the
+                best board and nine opens are expected, then report a clean result with
+                nine open connections.
+                """
                 self.assertEqual(source.read_bytes(), b"best")
                 self.assertEqual(expected_opens, 9)
                 seen.append("native final verification")

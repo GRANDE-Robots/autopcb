@@ -1,4 +1,9 @@
-"""A new unqualified via must not drill into a copper pad."""
+"""test_via_guard.py: tests of the via-to-pad drill guard.
+
+A new unqualified via must not drill into a copper pad.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from pathlib import Path
 import tempfile
@@ -10,8 +15,20 @@ from pcb.net_routing.via_guard import via_pad_overlaps, verify_no_new_via_pad_ov
 
 
 class ViaPadGuardTests(unittest.TestCase):
+    """Tests that a via whose drill meets a pad is detected and an existing overlap is
+    not new.
+    """
+
     @staticmethod
     def board(via_x):
+        """Build a board with an SMD pad at the origin and a via.
+
+        Inputs:
+            via_x: X position of the via in nm.
+        Outputs:
+            A board with footprint U1 holding a 1 mm square pad at (0, 0) and a via at
+            (via_x, 0) with a 0.6 mm size and a 0.3 mm drill.
+        """
         board = pcbnew.BOARD()
         footprint = pcbnew.FOOTPRINT(board)
         footprint.SetReference("U1")

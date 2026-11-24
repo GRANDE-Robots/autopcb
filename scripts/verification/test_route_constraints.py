@@ -1,4 +1,9 @@
-"""Exercise electrical screening and its integration with route planning."""
+"""test_route_constraints.py: tests of electrical screening in route planning.
+
+Exercise electrical screening and its integration with route planning.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -25,8 +30,11 @@ from verification import test_route_optimizer as fixtures
 
 
 class RouteConstraintTests(unittest.TestCase):
+    """Tests of the electrical limits that screen routes and vias during planning."""
+
     @staticmethod
     def config() -> dict:
+        """Return a route planning configuration that carries the electrical limits."""
         data = fixtures.RouteOptimizerTests.config()
         data["electrical"] = fixtures.RouteOptimizerTests.electrical()
         return data

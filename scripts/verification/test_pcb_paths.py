@@ -1,4 +1,9 @@
-"""The route audit checks current net endpoints, including the USB switch."""
+"""test_pcb_paths.py: tests of the route audit path specifications.
+
+The route audit checks current net endpoints, including the USB switch.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
@@ -6,6 +11,8 @@ from verification.audit_pcb_paths import path_specs, validate_path_specs
 
 
 class PcbPathSpecificationTests(unittest.TestCase):
+    """Tests of the built-in path specifications and their endpoint validation."""
+
     def test_usb_paths_stop_on_each_side_of_the_switch(self):
         usb = [spec for spec in path_specs() if spec[0].startswith("TEENSY_")]
         self.assertEqual(

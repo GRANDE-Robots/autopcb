@@ -1,4 +1,9 @@
-"""Compare matching channels and rank only electrically eligible candidates."""
+"""test_autoroute_symmetry.py: tests of matching-channel comparison and ranking.
+
+Compare matching channels and rank only electrically eligible candidates.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -8,20 +13,37 @@ import unittest
 from pcb.route_optimizer import Point, Route, Segment, Via
 
 
-def point(x, y):
-    return Point.from_mm([x, y])
+class SymmetryRoutes:
+    """Builds routes on B.Cu from points given in mm."""
 
+    @staticmethod
+    def point(x, y):
+        """Return the route point at (x, y) given in mm."""
+        return Point.from_mm([x, y])
 
-def route(points, via=()):
-    segments = tuple(
-        Segment(point(*a), point(*b), "B.Cu") for a, b in zip(points, points[1:])
-    )
-    vias = tuple(Via(point(*item), "F.Cu", "B.Cu") for item in via)
-    return Route(segments, vias, (), 0, 0, 0, 0)
+    @classmethod
+    def route(cls, points, via=()):
+        """Build a route through consecutive points.
+
+        Inputs:
+            points: (x, y) pairs in mm; each consecutive pair becomes a B.Cu segment.
+            via: (x, y) pairs in mm of vias between F.Cu and B.Cu.
+        Outputs:
+            The route with those segments and vias and no other fields set.
+        """
+        segments = tuple(
+            Segment(cls.point(*a), cls.point(*b), "B.Cu")
+            for a, b in zip(points, points[1:])
+        )
+        vias = tuple(Via(cls.point(*item), "F.Cu", "B.Cu") for item in via)
+        return Route(segments, vias, (), 0, 0, 0, 0)
 
 
 class SymmetryTests(unittest.TestCase):
+    """Tests of the channel symmetry comparison and the layout score ranking."""
+
     def api(self):
+        """Return the ``pcb.net_routing.symmetry`` module, which must exist."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.symmetry"))
         from pcb.net_routing import symmetry
 
@@ -29,38 +51,50 @@ class SymmetryTests(unittest.TestCase):
 
     def test_translated_mirrored_channels_match(self):
         api = self.api()
-        left = route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
-        right = route([(9, 2), (7, 2), (6, 3)], [(6, 3)])
+        left = SymmetryRoutes.route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
+        right = SymmetryRoutes.route([(9, 2), (7, 2), (6, 3)], [(6, 3)])
         result = api.compare_routes(
-            left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True)
+            left,
+            api.Frame(SymmetryRoutes.point(0, 0)),
+            right,
+            api.Frame(SymmetryRoutes.point(10, 0), mirror=True),
         )
         self.assertEqual(result.score, 0)
 
     def test_extra_via_or_misalignment_increases_error(self):
         api = self.api()
-        left = route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
-        right = route([(9, 2), (7, 2), (6, 3)], [(6, 3), (7, 2)])
+        left = SymmetryRoutes.route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
+        right = SymmetryRoutes.route([(9, 2), (7, 2), (6, 3)], [(6, 3), (7, 2)])
         result = api.compare_routes(
-            left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True)
+            left,
+            api.Frame(SymmetryRoutes.point(0, 0)),
+            right,
+            api.Frame(SymmetryRoutes.point(10, 0), mirror=True),
         )
         self.assertGreater(result.score, 0)
         self.assertEqual(result.via_count_difference, 1)
 
     def test_subtolerance_via_deviation_has_no_penalty(self):
         api = self.api()
-        left = route([(1, 2), (4, 2)], [(3, 2)])
-        right = route([(1, 2), (4, 2)], [(3.04, 2)])
+        left = SymmetryRoutes.route([(1, 2), (4, 2)], [(3, 2)])
+        right = SymmetryRoutes.route([(1, 2), (4, 2)], [(3.04, 2)])
         result = api.compare_routes(
-            left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0))
+            left,
+            api.Frame(SymmetryRoutes.point(0, 0)),
+            right,
+            api.Frame(SymmetryRoutes.point(0, 0)),
         )
         self.assertEqual(result.score, 0)
 
     def test_segment_splitting_does_not_change_geometry_score(self):
         api = self.api()
-        left = route([(1, 2), (5, 2)])
-        right = route([(1, 2), (3, 2), (5, 2)])
+        left = SymmetryRoutes.route([(1, 2), (5, 2)])
+        right = SymmetryRoutes.route([(1, 2), (3, 2), (5, 2)])
         result = api.compare_routes(
-            left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0))
+            left,
+            api.Frame(SymmetryRoutes.point(0, 0)),
+            right,
+            api.Frame(SymmetryRoutes.point(0, 0)),
         )
         self.assertEqual(result.score, 0)
 
@@ -76,10 +110,10 @@ class SymmetryTests(unittest.TestCase):
 
     def test_missing_copper_between_sampling_points_is_not_symmetric(self):
         api = self.api()
-        whole = route([(0, 0), (4, 0)])
+        whole = SymmetryRoutes.route([(0, 0), (4, 0)])
         fragments = Route(
             tuple(
-                Segment(point(a, 0), point(b, 0), "B.Cu")
+                Segment(SymmetryRoutes.point(a, 0), SymmetryRoutes.point(b, 0), "B.Cu")
                 for a, b in ((0, 0.1), (1.95, 2.05), (3.9, 4))
             ),
             (),
@@ -90,7 +124,10 @@ class SymmetryTests(unittest.TestCase):
             0,
         )
         result = api.compare_routes(
-            whole, api.Frame(point(0, 0)), fragments, api.Frame(point(0, 0))
+            whole,
+            api.Frame(SymmetryRoutes.point(0, 0)),
+            fragments,
+            api.Frame(SymmetryRoutes.point(0, 0)),
         )
         self.assertGreater(result.score, 0)
 

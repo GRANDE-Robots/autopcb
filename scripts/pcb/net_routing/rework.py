@@ -170,9 +170,11 @@ class RemovedCopper:
 
         Inputs:
             route: the proposed copper.
-            width, size, drill: track width, via diameter and via drill of the route, in nm.
+            width, size, drill: track width, via diameter and via drill of the route, in
+                nm.
             weights: prices of changed tracks, length and vias.
-            segment_dimensions: optional callable giving (piece, width) pairs of a segment.
+            segment_dimensions: optional callable giving (piece, width) pairs of a
+                segment.
         Outputs:
             A ReworkScore counting every arc and off-angle track, each track whose
             length is not covered by the route at its old width, and each via the

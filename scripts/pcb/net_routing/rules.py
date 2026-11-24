@@ -44,7 +44,8 @@ _METHODS = {"intersectsCourtyard", "memberOfGroup"}
 
 
 class RuleReader:
-    """Reads the supported track-width and clearance rules of a saved KiCad design-rule file."""
+    """Reads the supported track-width and clearance rules of a saved KiCad design-rule
+    file."""
 
     def __call__(self, path: Path) -> tuple[DimensionRule, ...]:
         """Read the dimension rules of a rules file.
@@ -91,7 +92,8 @@ class RuleReader:
             }
 
             def requires_named_net(node):
-                """Whether a condition can hold only when the net name equals a literal string."""
+                """Whether a condition can hold only when the net name equals a literal
+                string."""
                 if isinstance(node, ast.Expression):
                     return requires_named_net(node.body)
                 if isinstance(node, ast.BoolOp):
@@ -196,7 +198,8 @@ class RuleReader:
         """
 
         def substitute(match):
-            """Translate one token: quoted strings stay, operators become Python operators and mm or mil quantities become integers in nm."""
+            """Translate one token: quoted strings stay, operators become Python
+            operators and mm or mil quantities become integers in nm."""
             value = match.group()
             if value[0] in "'\"":
                 return value
@@ -315,7 +318,8 @@ class DimensionRule:
     net_specific: bool = False
 
     def matches(self, first: RuleItem, second: RuleItem) -> bool:
-        """Whether the rule applies to the first item's layer and its condition holds with A as first and B as second."""
+        """Whether the rule applies to the first item's layer and its condition holds
+        with A as first and B as second."""
         return first.Layer in self.layers and bool(
             eval(self.expression, {"__builtins__": {}}, {"A": first, "B": second})
         )
@@ -436,15 +440,17 @@ class RoutingRules:
         minimum_clearance,
         uncertain_courtyards=None,
     ):
-        """Inputs:
-        rules: the saved dimension rules.
-        courtyards: courtyard polygons of the board's footprints.
-        classes: (track width, clearance) in nm by net class name.
-        assignments: net class name by net name.
-        minimum_width: board minimum track width, in nm.
-        minimum_clearance: board minimum clearance, in nm.
-        uncertain_courtyards: selectors of footprints whose courtyards could not be
-            represented, by copper layer name.
+        """Hold the saved rules, courtyards and net classes of a board.
+
+        Inputs:
+            rules: the saved dimension rules.
+            courtyards: courtyard polygons of the board's footprints.
+            classes: (track width, clearance) in nm by net class name.
+            assignments: net class name by net name.
+            minimum_width: board minimum track width, in nm.
+            minimum_clearance: board minimum clearance, in nm.
+            uncertain_courtyards: selectors of footprints whose courtyards could not be
+                represented, by copper layer name.
         """
         self.rules, self.courtyards = tuple(rules), tuple(courtyards)
         self.rule_courtyards = frozenset(
@@ -577,19 +583,22 @@ class RoutingRules:
 
 
 class RoutingProfile:
-    """The track widths and clearances one net must use, from board defaults and saved rules."""
+    """The track widths and clearances one net must use, from board defaults and saved
+    rules."""
 
     def __init__(
         self, source, net, net_class, width, clearance, width_floor, clearance_floor
     ):
-        """Inputs:
-        source: the RoutingRules.
-        net: net name.
-        net_class: effective net class name.
-        width: default track width in nm.
-        clearance: default clearance in nm.
-        width_floor: hard minimum track width in nm.
-        clearance_floor: hard minimum clearance in nm.
+        """Resolve the widths and clearances of one net.
+
+        Inputs:
+            source: the RoutingRules.
+            net: net name.
+            net_class: effective net class name.
+            width: default track width in nm.
+            clearance: default clearance in nm.
+            width_floor: hard minimum track width in nm.
+            clearance_floor: hard minimum clearance in nm.
         """
         self.source, self.net, self.net_class = source, net, net_class
         self.width, self.clearance = width, clearance
@@ -753,7 +762,8 @@ class RoutingProfile:
             first_high, second_high: the items with every courtyard that might apply.
             unknown_group: True when group membership is unknown.
         Outputs:
-            (possible, definite): whether the rule might match and whether it surely does.
+            (possible, definite): whether the rule might match and whether it surely
+                does.
         """
         if rule.nonmonotonic_local or (unknown_group and rule.uncertain_group):
             return True, False
@@ -999,7 +1009,8 @@ class RoutingProfile:
     def clearance_for_track(
         self, segment: Segment, obstacle: Obstacle, width: int
     ) -> int:
-        """Clearance, in nm, for a track of a given width; clearance_at with the width fixed."""
+        """Clearance, in nm, for a track of a given width; clearance_at with the width
+        fixed."""
         return self.clearance_at(segment, obstacle, width=width)
 
     def pieces(self, segment: Segment) -> tuple[tuple[Segment, int], ...]:

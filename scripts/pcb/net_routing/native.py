@@ -1,4 +1,5 @@
-"""native.py: stable native inputs, physical copper islands and guarded placement trials.
+"""native.py: stable native inputs, physical copper islands and guarded placement
+trials.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -39,8 +40,10 @@ class Snapshot:
     """Copy once; detect changed sources, dependency inventory and planner code."""
 
     def __init__(self, source: Path):
-        """Inputs:
-        source: path of the saved KiCad PCB to snapshot.
+        """Name the board to snapshot.
+
+        Inputs:
+            source: path of the saved KiCad PCB to snapshot.
         """
         self.source = source.resolve()
         self._temporary = None
@@ -120,7 +123,8 @@ class Snapshot:
         return self
 
     def check(self) -> None:
-        """Raise RuntimeError when a source file or a tool differs from its digest at entry."""
+        """Raise RuntimeError when a source file or a tool differs from its digest at
+        entry."""
         if {
             p: sha(p) for p in self.files()
         } != self.fingerprints or self.tools() != self.tool_hashes:
@@ -129,7 +133,8 @@ class Snapshot:
             )
 
     def __exit__(self, exc_type, exc, traceback):
-        """Re-check the sources after a clean run, then always delete the disposable folder."""
+        """Re-check the sources after a clean run, then always delete the disposable
+        folder."""
         try:
             if exc_type is None:
                 self.check()

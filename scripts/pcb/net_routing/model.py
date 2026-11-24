@@ -93,7 +93,8 @@ class NetPlan:
 
     @property
     def signature(self) -> tuple:
-        """A hashable description of the plan's net, segments, via positions and restored widths."""
+        """A hashable description of the plan's net, segments, via positions and
+        restored widths."""
         return (
             self.net,
             tuple(
@@ -120,7 +121,8 @@ class Limits:
         net_candidates: complete candidates kept per net.
         path_candidates: alternative paths kept per endpoint pair.
         connections_per_step: endpoint pairs tried per tree.
-        fallback_connections_per_step: wider endpoint sample used when the first yields no useful tree.
+        fallback_connections_per_step: wider endpoint sample used when the first yields
+            no useful tree.
         sites_per_island: access sites kept per island.
         branch_sites: branch sites sampled on tree copper.
         order_trials: net orders tried.
@@ -235,7 +237,8 @@ class Budget:
         self.limit_events += 1
 
     def check(self) -> None:
-        """Raise BudgetExhausted when the search time or the current time slice is used up."""
+        """Raise BudgetExhausted when the search time or the current time slice is used
+        up."""
         if time.monotonic() - self.started >= self.limits.seconds:
             self.hit_limit("seconds")
             raise BudgetExhausted("Search time budget exhausted")

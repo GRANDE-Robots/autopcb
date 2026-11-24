@@ -1,4 +1,5 @@
-"""pose_sampler.py: poses worth trying for parts a blocked net may move, most promising first.
+"""pose_sampler.py: poses worth trying for parts a blocked net may move, most promising
+first.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -99,7 +100,8 @@ class PoseSampler:
                 yield pose
 
     def inside(self, x: float, y: float) -> bool:
-        """Whether a point, in mm, lies strictly inside the board outline's bounding box."""
+        """Whether a point, in mm, lies strictly inside the board outline's bounding
+        box."""
         x0, y0, x1, y1 = self.bounds
         return x0 < x < x1 and y0 < y < y1
 
@@ -162,7 +164,8 @@ class PoseSampler:
         return sorted(found, key=lambda pose: pose.displacement_mm)
 
     def nudges(self, selected):
-        """Poses that offset the parts by fixed steps along each axis and turn them in place.
+        """Poses that offset the parts by fixed steps along each axis and turn them in
+        place.
 
         Outputs:
             One pose per entry of NUDGES, skipping offsets that leave the board; the

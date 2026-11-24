@@ -1,4 +1,5 @@
-"""topology.py: beam search over complete multi-terminal trees, including shared branches.
+"""topology.py: beam search over complete multi-terminal trees, including shared
+branches.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -54,7 +55,8 @@ class Tree:
 
 
 class TreeSearch:
-    """Beam search over complete trees of a multi-terminal net; callable as whole_net."""
+    """Beam search over complete trees of a multi-terminal net; callable as
+    whole_net."""
 
     def __call__(
         self,

@@ -1,8 +1,10 @@
-"""isolated_copper.py: identify electrically isolated, tiny track fragments without altering a board.
+"""isolated_copper.py: identify electrically isolated, tiny track fragments without
+altering a board.
 
 This screen is deliberately narrow: a selected item is a single, unlocked
 straight track, at most 0.05 mm and one tenth of its width, with no connected
-copper or pad, and no zone of its net. Native checks and protected-item checks still apply.
+copper or pad, and no zone of its net. Native checks and protected-item checks still
+apply.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """

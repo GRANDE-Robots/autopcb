@@ -1,4 +1,5 @@
-"""electrical.py: source-bound arithmetic for radial branch-current and voltage-drop models.
+"""electrical.py: source-bound arithmetic for radial branch-current and voltage-drop
+models.
 
 The source fingerprint only establishes which file was cited; it does not
 verify the values, their context, or their relationship to actual copper.
@@ -104,7 +105,8 @@ class Assessment:
     """The outcome of assessing a tree against its scenarios.
 
     Inputs:
-        status: blocked (evidence unusable), rejected (a limit is exceeded) or within_input_limits.
+        status: blocked (evidence unusable), rejected (a limit is exceeded) or
+            within_input_limits.
         scenarios: per-scenario results; empty when blocked.
         issues: the problems found.
         electrically_verified: always False; this arithmetic never qualifies a route.
@@ -117,7 +119,8 @@ class Assessment:
 
 
 class TreeAssessor:
-    """Assesses branch currents and voltage drops of a radial network against cited evidence."""
+    """Assesses branch currents and voltage drops of a radial network against cited
+    evidence."""
 
     def __call__(
         self,

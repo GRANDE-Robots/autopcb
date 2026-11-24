@@ -1,4 +1,5 @@
-"""reference_repair.py: build conservative repair requests from sampled high-speed return gaps.
+"""reference_repair.py: build conservative repair requests from sampled high-speed
+return gaps.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -10,7 +11,8 @@ from pcb.net_routing.protection import unqualified_working_nets
 
 
 class ReferenceRepairCompiler:
-    """Turns return-path conflicts into routing requests that rip up only safe blockers."""
+    """Turns return-path conflicts into routing requests that rip up only safe
+    blockers."""
 
     def __call__(
         self, board, reference: dict, policy: dict, *, workers: int = 2

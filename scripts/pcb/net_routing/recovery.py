@@ -1,4 +1,5 @@
-"""recovery.py: bounded search escalation without weakening physical or electrical rules.
+"""recovery.py: bounded search escalation without weakening physical or electrical
+rules.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -17,12 +18,14 @@ STAGE_NAMES = ("local", "wider pairs", "finer pairs", "board detour", "copper re
 
 @dataclass(frozen=True)
 class RecoveryPolicy:
-    """Limits for escalating a failed search through wider and finer stages, copper replacement and part moves.
+    """Limits for escalating a failed search through wider and finer stages, copper
+    replacement and part moves.
 
     Inputs:
         early_rework: keep early copper-rework requests when a saved queue is renewed.
         stages: number of widening stages, 0 to 3, before copper repair.
-        alternatives_per_stage: endpoint choices tried per stage, at most 64.
+        alternatives_per_stage: checkpoint choices (endpoint pairs) tried per stage, at
+            most 64.
         defer_rounds: how far down the queue a failed net is deferred, in rounds.
         wide_margin_mm: margin added around a net for wider windows, in mm.
         max_cells: grid cell limit for escalated searches.
@@ -34,7 +37,8 @@ class RecoveryPolicy:
         whole_net_rip_up_items: copper items of a whole-net replacement, at most 64.
         rip_up_nets: nets one replacement may touch, at most 8.
         repair_islands: copper islands a repair may reconnect, 2 to 20.
-        rip_up_radius_mm: radius around an endpoint searched for removable copper, in mm.
+        rip_up_radius_mm: radius around an endpoint searched for removable copper, in
+            mm.
         obstruction_trials: obstruction diagnosis searches, 0 to 16.
         obstruction_seconds: time limit for one diagnosis, in seconds.
         placement_candidates: part-move candidates, 0 to 32.

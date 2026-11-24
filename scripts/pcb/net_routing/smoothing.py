@@ -26,10 +26,12 @@ class RefinementNotApplicable(ValueError):
 
 
 class Octilinear:
-    """Tests whether a sequence of points moves only horizontally, vertically or at 45 degrees."""
+    """Tests whether a sequence of points moves only horizontally, vertically or at 45
+    degrees."""
 
     def __call__(self, points) -> bool:
-        """Whether every step between consecutive points is nonzero and horizontal, vertical or at 45 degrees."""
+        """Whether every step between consecutive points is nonzero and horizontal,
+        vertical or at 45 degrees."""
         for a, b in zip(points, points[1:]):
             dx, dy = b.x - a.x, b.y - a.y
             if (not dx and not dy) or (dx and dy and abs(dx) != abs(dy)):
@@ -41,7 +43,8 @@ _octilinear = Octilinear()
 
 
 class RouteChains:
-    """Splits a route into chains between anchors and finds the ends of simple chains."""
+    """Splits a route into chains between anchors and finds the ends of simple
+    chains."""
 
     @staticmethod
     def terminal_chains(route: Route, net: Net) -> list[tuple[Site, ...]]:
@@ -162,7 +165,8 @@ class RouteChains:
         seen_edges = set()
 
         def add(a, b):
-            """Record the edge between two sites; raises RefinementNotApplicable when the edge is degenerate or repeated."""
+            """Record the edge between two sites; raises RefinementNotApplicable when
+            the edge is degenerate or repeated."""
             key = frozenset((a, b))
             if len(key) != 2 or key in seen_edges:
                 raise RefinementNotApplicable("Route is not a simple chain")

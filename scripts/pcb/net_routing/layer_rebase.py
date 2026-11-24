@@ -1,4 +1,5 @@
-"""layer_rebase.py: safely retain a private preview across layer-label and soft-cost changes.
+"""layer_rebase.py: safely retain a private preview across layer-label and soft-cost
+changes.
 
 Layer labels are KiCad metadata. Copper, geometry, stackup and hard policy must
 remain byte-for-byte unchanged; native revalidation is still mandatory.
@@ -18,7 +19,8 @@ from pcb.route_optimizer import COPPER_LAYERS
 
 
 class LayerAnnotations:
-    """Reads and rewrites the role annotation of each copper layer in native PCB bytes."""
+    """Reads and rewrites the role annotation of each copper layer in native PCB
+    bytes."""
 
     @staticmethod
     def roles(board: bytes):
@@ -104,7 +106,8 @@ class LayerAnnotations:
 
 
 class LayerPolicy:
-    """Judges whether two routing policies differ only in layer order and soft layer cost."""
+    """Judges whether two routing policies differ only in layer order and soft layer
+    cost."""
 
     @staticmethod
     def compatible(old_policy: object, new_policy: object) -> bool:
@@ -143,7 +146,8 @@ class LayerPolicy:
 
 
 class CheckpointRebase:
-    """Rebinds a saved preview candidate to a board that differs only in layer annotations."""
+    """Rebinds a saved preview candidate to a board that differs only in layer
+    annotations."""
 
     def __call__(
         self,

@@ -1,4 +1,5 @@
-"""staircase_repair.py: propose and independently verify bounded staircase simplifications.
+"""staircase_repair.py: propose and independently verify bounded staircase
+simplifications.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """

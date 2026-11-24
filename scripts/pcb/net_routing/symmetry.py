@@ -54,8 +54,10 @@ class SymmetryComparison:
     """How far two routes are from being symmetric.
 
     Inputs:
-        path_distance_mm: mean distance between the two routes' copper beyond the tolerance, in mm.
-        via_distance_mm: mean distance between the two routes' vias beyond the tolerance, in mm.
+        path_distance_mm: mean distance between the two routes' copper beyond the
+            tolerance, in mm.
+        via_distance_mm: mean distance between the two routes' vias beyond the
+            tolerance, in mm.
         via_count_difference: absolute difference of the via counts.
         branch_count_difference: absolute difference of the branch point counts.
         bend_count_difference: absolute difference of the bend counts.
@@ -80,7 +82,8 @@ class SymmetryComparison:
 
 
 class RouteSymmetryComparer:
-    """Measures how closely two supplied routes match after each is mapped into its frame."""
+    """Measures how closely two supplied routes match after each is mapped into its
+    frame."""
 
     def __call__(
         self,
@@ -140,7 +143,8 @@ class RouteSymmetryComparer:
 
     @staticmethod
     def _segments(route: Route, frame: Frame):
-        """The route's segments as (start, end, layer) with the ends mapped into the frame (mm)."""
+        """The route's segments as (start, end, layer) with the ends mapped into the
+        frame (mm)."""
         return tuple(
             (frame.transform(s.start), frame.transform(s.end), s.layer)
             for s in route.segments
@@ -199,7 +203,8 @@ class RouteSymmetryComparer:
 
     @staticmethod
     def _via_distance(first, second, tolerance: float) -> float:
-        """Mean distance in mm from each via of first to the nearest via of second, beyond tolerance; 0.0 when either has no vias."""
+        """Mean distance in mm from each via of first to the nearest via of second,
+        beyond tolerance; 0.0 when either has no vias."""
         if not first or not second:
             return 0.0
         return sum(
@@ -247,7 +252,8 @@ class CostWeights:
     front: float = 0.25
 
     def __post_init__(self) -> None:
-        """Reject weights that are not finite nonnegative numbers, or a zero length weight."""
+        """Reject weights that are not finite nonnegative numbers, or a zero length
+        weight."""
         values = (self.length, self.via, self.bend, self.diagonal, self.front)
         if (
             any(

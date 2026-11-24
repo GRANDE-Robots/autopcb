@@ -35,9 +35,12 @@ class StaircaseGeometryError(RouteGeometryError):
     """A checked path contains a staircase involving its added copper."""
 
     def __init__(self, message: str, witnesses: tuple[tuple[str, Point], ...] = ()):
-        """Inputs:
-        message: description of the staircase.
-        witnesses: (layer name, point) pairs inside the staircase where added copper overlaps it.
+        """Record the staircase and where added copper overlaps it.
+
+        Inputs:
+            message: description of the staircase.
+            witnesses: (layer name, point) pairs inside the staircase where added copper
+                overlaps it.
         """
         super().__init__(message)
         self.witnesses = witnesses
@@ -47,8 +50,10 @@ class OffAngleContactGeometryError(RouteGeometryError):
     """A proposed route touches existing copper outside the octilinear model."""
 
     def __init__(self, site: Site):
-        """Inputs:
-        site: the contact on off-angle existing copper, kept as the site attribute.
+        """Record the offending contact.
+
+        Inputs:
+            site: the contact on off-angle existing copper, kept as the site attribute.
         """
         super().__init__(
             "New copper touches off-angle existing copper away from "
@@ -61,7 +66,8 @@ class OnSegment:
     """Tests whether a point lies on a segment."""
 
     def __call__(self, point: Point, segment: Segment) -> bool:
-        """Whether a point lies on the closed segment; exact on integer nm coordinates and independent of layer."""
+        """Whether a point lies on the closed segment; exact on integer nm coordinates
+        and independent of layer."""
         a, b = segment.start, segment.end
         return (
             (point.x - a.x) * (b.y - a.y) == (point.y - a.y) * (b.x - a.x)
@@ -121,7 +127,8 @@ _line = SegmentLine()
 
 
 class UniqueSegments:
-    """Merges collinear proposed copper and removes what existing copper already covers."""
+    """Merges collinear proposed copper and removes what existing copper already
+    covers."""
 
     def __call__(
         self, segments: tuple[Segment, ...], existing: tuple[Segment, ...] = ()
@@ -219,7 +226,8 @@ class SegmentVertices:
             segments: the copper to split.
             anchors: sites that also split a segment they lie on.
         Outputs:
-            For each Site, the set of compass headings 0 to 7 of the pieces that leave it.
+            For each Site, the set of compass headings 0 to 7 of the pieces that leave
+            it.
         """
         cuts = [{s.start, s.end} for s in segments]
         for i, j in combinations(range(len(segments)), 2):
@@ -291,7 +299,8 @@ _existing_lines = ExistingLines()
 
 
 class RouteAggregator:
-    """Combines routes into one measured route and rejects copper that breaks the geometry rules."""
+    """Combines routes into one measured route and rejects copper that breaks the
+    geometry rules."""
 
     def __call__(
         self,
@@ -404,7 +413,8 @@ class RouteAggregator:
                 Inputs:
                     segment: the segment the walk leaves.
                     point: its end where the walk continues.
-                    backwards: orient the returned segments toward the start of the chain.
+                    backwards: orient the returned segments toward the start of the
+                        chain.
                 Outputs:
                     The further segments in walking order; the walk stops at an anchored
                     site, a branch or a segment already visited.
@@ -604,7 +614,8 @@ class RouteTouch:
     """Tests whether a route reaches a site."""
 
     def __call__(self, site: Site, route: Route) -> bool:
-        """Whether a segment on the site's layer passes through its point, or a via sits there."""
+        """Whether a segment on the site's layer passes through its point, or a via sits
+        there."""
         return any(
             s.layer == site.layer and on_segment(site.point, s) for s in route.segments
         ) or any(v.at == site.point for v in (*route.vias, *route.reused_vias))

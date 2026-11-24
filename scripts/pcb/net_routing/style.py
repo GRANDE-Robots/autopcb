@@ -50,14 +50,16 @@ class StyleReport:
     """Routing-style findings for a board.
 
     Inputs:
-        non_octilinear: UUIDs of tracks that are not horizontal, vertical or at 45 degrees.
+        non_octilinear: UUIDs of tracks that are not horizontal, vertical or at 45
+            degrees.
         arcs: UUIDs of arc tracks.
         invalid_bends: two-track joints that bend by 90 degrees.
         redundant_joints: joints of two collinear tracks of equal width.
         staircases: staircase defects.
         locked_items: UUIDs of locked board items.
         grouped_items: UUIDs of copper items that belong to a group.
-        ambiguous: messages for duplicate or overlapping copper the audit cannot classify.
+        ambiguous: messages for duplicate or overlapping copper the audit cannot
+            classify.
     """
 
     non_octilinear: tuple[str, ...]
@@ -224,7 +226,8 @@ class StyleAuditor:
                 endpoints[segment.end].append((track, segment))
 
             def anchored(point: Point) -> bool:
-                """Whether a point lies on same-net pad copper or via copper on the current layer.
+                """Whether a point lies on same-net pad copper or via copper on the
+                current layer.
 
                 Inputs:
                     point: board point in nm.
@@ -277,10 +280,13 @@ class StyleAuditor:
                     Inputs:
                         current: the track the walk leaves.
                         point: the joint where the walk continues.
-                        backwards: orient the returned segments toward the start of the chain.
+                        backwards: orient the returned segments toward the start of the
+                            chain.
                     Outputs:
-                        The further segments in walking order. The walk ends at an anchored
-                        joint, a branch, or a track already visited; revisiting a track of the
+                        The further segments in walking order. The walk ends at an
+                        anchored
+                        joint, a branch, or a track already visited; revisiting a track
+                        of the
                         same chain records an ambiguity.
                     """
                     chain = []

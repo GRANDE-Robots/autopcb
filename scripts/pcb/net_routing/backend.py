@@ -54,8 +54,11 @@ class _ContextDiversionRequested(Exception):
     """Give a bounded detour a chance before rejected paths consume the slice."""
 
     def __init__(self, expanded: int):
-        """Inputs:
-        expanded: search nodes expanded before the request, kept as the expanded attribute.
+        """Carry the nodes expanded before the diversion was requested.
+
+        Inputs:
+            expanded: search nodes expanded before the request, kept as the expanded
+                attribute.
         """
         self.expanded = expanded
 
@@ -65,7 +68,8 @@ class _ContextAlternativesRequested(Exception):
 
 
 class RoutePayload:
-    """Builds the request payload that describes a route as rectangular obstacles for later nets."""
+    """Builds the request payload that describes a route as rectangular obstacles for
+    later nets."""
 
     def __call__(
         self,
@@ -146,7 +150,8 @@ class PlanDimensions:
             """The (segment, width) pair for a segment that lies on restored copper.
 
             Outputs:
-                A one-element tuple with the segment and the width of the restored copper
+                A one-element tuple with the segment and the width of the restored
+                copper
                 it lies on. Raises ValueError when it lies on copper of several widths.
             """
             widths = {
@@ -187,10 +192,12 @@ class Settings:
     saved_rules: object = None
 
     def __post_init__(self):
-        """Validate the request and compute the grid, dimensions, layers, costs and profile.
+        """Validate the request and compute the grid, dimensions, layers, costs and
+        profile.
 
         Outputs:
-            None; sets the grid bounds (clipped to the board edge), step, width, clearance,
+            None; sets the grid bounds (clipped to the board edge), step, width,
+            clearance,
             via size and drill in nm, layers, weights, penalties, extra obstacles,
             electrical constraints and rule profile. Raises ValueError for unknown or
             invalid fields, layers that are not distinct known copper layers, or
@@ -315,10 +322,12 @@ class Settings:
         }
 
         def directions(field):
-            """Convert a field of compass headings to a set of heading numbers, or None when absent.
+            """Convert a field of compass headings to a set of heading numbers, or None
+            when absent.
 
             Inputs:
-                field: name of the request field. Raises ValueError unless it is a nonempty list of headings.
+                field: name of the request field. Raises ValueError unless it is a
+                    nonempty list of headings.
             """
             names = self.raw.get(field)
             if names is None:
@@ -448,10 +457,12 @@ class NativeBackend:
         obstacles: tuple[Obstacle, ...],
         budget: Budget,
     ):
-        """Inputs:
-        settings: Settings by net name.
-        obstacles: board obstacles shared by every net.
-        budget: the search budget.
+        """Create the backend for one batch of nets.
+
+        Inputs:
+            settings: Settings by net name.
+            obstacles: board obstacles shared by every net.
+            budget: the search budget.
         """
         self.settings, self.obstacles, self.budget = settings, obstacles, budget
         self.cache: OrderedDict[tuple, tuple[Route, ...]] = OrderedDict()
@@ -479,7 +490,8 @@ class NativeBackend:
             forbid_staircase: reject staircases involving added copper.
             legacy_contacts: sites on existing copper exempt from the bend rule.
         Outputs:
-            The merged route. Raises RouteGeometryError subclasses when it breaks a rule.
+            The merged route. Raises RouteGeometryError subclasses when it breaks a
+            rule.
         """
         s = self.settings[net.name]
         return aggregate(
@@ -664,7 +676,8 @@ class NativeBackend:
             return None
 
         def reject(reason):
-            """Record a restore_seed failure unless quiet, and decline the plan; always returns None."""
+            """Record a restore_seed failure unless quiet, and decline the plan; always
+            returns None."""
             if not _quiet:
                 self.budget.failure("restore_seed", f"{net.name}: {reason}")
             return None
@@ -832,7 +845,8 @@ class NativeBackend:
                 pieces = tuple(removed.tracks)
 
             def nearby(a, b, obstacle, margin):
-                """Whether a segment, grown by a margin in nm, can reach the obstacle's bounding box."""
+                """Whether a segment, grown by a margin in nm, can reach the obstacle's
+                bounding box."""
                 return not (
                     max(a.x, b.x) + margin + 1 < obstacle.lower.x
                     or min(a.x, b.x) - margin - 1 > obstacle.upper.x
@@ -1058,7 +1072,8 @@ class NativeBackend:
             Outputs:
                 False after recording the failure, the rejected route and any staircase
                 witnesses; True otherwise. Raises _ContextDiversionRequested when three
-                distinct rejected routes call for a bounded detour before any path was accepted.
+                distinct rejected routes call for a bounded detour before any path was
+                accepted.
             """
             nonlocal accepted_context, rejected_context
             try:
@@ -1101,7 +1116,8 @@ class NativeBackend:
             # A context-sensitive search can exhaust or hit its limit after
             # rejecting every path it materialized. Try a few different
             # endpoint headings; the same geometry checks still apply.
-            """Queue different endpoint headings derived from rejected routes, up to seven alternatives in all."""
+            """Queue different endpoint headings derived from rejected routes, up to
+            seven alternatives in all."""
             while rejected_routes and len(alternatives) < 7:
                 candidate = rejected_routes.pop(0)
                 for alternative in self.alternative_headings(
@@ -1111,7 +1127,8 @@ class NativeBackend:
                         alternatives.append(alternative)
 
         def try_detours():
-            """Retry the search while forbidding paths through one conflict point at a time.
+            """Retry the search while forbidding paths through one conflict point at a
+            time.
 
             Outputs:
                 A (route, True) pair for the first detour that combines with the tree,
@@ -1136,7 +1153,8 @@ class NativeBackend:
                     def clear_without_point(
                         first, last, check_layer, *, blocked_layer=layer, blocked=point
                     ):
-                        """Edge clearance that also rejects any edge passing through the blocked point on its layer."""
+                        """Edge clearance that also rejects any edge passing through the
+                        blocked point on its layer."""
                         if check_layer == blocked_layer and on_segment(
                             blocked, Segment(first, last, check_layer)
                         ):
@@ -1246,7 +1264,8 @@ class NativeBackend:
         )
 
     def accept(self, net: Net, route: Route) -> bool:
-        """Whether a route passes the electrical screen; a failure is recorded in the budget."""
+        """Whether a route passes the electrical screen; a failure is recorded in the
+        budget."""
         try:
             self.settings[net.name].assessment(route)
             return True
@@ -1359,7 +1378,8 @@ class NativeBackend:
     def _plane_via_clear(
         net: Net, point: Point, setting: Settings, obstacles: tuple[Obstacle, ...]
     ) -> bool:
-        """Whether a through via at a point keeps its clearance from every obstacle and stays inside the grid.
+        """Whether a through via at a point keeps its clearance from every obstacle and
+        stays inside the grid.
 
         Inputs:
             net: the net owning the via.
@@ -1495,7 +1515,8 @@ class NativeBackend:
             start, end: access sites to join.
         Outputs:
             Up to path_candidates routes sorted by cost; empty when an endpoint is on a
-            layer the net may not use. Results are cached only when no search limit was hit.
+            layer the net may not use. Results are cached only when no search limit was
+            hit.
         """
         self.budget.check()
         settings = self.settings[net.name]

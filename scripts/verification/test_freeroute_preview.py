@@ -29,7 +29,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "(class SIGNAL S (rule (width 200) (clearance 200))) "
             "(class_class (classes POWER SIGNAL) (rule (clearance 350)))))"
         )
-        freeroute_preview._set_net_widths(design, {"CONTROL": 200_000, "LOAD": 500_000})
+        freeroute_preview.DsnNetClasses.set_net_widths(
+            design, {"CONTROL": 200_000, "LOAD": 500_000}
+        )
         network = parse(design.read_text()).children("network")[0]
         classes = {item.atoms()[1].value: item for item in network.children("class")}
         load = next(
@@ -81,11 +83,11 @@ class FreerouteSnapshotTests(unittest.TestCase):
         rules = RoutingRules.from_board(board, rules_path)
         self.assertEqual(rules.profile("SIGNAL", 0, 0).maximum_width, 250_000)
         self.assertEqual(
-            freeroute_preview._compiled_router_widths(board, rules_path),
+            freeroute_preview.DsnNetClasses.compiled_router_widths(board, rules_path),
             {"SIGNAL": 250_000},
         )
         self.assertEqual(
-            freeroute_preview._compiled_router_widths(
+            freeroute_preview.DsnNetClasses.compiled_router_widths(
                 board, rules_path, ignore_nets=("SIGNAL",)
             ),
             {},
@@ -169,12 +171,12 @@ class FreerouteSnapshotTests(unittest.TestCase):
         wrapper.write_text(f'@echo off\n"{executable}" %*\n', encoding="utf-8")
         with patch.object(freeroute_preview.shutil, "which", return_value=str(wrapper)):
             self.assertEqual(
-                freeroute_preview._java_executable("java"), str(executable)
+                freeroute_preview.JavaSelection.executable("java"), str(executable)
             )
         wrapper.write_text("echo unexpected command\n", encoding="utf-8")
         with patch.object(freeroute_preview.shutil, "which", return_value=str(wrapper)):
             with self.assertRaisesRegex(ValueError, "batch wrapper"):
-                freeroute_preview._java_executable("java")
+                freeroute_preview.JavaSelection.executable("java")
 
     def test_uses_java_compatible_with_the_router(self):
         jar = self.root / "router.jar"
@@ -191,11 +193,13 @@ class FreerouteSnapshotTests(unittest.TestCase):
             executable.chmod(0o755)
         with (
             patch.object(
-                freeroute_preview,
-                "_java_candidates",
+                freeroute_preview.JavaSelection,
+                "candidates",
                 return_value=[str(old_java), str(new_java)],
             ),
-            patch.object(freeroute_preview, "_java_version", side_effect=[21, 25]),
+            patch.object(
+                freeroute_preview.JavaSelection, "version", side_effect=[21, 25]
+            ),
         ):
             self.assertEqual(freeroute_preview._select_java("auto", jar), str(new_java))
 
@@ -208,9 +212,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
         with (
             patch.object(
-                freeroute_preview, "_java_executable", return_value="java.exe"
+                freeroute_preview.JavaSelection, "executable", return_value="java.exe"
             ),
-            patch.object(freeroute_preview, "_java_version", return_value=21),
+            patch.object(freeroute_preview.JavaSelection, "version", return_value=21),
         ):
             with self.assertRaisesRegex(ValueError, "Java 25.*Java 21"):
                 freeroute_preview._select_java("java.exe", jar)
@@ -226,7 +230,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         with patch.object(
             freeroute_preview, "_native_drc", return_value=report
         ) as check:
-            counts = freeroute_preview._drc(
+            counts = freeroute_preview.TrialChecks.drc(
                 Path("kicad-cli"), self.board, self.root / "drc.json"
             )
         self.assertTrue(check.call_args.kwargs["schematic_parity"])
@@ -242,7 +246,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "(layer B.Cu (type signal)) (boundary (rect pcb 0 0 1 1))))",
             encoding="utf-8",
         )
-        freeroute_preview._set_equal_layer_costs(design)
+        freeroute_preview.DsnStructure.set_equal_layer_costs(design)
         from core.kicad_sexpr import parse
 
         structure = parse(design.read_text(encoding="utf-8")).children("structure")[0]
@@ -274,7 +278,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "(keepout (polygon In1.Cu 0 1 1 2 1 2 2))))",
             encoding="utf-8",
         )
-        removed = freeroute_preview._strip_zone_planes(
+        removed = freeroute_preview.DsnStructure.strip_zone_planes(
             design, {("GND", "In1.Cu"), ("GND", "In2.Cu")}
         )
         text = design.read_text(encoding="utf-8")
@@ -293,7 +297,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         )
         design.write_text(source, encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "plane"):
-            freeroute_preview._strip_zone_planes(design, {("GND", "F.Cu")})
+            freeroute_preview.DsnStructure.strip_zone_planes(design, {("GND", "F.Cu")})
         self.assertEqual(design.read_text(encoding="utf-8"), source)
 
     def test_dsn_zone_planes_are_collected_from_native_copper_zones(self):
@@ -310,7 +314,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         rule_area.SetIsRuleArea(True)
         board.Add(rule_area)
         self.assertEqual(
-            freeroute_preview._native_zone_keys(board), {("GND", "In1.Cu")}
+            freeroute_preview.DsnStructure.native_zone_keys(board), {("GND", "In1.Cu")}
         )
 
     def test_prepared_router_dsn_removes_zone_planes_and_enables_equal_layer_costs(
@@ -331,7 +335,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         with (
             patch.object(pcbnew, "ExportSpecctraDSN", side_effect=export),
             patch.object(
-                freeroute_preview, "_native_zone_keys", return_value={("GND", "In1.Cu")}
+                freeroute_preview.DsnStructure,
+                "native_zone_keys",
+                return_value={("GND", "In1.Cu")},
             ),
         ):
             layers, removed = freeroute_preview._prepare_router_dsn(
@@ -346,19 +352,25 @@ class FreerouteSnapshotTests(unittest.TestCase):
 
     def test_timed_out_checkpoint_must_be_complete_and_have_routing_data(self):
         session = self.root / "candidate.ses"
-        self.assertFalse(freeroute_preview._complete_fastroute_session(session))
+        self.assertFalse(
+            freeroute_preview.RouterSessions.complete_fastroute_session(session)
+        )
         for malformed in (
             "(session candidate (routes",
             "(session candidate (routes))",
             "(other candidate (base_design candidate) (routes (network_out)))",
         ):
             session.write_text(malformed, encoding="utf-8")
-            self.assertFalse(freeroute_preview._complete_fastroute_session(session))
+            self.assertFalse(
+                freeroute_preview.RouterSessions.complete_fastroute_session(session)
+            )
         session.write_text(
             "(session candidate (base_design candidate) (routes (network_out)))",
             encoding="utf-8",
         )
-        self.assertTrue(freeroute_preview._complete_fastroute_session(session))
+        self.assertTrue(
+            freeroute_preview.RouterSessions.complete_fastroute_session(session)
+        )
 
     def test_dsn_optimizer_setting_matches_the_requested_mode(self):
         import inspect
@@ -366,7 +378,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
 
         self.assertIn(
             "optimizer",
-            inspect.signature(freeroute_preview._set_equal_layer_costs).parameters,
+            inspect.signature(
+                freeroute_preview.DsnStructure.set_equal_layer_costs
+            ).parameters,
         )
         design = self.root / "candidate.dsn"
         source = (
@@ -376,7 +390,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         for enabled in (False, True):
             with self.subTest(optimizer=enabled):
                 design.write_text(source, encoding="utf-8")
-                freeroute_preview._set_equal_layer_costs(design, optimizer=enabled)
+                freeroute_preview.DsnStructure.set_equal_layer_costs(
+                    design, optimizer=enabled
+                )
                 settings = parse(design.read_text(encoding="utf-8")).children(
                     "structure"
                 )[0]
@@ -395,7 +411,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "router settings"):
-            freeroute_preview._set_equal_layer_costs(design)
+            freeroute_preview.DsnStructure.set_equal_layer_costs(design)
 
     def test_dsn_accepts_specctra_string_quote_directive(self):
         design = self.root / "candidate.dsn"
@@ -405,7 +421,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "(boundary (rect pcb 0 0 1 1)))\n)",
             encoding="utf-8",
         )
-        freeroute_preview._set_equal_layer_costs(design)
+        freeroute_preview.DsnStructure.set_equal_layer_costs(design)
         result = design.read_text(encoding="utf-8")
         self.assertIn('(parser (string_quote "))', result)
         self.assertIn("(snap_angle fortyfive_degree)", result)
@@ -419,15 +435,15 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "DEBUG   Layer 2: 1.0 / 1.0\n",
             encoding="utf-8",
         )
-        freeroute_preview._verify_reported_costs(log, 2)
+        freeroute_preview.TrialChecks.verify_reported_costs(log, 2)
         log.write_text(
             log.read_text().replace("Layer 2: 1.0 / 1.0", "Layer 2: 1.8 / 1.0")
         )
         with self.assertRaisesRegex(RuntimeError, "layer costs"):
-            freeroute_preview._verify_reported_costs(log, 2)
+            freeroute_preview.TrialChecks.verify_reported_costs(log, 2)
         log.write_text("No routing cost summary\n", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "layer costs"):
-            freeroute_preview._verify_reported_costs(log, 2)
+            freeroute_preview.TrialChecks.verify_reported_costs(log, 2)
 
     def test_deferred_default_class_gets_a_temporary_router_alias(self):
         design = self.root / "candidate.dsn"
@@ -480,7 +496,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "(class_class (classes SIGNAL OTHER) (rule (clearance 300)))))",
             encoding="utf-8",
         )
-        freeroute_preview._enforce_width_floors(
+        freeroute_preview.DsnNetClasses.enforce_width_floors(
             design, {"A": 400_000, "B": 350_000, "C": 100_000}
         )
         result = design.read_text(encoding="utf-8")
@@ -505,7 +521,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
             {"net": True},
         ):
             with self.subTest(floors=floors), self.assertRaises(ValueError):
-                freeroute_preview._enforce_width_floors(design, floors)
+                freeroute_preview.DsnNetClasses.enforce_width_floors(design, floors)
             self.assertEqual(design.read_bytes(), original)
 
     def test_deferred_aliases_preserve_cross_class_clearance_rules(self):
@@ -599,12 +615,12 @@ class FreerouteSnapshotTests(unittest.TestCase):
             "OTHER": 4,
         }
         self.assertEqual(
-            freeroute_preview._high_speed_reservations(rules, native),
+            freeroute_preview.DsnNetClasses.high_speed_reservations(rules, native),
             ("ETH_P", "USB_DM", "USB_DP"),
         )
 
     def test_routing_session_omits_only_top_level_placement(self):
-        helper = getattr(freeroute_preview, "_routing_only_session", None)
+        helper = getattr(freeroute_preview.RouterSessions, "routing_only_session", None)
         self.assertTrue(callable(helper), "routing-only session filter is missing")
         source = (
             '(session "board" (base_design board) '
@@ -618,7 +634,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         self.assertEqual(helper(result), result)
 
     def test_routing_session_rejects_ambiguous_or_invalid_structure(self):
-        helper = getattr(freeroute_preview, "_routing_only_session", None)
+        helper = getattr(freeroute_preview.RouterSessions, "routing_only_session", None)
         self.assertTrue(callable(helper), "routing-only session filter is missing")
         for source in (
             "(session x (base_design x) (placement) (placement) (routes))",
@@ -701,7 +717,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
                 patch.object(freeroute_preview, "_select_java", return_value="java.exe")
             )
             check = stack.enter_context(
-                patch.object(freeroute_preview, "_drc", return_value=counts)
+                patch.object(freeroute_preview.TrialChecks, "drc", return_value=counts)
             )
             stack.enter_context(
                 patch.object(freeroute_preview.subprocess, "run", side_effect=route)
@@ -716,8 +732,8 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             settings = stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "B.Cu"),
                 )
             )
@@ -775,12 +791,14 @@ class FreerouteSnapshotTests(unittest.TestCase):
             stack.enter_context(
                 patch.object(freeroute_preview, "_select_java", return_value="java.exe")
             )
-            check = stack.enter_context(patch.object(freeroute_preview, "_drc"))
+            check = stack.enter_context(
+                patch.object(freeroute_preview.TrialChecks, "drc")
+            )
             stack.enter_context(
                 patch.object(freeroute_preview.subprocess, "run", side_effect=route)
             )
             stack.enter_context(
-                patch.object(freeroute_preview, "_verify_reported_costs")
+                patch.object(freeroute_preview.TrialChecks, "verify_reported_costs")
             )
             stack.enter_context(patch.object(pcbnew, "LoadBoard", return_value=native))
             stack.enter_context(
@@ -790,8 +808,8 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "B.Cu"),
                 )
             )
@@ -841,14 +859,14 @@ class FreerouteSnapshotTests(unittest.TestCase):
                     freeroute_preview, "_select_java", return_value="java.exe"
                 ),
                 patch.object(freeroute_preview.subprocess, "run", side_effect=route),
-                patch.object(freeroute_preview, "_verify_reported_costs"),
+                patch.object(freeroute_preview.TrialChecks, "verify_reported_costs"),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(
                     pcbnew, "ExportSpecctraDSN", side_effect=self._export_test_dsn
                 ),
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "B.Cu"),
                 ),
                 patch.object(pcbnew, "ImportSpecctraSES", return_value=True),
@@ -917,15 +935,15 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"),
                 )
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_high_speed_reservations",
+                    freeroute_preview.DsnNetClasses,
+                    "high_speed_reservations",
                     return_value=("USB_DM", "USB_DP"),
                 )
             )
@@ -1001,8 +1019,8 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"),
                 )
             )
@@ -1059,8 +1077,8 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"),
                 )
             )
@@ -1104,7 +1122,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
                 patch.object(freeroute_preview, "_select_java", return_value="java.exe")
             )
             stack.enter_context(
-                patch.object(freeroute_preview, "_drc", return_value={})
+                patch.object(freeroute_preview.TrialChecks, "drc", return_value={})
             )
             stack.enter_context(
                 patch.object(freeroute_preview.subprocess, "run", side_effect=route)
@@ -1117,8 +1135,8 @@ class FreerouteSnapshotTests(unittest.TestCase):
             )
             stack.enter_context(
                 patch.object(
-                    freeroute_preview,
-                    "_set_equal_layer_costs",
+                    freeroute_preview.DsnStructure,
+                    "set_equal_layer_costs",
                     return_value=("F.Cu", "B.Cu"),
                 )
             )

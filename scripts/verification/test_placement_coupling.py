@@ -9,6 +9,7 @@ Copyright: GRANDE Robots and Aaron John Sabu
 
 from __future__ import annotations
 
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -92,20 +93,27 @@ class SmallBoards:
         (self.project / "v4.1.kicad_sch").write_text("(kicad_sch (lib_symbols))")
         return self.source
 
-    def barrier(self) -> Path:
+    def barrier(
+        self, seed: int
+    ) -> tuple[Path, tuple[float, float], tuple[float, float]]:
         """Pad, track and pad span the board on F.Cu; R50 sits behind it.
 
         J1 and J2 touch the copper edge limit, so the SIGNAL track closes the
         board. OTHER joins B1 below the track to R50 above it, and only R50
-        may move.
+        may move. The seed places B1 and R50 anywhere on their sides.
+
+        Returns the board path and the positions of B1 and R50 in millimetres.
         """
+        rng = random.Random(seed)
+        b1 = (round(rng.uniform(2.0, 4.0), 2), round(rng.uniform(6.0, 7.0), 2))
+        r50 = (round(rng.uniform(5.5, 8.0), 2), round(rng.uniform(1.0, 2.0), 2))
         self.net("OTHER")
         self.place("J1", (1.0, 2.0))
         self.place("J2", (9.0, 5.0))
-        self.part("B1", (2, 6.5), (0.5, 0.5), "OTHER", locked=True)
-        self.part("R50", (8, 1.5), (0.5, 0.5), "OTHER")
+        self.part("B1", b1, (0.5, 0.5), "OTHER", locked=True)
+        self.part("R50", r50, (0.5, 0.5), "OTHER")
         self.track("SIGNAL", (1, 2), (9, 5))
-        return self.save()
+        return self.save(), b1, r50
 
     def doorway(self) -> tuple[Path, str]:
         """A wall with one doorway, sealed by part P1 and by a fence track.
@@ -143,45 +151,46 @@ class PlacementCouplingTests(unittest.TestCase):
         return request
 
     def test_a_relocation_opens_a_barrier_that_fixed_placement_cannot_cross(self):
-        with tempfile.TemporaryDirectory(prefix="autopcb-barrier-") as folder:
-            project = Path(folder)
-            source = SmallBoards(project).barrier()
-            before = source.read_bytes()
-            request = self.request()
-            request["nets"] = [{"name": "OTHER"}]
-            policy = {
-                "route": request["shared"],
-                "max_pins": 2,
-                "placement": {"locked": False},
-            }
-            fixed = dict(request, search={**request["search"], "seconds": 10})
-            self.assertNotEqual(
-                preview_round(project, [fixed], workers=1)["status"],
-                "validated_preview",
-            )
-            anchors = (
-                Site(Point.from_mm((2, 6.5)), "F.Cu"),
-                Site(Point.from_mm((8, 1.5)), "F.Cu"),
-            )
-            candidates, descriptions = placement_requests(
-                pcbnew.LoadBoard(str(source)),
-                request,
-                policy,
-                RecoveryPolicy(),
-                anchors,
-                (),
-            )
-            self.assertEqual(descriptions[0]["pose"], "relocation")
-            result = {}
-            for candidate in candidates:
-                candidate["search"].update(seconds=10)
-                result = preview_round(project, [candidate], workers=1)
-                if result["status"] == "validated_preview":
-                    break
-            self.assertEqual(result["status"], "validated_preview")
-            self.assertEqual(result["validation"]["footprint_moves"], ["R50"])
-            self.assertEqual(result["validation"]["candidate_unconnected"], 0)
-            self.assertEqual(source.read_bytes(), before)
+        for seed in range(1, 5):
+            with (
+                self.subTest(seed=seed),
+                tempfile.TemporaryDirectory(prefix="autopcb-barrier-") as folder,
+            ):
+                project = Path(folder)
+                source, b1, r50 = SmallBoards(project).barrier(seed)
+                before = source.read_bytes()
+                request = self.request()
+                request["nets"] = [{"name": "OTHER"}]
+                policy = {
+                    "route": request["shared"],
+                    "max_pins": 2,
+                    "placement": {"locked": False},
+                }
+                fixed = dict(request, search={**request["search"], "seconds": 10})
+                self.assertNotEqual(
+                    preview_round(project, [fixed], workers=1)["status"],
+                    "validated_preview",
+                )
+                anchors = tuple(Site(Point.from_mm(at), "F.Cu") for at in (b1, r50))
+                candidates, descriptions = placement_requests(
+                    pcbnew.LoadBoard(str(source)),
+                    request,
+                    policy,
+                    RecoveryPolicy(),
+                    anchors,
+                    (),
+                )
+                self.assertEqual(descriptions[0]["pose"], "relocation")
+                result = {}
+                for candidate in candidates:
+                    candidate["search"].update(seconds=10)
+                    result = preview_round(project, [candidate], workers=1)
+                    if result["status"] == "validated_preview":
+                        break
+                self.assertEqual(result["status"], "validated_preview")
+                self.assertEqual(result["validation"]["footprint_moves"], ["R50"])
+                self.assertEqual(result["validation"]["candidate_unconnected"], 0)
+                self.assertEqual(source.read_bytes(), before)
 
     def test_a_move_carries_the_copper_its_diagnosed_route_crosses(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-doorway-") as folder:

@@ -39,7 +39,8 @@ from pcb.route_validation import RouteContract, validate_routes
 
 
 class SequentialPreview:
-    """Replans after each accepted temporary route and keeps a resumable preview report."""
+    """Replans after each accepted temporary route and keeps a resumable preview
+    report."""
 
     @staticmethod
     def write_report(
@@ -49,7 +50,8 @@ class SequentialPreview:
         content = (json.dumps(report, indent=2, allow_nan=False) + "\n").encode("utf-8")
 
         def check_previous() -> None:
-            """Raise RuntimeError unless the report on disk is exactly the one this run last wrote, or absent when none was written."""
+            """Raise RuntimeError unless the report on disk is exactly the one this run
+            last wrote, or absent when none was written."""
             if path.exists():
                 if previous is None or path.read_bytes() != previous:
                     raise RuntimeError(
@@ -83,7 +85,8 @@ class SequentialPreview:
         Inputs:
             replay: Object with the campaign changes and route contracts of a step.
         Outputs:
-            The campaign changes and the route contracts. Raises ValueError when the data is malformed.
+            The campaign changes and the route contracts. Raises ValueError when the
+            data is malformed.
         """
         if not isinstance(replay, dict) or set(replay) != {"changes", "contracts"}:
             raise ValueError("Accepted preview step is missing replay data")
@@ -238,7 +241,8 @@ class SequentialPreview:
             expected_hash: Required candidate SHA-256, or None.
             expected_after: Required open connections after the step, or None.
             allow_neutral: Accept a step that leaves the open count unchanged.
-            check_style: Enforce the route-angle and staircase rules on inserted copper first.
+            check_style: Enforce the route-angle and staircase rules on inserted copper
+                first.
         Outputs:
             The native validation evidence. Raises RuntimeError when the step no longer
             validates or the written board fails readback.
@@ -390,7 +394,8 @@ class SequentialPreview:
             shadow_config.write_bytes(config_bytes)
 
             def check_inputs() -> None:
-                """Raise RuntimeError when the snapshot, configuration, tooling or seed changed during the preview."""
+                """Raise RuntimeError when the snapshot, configuration, tooling or seed
+                changed during the preview."""
                 snapshot.check()
                 if (
                     sha(config) != config_hash
@@ -417,7 +422,8 @@ class SequentialPreview:
                     status: Report status such as preview_running.
                     error: Error text to record, or None.
                 Outputs:
-                    The report without input and tool hashes or replay data. Raises RuntimeError
+                    The report without input and tool hashes or replay data. Raises
+                    RuntimeError
                     when the output location is not known yet.
                 """
                 nonlocal report_bytes

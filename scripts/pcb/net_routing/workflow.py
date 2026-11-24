@@ -1,4 +1,4 @@
-"""workflow.py: compose native snapshots, placement sampling, net search and final checks.
+"""workflow.py: compose native snapshots, placement sampling, net search and checks.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -57,7 +57,8 @@ from pcb.net_routing.rules import RoutingRules
 
 @dataclass
 class Candidate:
-    """One sampled placement and net-plan combination awaiting junction cleanup and validation.
+    """One sampled placement and net-plan combination awaiting junction cleanup and
+    validation.
 
     Inputs:
         board: The planned nets.
@@ -131,7 +132,8 @@ class TerminalRefinement:
             variants.append(restored)
 
         def collect(candidate_net, engine):
-            """Add each whole-net candidate from an engine to the variants, with its refined form when that is cheaper and accepted."""
+            """Add each whole-net candidate from an engine to the variants, with its
+            refined form when that is cheaper and accepted."""
             for candidate in whole_net(
                 candidate_net, prior, engine, budget, rework_cost=rework_cost
             ):
@@ -232,11 +234,13 @@ class Configurations:
         """Validate a net-planner request.
 
         Inputs:
-            data: Request with nets, optional shared settings, rip-up entries and recovery fields.
+            data: Request with nets, optional shared settings, rip-up entries and
+                recovery fields.
         Outputs:
             The checked request, a map of net name to its merged settings and the search
             limits. Raises ValueError for unknown fields, malformed nets, rip-up of nets
-            that are not requested, mixed zone-refill assumptions or out-of-range values.
+            that are not requested, mixed zone-refill assumptions or out-of-range
+            values.
         """
         data = _fields(
             data,
@@ -343,9 +347,11 @@ class NetPlanner:
             project: Project folder; also the base of a board_snapshot path.
             validate: Validate the best candidates with native checks.
             details: Keep route segments and vias in the net payloads.
-            include_changes: Return the unvalidated campaign changes and route contracts.
+            include_changes: Return the unvalidated campaign changes and route
+                contracts.
         Outputs:
-            A result dict with the status, search report, trials, checkpoints and, when a
+            A result dict with the status, search report, trials, checkpoints and, when
+            a
             candidate is chosen, its routes, costs and validation evidence.
         """
         data, requests, limits = configurations(data)

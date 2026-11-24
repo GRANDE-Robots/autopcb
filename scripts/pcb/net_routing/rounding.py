@@ -33,7 +33,8 @@ class TrackGeometry:
 
     @staticmethod
     def octilinear(start: tuple[int, int], end: tuple[int, int]) -> bool:
-        """Say whether a segment has length and is horizontal, vertical or at 45 degrees."""
+        """Say whether a segment has length and is horizontal, vertical or at 45
+        degrees."""
         dx, dy = abs(end[0] - start[0]), abs(end[1] - start[1])
         return bool(dx or dy) and (not dx or not dy or dx == dy)
 
@@ -78,7 +79,8 @@ class TrackGeometry:
     def joint_targets(
         point: tuple[int, int], originals: dict
     ) -> tuple[tuple[int, int], ...]:
-        """Intersect octilinear directions from fixed endpoints in integer nanometres."""
+        """Intersect octilinear directions from fixed endpoints in integer
+        nanometres."""
         fixed = [end if start == point else start for start, end in originals.values()]
         if len(fixed) != 2:
             return ()
@@ -277,7 +279,8 @@ class BoardForms:
         """Parse a native PCB.
 
         Outputs:
-            A map of track UUID to its canonical form without endpoints, and a counter of
+            A map of track UUID to its canonical form without endpoints, and a counter
+            of
             every other canonical board item; zone fills are ignored. Raises ValueError
             when the data is not a PCB, a track lacks a UUID or a UUID repeats.
         """
@@ -300,7 +303,8 @@ class BoardForms:
                     if not isinstance(x, Form) or x.name not in {"start", "end"}
                 )
             elif isinstance(item, Form) and item.name == "zone":
-                # Zone refill is independently checked; its rules and outline must match.
+                # Zone refill is independently checked; its rules and outline
+                # must match.
                 other[
                     tuple(
                         _canonical(x)

@@ -23,7 +23,8 @@ class CheckpointChooser:
 
     @staticmethod
     def distance(a: Site, b: Site) -> float:
-        """Return the octile distance in nm between two sites, plus 10,000,000 nm when they are on different layers."""
+        """Return the octile distance in nm between two sites, plus 10,000,000 nm when
+        they are on different layers."""
         dx = abs(a.point.x - b.point.x)
         dy = abs(a.point.y - b.point.y)
         return (
@@ -34,7 +35,8 @@ class CheckpointChooser:
 
     @staticmethod
     def nearest(a, b):
-        """Return the closest site pair of two islands as (distance, key, key, site, site); raise ValueError when either island has no site."""
+        """Return the closest site pair of two islands as (distance, key, key, site,
+        site); raise ValueError when either island has no site."""
         if not a.sites or not b.sites:
             raise ValueError("Every checkpoint island needs an accessible copper site")
         # The first dozen sites provide an upper bound, not a coverage limit.

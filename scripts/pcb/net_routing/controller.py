@@ -70,7 +70,8 @@ class WorkPlan:
         max_batch_nets: int = 3,
         checkpoint_offset: int = 0,
     ) -> dict:
-        """Schedule all ordinary unfinished nets; expose every deferred high-speed net."""
+        """Schedule all ordinary unfinished nets; expose every deferred high-speed
+        net."""
         if not isinstance(preparation, dict) or not isinstance(policy, dict):
             raise ValueError("A board preparation and routing policy are required")
         if (
@@ -285,7 +286,8 @@ decode_checkpoint = CheckpointDecoder()
 
 
 class CheckpointRebinder:
-    """Moves a checkpoint to new inputs when the saved board is the retained candidate."""
+    """Moves a checkpoint to new inputs when the saved board is the retained
+    candidate."""
 
     def __call__(
         self,

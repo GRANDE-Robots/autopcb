@@ -68,7 +68,8 @@ parity_blocked_nets = ParityBlockedNets()
 
 
 class ParityCopperCheck:
-    """Checks that a preview leaves copper on schematic-parity conflict nets unchanged."""
+    """Checks that a preview leaves copper on schematic-parity conflict nets
+    unchanged."""
 
     def __call__(self, baseline: dict, before, after) -> None:
         """Do not let an unrelated preview change any unresolved parity net."""
@@ -111,7 +112,8 @@ class DrcSummary:
             dangling_identities: Optional dangling-track identities; when given,
                 dangling warnings are summarized.
         Outputs:
-            A dict with sorted violation, error-detail and parity keys, dangling warnings
+            A dict with sorted violation, error-detail and parity keys, dangling
+            warnings
             or None, counts of open connections, errors, warnings, exclusions and parity
             findings, the ignored check names, and complete, which is True only when
             nothing was reported. Raises ValueError when the report lacks a required
@@ -199,7 +201,8 @@ summarize_drc = DrcSummary()
 
 
 class ProjectPreparation:
-    """Reads all board nets and native DRC from a stable saved-file copy of a project."""
+    """Reads all board nets and native DRC from a stable saved-file copy of a
+    project."""
 
     @staticmethod
     def review_current(project: Path, source_hashes: dict[str, str]) -> bool:
@@ -244,7 +247,8 @@ class ProjectPreparation:
         """Read all board nets and native DRC from a stable saved-file copy."""
 
         def stage(message: str) -> None:
-            """Report one numbered preparation step through the progress callback, if any."""
+            """Report one numbered preparation step through the progress callback, if
+            any."""
             if progress:
                 progress({"event": "stage", "message": message})
 

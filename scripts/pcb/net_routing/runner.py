@@ -77,7 +77,8 @@ class PreviewStatus:
         Inputs:
             state: Run state with the queue and best_preview_opens.
         Outputs:
-            paused when work remains queued, preview_zero_opens when the best preview has
+            paused when work remains queued, preview_zero_opens when the best preview
+            has
             no open connections, otherwise stalled.
         """
         if state["queue"]:
@@ -95,7 +96,8 @@ class SourceHashes:
         """Return the SHA-256 of every input of a run by project-relative name.
 
         Inputs:
-            snapshot: Private snapshot whose fingerprints cover the board and its dependencies.
+            snapshot: Private snapshot whose fingerprints cover the board and its
+                dependencies.
             project: Project folder.
             assets: Folder that holds the project's AutoPCB files.
         Outputs:
@@ -257,7 +259,8 @@ class RunState:
             path: State file.
             state: JSON-serializable run state; non-finite numbers raise ValueError.
         Outputs:
-            None. The new content is flushed to disk before it replaces the file, and the
+            None. The new content is flushed to disk before it replaces the file, and
+            the
             temporary file is removed if anything fails.
         """
         encoded = json.dumps(state, separators=(",", ":"), allow_nan=False).encode(
@@ -362,10 +365,12 @@ class ProgressPublish:
         Inputs:
             project: Project folder.
             inputs: Input hashes of the run.
-            state: Run state; progress_export_error is set on failure and cleared on success.
+            state: Run state; progress_export_error is set on failure and cleared on
+                success.
             progress: Optional callback that receives a stage event on failure.
         Outputs:
-            None. OSError, ValueError and RuntimeError are recorded in the state and re-raised.
+            None. OSError, ValueError and RuntimeError are recorded in the state and
+            re-raised.
         """
         from review.routing_progress import publish_preview
 
@@ -394,7 +399,8 @@ class ProgressElapsed:
     """Advances the recorded run time of an unchanged validated board."""
 
     def __call__(self, state: dict, board_hash: str) -> None:
-        """Advance runtime for the identical validated board without inventing routes."""
+        """Advance runtime for the identical validated board without inventing
+        routes."""
         previous = state["progress_samples"][-1]
         if previous["pcb_sha256"] != board_hash:
             raise RuntimeError(
@@ -419,7 +425,8 @@ class RunId:
     """Validates run IDs."""
 
     def __call__(self, value: str) -> str:
-        """Return the run ID; raise ValueError unless it is 32 lowercase hexadecimal characters."""
+        """Return the run ID; raise ValueError unless it is 32 lowercase hexadecimal
+        characters."""
         if (
             not isinstance(value, str)
             or len(value) != 32
@@ -449,7 +456,8 @@ insert_reference_repairs = ReferenceRepairInsertion()
 
 
 class PreviewJudge:
-    """Decides whether native preview results improve a board and which alternative to keep."""
+    """Decides whether native preview results improve a board and which alternative to
+    keep."""
 
     @staticmethod
     def is_improvement(
@@ -462,9 +470,9 @@ class PreviewJudge:
             candidate_opens: Open connections of the candidate.
             reference: Reference-copper comparison of the candidate.
         Outputs:
-            False when the reference copper degraded. True when the candidate has fewer
-            opens. With equal opens, True only when the comparable missing reference
-            samples decreased.
+            False when the reference copper degraded or the candidate has more opens.
+            True when it has fewer opens. With equal opens, True only when the
+            comparable missing reference samples decreased.
         """
         if reference.get("status") == "degraded":
             return False
@@ -573,8 +581,10 @@ class AttemptSummary:
         Inputs:
             result: Preview result with attempts and, when rejected, its validation.
         Outputs:
-            One summary per attempt, limited to four trials and four orders each and three
-            rejected candidates. A rejected native validation adds one summary that lists
+            One summary per attempt, limited to four trials and four orders each and
+            three
+            rejected candidates. A rejected native validation adds one summary that
+            lists
             the new violations, parity findings and broken connections.
         """
         summaries = []
@@ -902,7 +912,8 @@ class NativePreview:
             directory: Snapshot folder.
             request: Stage-four request for the target net.
             policy: Routing policy.
-            critical_nets: High-speed nets, protected together with the unqualified nets.
+            critical_nets: High-speed nets, protected together with the unqualified
+                nets.
         Outputs:
             The compiled candidates, requests and blockers.
         """
@@ -982,7 +993,8 @@ class NativePreview:
     def validate_alternative(
         directory: Path, request: dict, result: dict, critical_nets: tuple[str, ...]
     ) -> dict:
-        """Validate one searched alternative on a fresh snapshot and return its preview round."""
+        """Validate one searched alternative on a fresh snapshot and return its preview
+        round."""
         with Snapshot(native_path(directory, ".kicad_pcb")) as snapshot:
             return NativePreview.preview_round(
                 snapshot.directory, [request], 1, critical_nets, precomputed=[result]
@@ -1135,7 +1147,8 @@ _replan = Replan()
 
 
 class RoundQueue:
-    """Operations on the queue of pending search rounds; each round is a list of requests."""
+    """Operations on the queue of pending search rounds; each round is a list of
+    requests."""
 
     @staticmethod
     def targets(batch: list) -> tuple[str, ...]:
@@ -1189,7 +1202,8 @@ class RoundQueue:
             raise ValueError("Target priorities must be integers")
 
         def rank(index: int) -> tuple[int, int, int, int]:
-            """Return the sort key of a queued round: fewest attempts, best priority, lowest recovery stage, queue position."""
+            """Return the sort key of a queued round: fewest attempts, best priority,
+            lowest recovery stage, queue position."""
             names = RoundQueue.targets(queue[index])
             early = set()
             for request in queue[index]:
@@ -1408,9 +1422,10 @@ class RoundQueue:
             recovery: Recovery policy, or the default.
         Outputs:
             None. A round of several requests becomes one round each. A request for
-            several nets is split by net. A single net advances its checkpoint offset or
-            escalates to the next recovery stage, and may add an early-rework marker. A
-            repair transaction is not split.
+            several nets is split by net. A single net advances its checkpoint offset
+            or escalates to the next recovery stage, and may add an early-rework
+            marker. Split parts go to the front of the queue, an escalated request
+            waits behind other pending targets, and a repair transaction is not split.
         """
         if any(request.get("recovery_stage", 0) == 4 for request in requests):
             # A target and its obstructing neighbor form one transaction. Splitting
@@ -1516,7 +1531,8 @@ class NativeErrorCheck:
         """Allow resolved errors but refuse changed, new or unidentified errors."""
 
         def error_evidence(summary: dict) -> collections.Counter:
-            """Return the error details of a DRC summary; raise RuntimeError when the evidence is incomplete."""
+            """Return the error details of a DRC summary; raise RuntimeError when the
+            evidence is incomplete."""
             try:
                 error_count = sum(
                     value[1] == "error" for value in summary["violation_keys"]
@@ -1629,9 +1645,10 @@ class ResumeReportCheck:
             try:
 
                 def key(value):
+                    """Return a violation key; the connection-width warnings of an
+                    identical board ignore their items."""
                     # KiCad can attach a connection-width warning to a different
                     # adjacent segment when rerunning the *identical* board.
-                    """Return a violation key; the connection-width warnings of an identical board ignore their items."""
                     if (
                         identical_inputs
                         and field == "violation_keys"
@@ -1705,7 +1722,8 @@ _same_snapshot_inputs = SameSnapshotInputs()
 
 
 class ResumeBoardCheck:
-    """Rechecks a retained candidate against the saved board with current native rules."""
+    """Rechecks a retained candidate against the saved board with current native
+    rules."""
 
     def __call__(
         self, snapshot: Snapshot, project: Path, expected_opens: int, *, progress=None
@@ -1751,10 +1769,12 @@ verify_resume_board = ResumeBoardCheck()
 
 
 class ResumeConnectivityCheck:
-    """Checks, in a worker process, that a resumed candidate kept the original connections."""
+    """Checks, in a worker process, that a resumed candidate kept the original
+    connections."""
 
     def __call__(self, directory: Path, original_bytes: bytes) -> None:
-        """Check that a resumed candidate kept the original nets, connections and routing style.
+        """Check that a resumed candidate kept the original nets, connections and
+        routing style.
 
         Inputs:
             directory: Snapshot folder that holds the candidate.
@@ -1838,7 +1858,8 @@ class CumulativeReferenceCheck:
     def __call__(
         self, original: Path, candidate: Path, critical_nets: tuple[str, ...]
     ) -> dict:
-        """Compare the entire two-step branch, including independently refilled zones."""
+        """Compare the entire two-step branch, including independently refilled
+        zones."""
         import tempfile
         from pcb.net_routing.native import load_board
         from pcb.net_routing.reference import compare_reference, sample_reference
@@ -2132,7 +2153,8 @@ class RunProject:
         search_step_mm: float | None = None,
         search_heuristic_weight: float | None = None,
     ) -> dict:
-        """Search with bounded sweeps; retain only improved, validated private candidates.
+        """Search with bounded sweeps; retain only improved, validated private
+        candidates.
 
         Inputs:
             project: Project folder; its saved PCB is never written.
@@ -2566,7 +2588,8 @@ class RunSession:
         self.measured = preparation
 
     def prepare_search(self) -> None:
-        """Apply runtime search limits, record the first progress sample and reset the round bookkeeping."""
+        """Apply runtime search limits, record the first progress sample and reset the
+        round bookkeeping."""
         state = self.state
         state["resource_limits"] = self.resource_limits
         self.search_limits = {**state.get("search_limits", {}), **self.requested_search}
@@ -2677,7 +2700,8 @@ class SearchRound:
         self.record()
 
     def select(self) -> bool:
-        """Pop the next fair round, drop requests already tried and pair ordinary retries.
+        """Pop the next fair round, drop requests already tried and pair ordinary
+        retries.
 
         Outputs:
             False when every request was tried before; True otherwise.
@@ -2993,7 +3017,8 @@ class SearchRound:
             run.target_attempts[name] = run.target_attempts.get(name, 0) + 1
 
     def requeue_accepted(self) -> None:
-        """After an accepted preview, requeue unused work and drop work for connected nets."""
+        """After an accepted preview, requeue unused work and drop work for connected
+        nets."""
         run = self.run
         state = run.state
         # Previous failures refer to different copper now; they
@@ -3039,7 +3064,8 @@ class SearchRound:
         state["attempted_board_sha256"] = sha(run.snapshot.board_path)
 
     def record(self) -> None:
-        """Save the round: counters, last result, sweep replanning, checkpoint and progress."""
+        """Save the round: counters, last result, sweep replanning, checkpoint and
+        progress."""
         run = self.run
         state = run.state
         state["attempted_searches"] = sorted(run.attempted)

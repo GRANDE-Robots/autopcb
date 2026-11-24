@@ -1,4 +1,4 @@
-"""batch.py: search disjoint batches on one snapshot and validate their combined proposal.
+"""batch.py: search disjoint batches on one snapshot and validate them together.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -36,7 +36,8 @@ class PlanSearch:
         Inputs:
             args: The snapshot folder as text and a net-planner request.
         Outputs:
-            The planner result plus request_fingerprint. An exhausted checkpoint becomes a
+            The planner result plus request_fingerprint. An exhausted checkpoint becomes
+            a
             checkpoint_exhausted result instead of an error.
         """
         project, request = args
@@ -86,7 +87,8 @@ class PreviewRound:
             if not isinstance(window, list):
                 raise ValueError("Each parallel batch needs a bounded search window")
             window = tuple(window)
-            # SearchWindow.overlaps validates the complete window, including finite coordinates.
+            # SearchWindow.overlaps validates the complete window, including
+            # finite coordinates.
             if not SearchWindow.overlaps(window, window):
                 raise ValueError("Invalid batch window")
             for settings in request["nets"]:

@@ -32,7 +32,8 @@ class BoardPlan:
 
     @property
     def signature(self) -> tuple:
-        """Order-independent identity of the planned nets, used to merge duplicate boards."""
+        """Order-independent identity of the planned nets, used to merge duplicate
+        boards."""
         return tuple(sorted(p.signature for p in self.plans))
 
 

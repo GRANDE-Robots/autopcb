@@ -1,4 +1,4 @@
-"""completion.py: classify independent board-verification evidence without treating unknowns as passes.
+"""completion.py: classify board-verification evidence; an unknown is never a pass.
 
 An unknown or invalid measurement is reported as an issue, never as a pass.
 

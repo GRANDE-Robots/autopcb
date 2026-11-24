@@ -1,4 +1,4 @@
-"""resources.py: guard worker memory using a Windows job or a sampled POSIX process tree.
+"""resources.py: guard worker memory with a Windows job or a sampled POSIX tree.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -109,7 +109,8 @@ class MemoryBudget:
 
     @staticmethod
     def ceiling(available: int) -> int:
-        """Return half of the available bytes, capped at 6 GiB; raise ValueError unless it is a positive integer."""
+        """Return half of the available bytes, capped at 6 GiB; raise ValueError unless
+        it is a positive integer."""
         if (
             isinstance(available, bool)
             or not isinstance(available, int)
@@ -180,7 +181,8 @@ class ResourceLimit:
 
     @staticmethod
     def resident_tree() -> int:
-        """Return the resident memory in bytes of this process and its descendants, read with ps."""
+        """Return the resident memory in bytes of this process and its descendants, read
+        with ps."""
         output = subprocess.check_output(
             ["ps", "-ax", "-o", "pid=,ppid=,rss="], text=True, timeout=5
         )
@@ -214,7 +216,8 @@ class ResourceLimit:
         failures = []
 
         def watch():
-            """Sample the process tree every 0.5 s and interrupt the main thread when it exceeds the budget or cannot be read."""
+            """Sample the process tree every 0.5 s and interrupt the main thread when it
+            exceeds the budget or cannot be read."""
             try:
                 while not done.wait(0.5):
                     if ResourceLimit.resident_tree() > budget:

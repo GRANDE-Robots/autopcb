@@ -1,4 +1,4 @@
-"""export_reservations.py: supply local return-copper obstacles to disposable external searches.
+"""export_reservations.py: supply return-copper obstacles to disposable searches.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -80,17 +80,20 @@ strip_native_reservations = NativeReservationStrip()
 
 
 class ReservationGeometry:
-    """Polygon sets for search-only reservation areas; coordinates are KiCad nanometres."""
+    """Polygon sets for search-only reservation areas; coordinates are KiCad
+    nanometres."""
 
     @staticmethod
     def hull(points):
-        """Return the convex hull of points in counter-clockwise order, or the sorted points when there are fewer than three."""
+        """Return the convex hull of points in counter-clockwise order, or the sorted
+        points when there are fewer than three."""
         points = sorted(set(points))
         if len(points) < 3:
             return points
 
         def cross(a, b, c):
-            """Return twice the signed area of triangle a, b, c; positive for a left turn."""
+            """Return twice the signed area of triangle a, b, c; positive for a left
+            turn."""
             return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 
         lower, upper = [], []
@@ -177,7 +180,8 @@ class RouterReservations:
             def add(shape, layer):
                 """Add the shape's outlines as keep-out rule areas on a layer.
 
-                Raises RuntimeError when the areas or vertices exceed the geometry budget.
+                Raises RuntimeError when the areas or vertices exceed the geometry
+                budget.
                 """
                 nonlocal vertices
                 shape.Fracture()

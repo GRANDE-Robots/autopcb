@@ -1,4 +1,4 @@
-"""scheduler.py: group nearby net work and schedule only disjoint search windows in parallel.
+"""scheduler.py: group nearby net work and schedule disjoint search windows in parallel.
 
 A search window is (x_min, y_min, x_max, y_max) in millimetres.
 
@@ -19,7 +19,8 @@ class SearchWindow:
 
     @staticmethod
     def check(window: Window) -> None:
-        """Raise ValueError unless the window is four finite numbers with each minimum not above its maximum."""
+        """Raise ValueError unless the window is four finite numbers with each minimum
+        not above its maximum."""
         if (
             not isinstance(window, tuple)
             or len(window) != 4
@@ -280,7 +281,8 @@ class NetSchedule:
     def __call__(
         self, items: tuple[WorkItem, ...], *, workers: int = 2, max_batch_nets: int = 6
     ) -> tuple[RoutingRound, ...]:
-        """Schedule all input nets exactly once; combined native checks remain mandatory."""
+        """Schedule all input nets exactly once; combined native checks remain
+        mandatory."""
         if any(
             isinstance(v, bool) or not isinstance(v, int) or v < 1
             for v in (workers, max_batch_nets)

@@ -1,4 +1,4 @@
-"""inventory.py: inventory all native board nets without inferring intentional no-connects.
+"""inventory.py: inventory native board nets without inferring intentional no-connects.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -73,8 +73,9 @@ class InventoryReader:
             wires.extend(zip(points, points[1:]))
 
         def on_wire(point, start, end) -> bool:
+            """Say whether a point lies on the wire from start to end, with all
+            coordinates rounded to 1 nm."""
             # Schematic points are rounded to KiCad's coordinate precision.
-            """Say whether a point lies on the wire from start to end, with all coordinates rounded to 1 nm."""
             px, py = (round(value * 1_000_000) for value in point)
             ax, ay = (round(value * 1_000_000) for value in start)
             bx, by = (round(value * 1_000_000) for value in end)
@@ -122,7 +123,8 @@ class InventoryReader:
         seen: set[str] = set()
 
         def identifier(item) -> str:
-            """Return the item's UUID; raise ValueError when it is missing or already seen."""
+            """Return the item's UUID; raise ValueError when it is missing or already
+            seen."""
             uid = item.m_Uuid.AsString()
             if not uid or uid in seen:
                 raise ValueError("Duplicate or missing copper UUID prevents inventory")

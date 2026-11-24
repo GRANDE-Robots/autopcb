@@ -57,7 +57,10 @@ working_connectivity_classes = WorkingScope()
 
 
 class ProtectionNets:
-    """Names the nets that must stay unchanged because they carry power, monitoring or actuator-safety functions."""
+    """Names the nets that a run must leave unchanged.
+
+    Without a working scope these are the power, monitoring and actuator-safety nets.
+    With one they are the nets outside the scope."""
 
     def __call__(self, board) -> set[str]:
         """Identify power, monitoring and actuator-safety nets conservatively."""
@@ -182,7 +185,8 @@ class ProtectedFootprintChanges:
                     protected[part.m_Uuid.AsString()] = str(part.GetReference())
 
         def footprints(data: bytes) -> dict:
-            """Return each footprint's canonical form by UUID; raise ValueError for a non-PCB file or a repeated UUID."""
+            """Return each footprint's canonical form by UUID; raise ValueError for a
+            non-PCB file or a repeated UUID."""
             root = parse(data.decode("utf-8-sig"))
             if root.name != "kicad_pcb":
                 raise ValueError("Expected a native KiCad PCB")
@@ -312,7 +316,8 @@ class ProtectedState:
 
     @staticmethod
     def form_field(form: Form, name: str) -> str:
-        """Return the value of the form's only child with this name; raise ValueError unless there is exactly one with one value."""
+        """Return the value of the form's only child with this name; raise ValueError
+        unless there is exactly one with one value."""
         children = form.children(name)
         if len(children) != 1 or len(children[0].atoms()) != 2:
             raise ValueError(f"Expected one {name} in {form.name}")
@@ -328,7 +333,8 @@ class ProtectedState:
 
     @staticmethod
     def insert_unique(target: dict, key: object, value: object) -> None:
-        """Store the digest of a value under a key; raise ValueError when the key is already present."""
+        """Store the digest of a value under a key; raise ValueError when the key is
+        already present."""
         if key in target:
             raise ValueError(f"Duplicate protected board object: {key}")
         target[key] = ProtectedState.digest(value)

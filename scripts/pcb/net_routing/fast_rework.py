@@ -1679,7 +1679,8 @@ class CandidateBatch:
     ) -> dict:
         """Route a repair in a private folder that is removed afterwards.
 
-        Inputs and outputs are those of _candidate_batch_owned.
+        Inputs and outputs are those of _candidate_batch_owned, except that the trial folder
+        is created and removed here.
         """
         with tempfile.TemporaryDirectory(prefix="autopcb-external-router-") as folder:
             return CandidateBatch._candidate_batch_owned(
@@ -2692,8 +2693,9 @@ class ReworkCommand:
             argv: Command-line arguments; the process arguments when None.
         Outputs:
             Exit status 0 when the batches finish, and 1 when an OSError, RuntimeError or
-            ValueError stops them (the message goes to standard error). A failed batch
-            records its time and defers its blocker nets.
+            ValueError stops them (the message goes to standard error). A batch that
+            retains nothing records its search time and defers its blocker nets for the
+            following batches.
         """
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--project", type=Path, required=True)

@@ -27,15 +27,21 @@ from verification import test_net_routing as f
 from verification import test_route_optimizer as boards
 
 
-def add_track(board, start, end, name="SIGNAL"):
-    track = pcbnew.PCB_TRACK(board)
-    track.SetStart(pcbnew.VECTOR2I(*[mm(x) for x in start]))
-    track.SetEnd(pcbnew.VECTOR2I(*[mm(x) for x in end]))
-    track.SetWidth(mm(0.25))
-    track.SetLayer(pcbnew.F_Cu)
-    track.SetNetCode(board.FindNet(name).GetNetCode())
-    board.Add(track)
-    return track
+class TrackAdder:
+    """Adds a copper track to a board."""
+
+    def __call__(self, board, start, end, name="SIGNAL"):
+        track = pcbnew.PCB_TRACK(board)
+        track.SetStart(pcbnew.VECTOR2I(*[mm(x) for x in start]))
+        track.SetEnd(pcbnew.VECTOR2I(*[mm(x) for x in end]))
+        track.SetWidth(mm(0.25))
+        track.SetLayer(pcbnew.F_Cu)
+        track.SetNetCode(board.FindNet(name).GetNetCode())
+        board.Add(track)
+        return track
+
+
+add_track = TrackAdder()
 
 
 class ReworkTests(unittest.TestCase):

@@ -13,48 +13,67 @@ from unittest.mock import patch
 from autopcb import placement_study as study
 
 
-def geometry(*, parts=None, lengths=(5.0,), vias=0):
-    parts = parts or {"R1": (1, 1, "F.Cu"), "R2": (5, 5, "F.Cu")}
-    return {
-        "bounds": [[0, 0], [20, 10]],
-        "footprints": [
-            {"ref": r, "at": [x, y], "layer": s} for r, (x, y, s) in parts.items()
-        ],
-        "tracks": [{"via": False, "length_mm": n} for n in lengths]
-        + [{"via": True, "length_mm": 0}] * vias,
-    }
+class GeometryBuilder:
+    """Builds the board geometry that the placement study reads."""
+
+    def __call__(self, *, parts=None, lengths=(5.0,), vias=0):
+        parts = parts or {"R1": (1, 1, "F.Cu"), "R2": (5, 5, "F.Cu")}
+        return {
+            "bounds": [[0, 0], [20, 10]],
+            "footprints": [
+                {"ref": r, "at": [x, y], "layer": s} for r, (x, y, s) in parts.items()
+            ],
+            "tracks": [{"via": False, "length_mm": n} for n in lengths]
+            + [{"via": True, "length_mm": 0}] * vias,
+        }
 
 
-def arm(
-    name,
-    *,
-    opens,
-    passed=True,
-    applied=True,
-    area=200.0,
-    length=10.0,
-    vias=0,
-    moved=(),
-    preview=None,
-):
-    metrics = study.BoardMetrics(area, length, vias)
-    return study.ArmResult(
+geometry = GeometryBuilder()
+
+
+class ArmBuilder:
+    """Builds the result of one study arm."""
+
+    def __call__(
+        self,
         name,
-        preview or {"best_preview_opens": opens},
-        metrics,
-        [{"ref": r} for r in moved],
-        applied,
+        *,
         opens,
-        passed,
-        0.0,
-    )
+        passed=True,
+        applied=True,
+        area=200.0,
+        length=10.0,
+        vias=0,
+        moved=(),
+        preview=None,
+    ):
+        metrics = study.BoardMetrics(area, length, vias)
+        return study.ArmResult(
+            name,
+            preview or {"best_preview_opens": opens},
+            metrics,
+            [{"ref": r} for r in moved],
+            applied,
+            opens,
+            passed,
+            0.0,
+        )
+
+
+arm = ArmBuilder()
 
 
 ORIGINAL = study.BoardMetrics(200.0, 4.0, 0)
 
 
-def verdict(fixed, moves):
-    return study.Verdict(fixed, moves, ORIGINAL).as_dict()
+class VerdictBuilder:
+    """Judges a pair of study arms against the original board metrics."""
+
+    def __call__(self, fixed, moves):
+        return study.Verdict(fixed, moves, ORIGINAL).as_dict()
+
+
+verdict = VerdictBuilder()
 
 
 class MetricsTests(unittest.TestCase):

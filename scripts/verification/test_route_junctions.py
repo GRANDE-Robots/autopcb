@@ -23,12 +23,24 @@ from verification import test_net_routing as net_tests
 from verification import test_route_optimizer as route_tests
 
 
-def point(x: float, y: float) -> Point:
-    return Point(mm(x), mm(y))
+class PointBuilder:
+    """Builds a point from x and y in millimetres."""
+
+    def __call__(self, x: float, y: float) -> Point:
+        return Point(mm(x), mm(y))
 
 
-def route(*segments: Segment) -> Route:
-    return Route(tuple(segments), (), (), 0, 0, 0, 0)
+point = PointBuilder()
+
+
+class RouteBuilder:
+    """Builds a route made of the given segments and nothing else."""
+
+    def __call__(self, *segments: Segment) -> Route:
+        return Route(tuple(segments), (), (), 0, 0, 0, 0)
+
+
+route = RouteBuilder()
 
 
 class JunctionTests(unittest.TestCase):

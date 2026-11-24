@@ -50,54 +50,90 @@ from verification import test_route_optimizer as route_tests
 from core.toolchain import kicad_cli
 
 
-def site(x, y, layer="F.Cu"):
-    return Site(Point.from_mm([x, y]), layer)
+class SiteBuilder:
+    """Builds a routing site from x and y in millimetres and a copper layer."""
+
+    def __call__(self, x, y, layer="F.Cu"):
+        return Site(Point.from_mm([x, y]), layer)
 
 
-def segment(a, b, layer="F.Cu"):
-    return Segment(site(*a).point, site(*b).point, layer)
+site = SiteBuilder()
 
 
-def route(*segments, cost=0, vias=()):
-    return Route(tuple(segments), tuple(vias), (), 0, 0, cost, 0)
+class SegmentBuilder:
+    """Builds a track segment between two millimetre positions on one copper layer."""
+
+    def __call__(self, a, b, layer="F.Cu"):
+        return Segment(site(*a).point, site(*b).point, layer)
 
 
-def combine(*routes, **overrides):
-    values = dict(existing=(), weights=Weights(), layer_penalties={}, guide=())
-    values.update(overrides)
-    return aggregate(tuple(routes), **values)
+segment = SegmentBuilder()
 
 
-def make_net(name, positions):
-    sites = tuple(site(*p) for p in positions)
-    return Net(
-        name,
-        tuple(Island(str(i), (s,)) for i, s in enumerate(sites)),
-        pad_sites=frozenset(sites),
-    )
+class RouteBuilder:
+    """Builds a route from segments and vias with a given cost, other measures zero."""
+
+    def __call__(self, *segments, cost=0, vias=()):
+        return Route(tuple(segments), tuple(vias), (), 0, 0, cost, 0)
 
 
-def synthetic_backend(net, budget, **settings):
-    raw = dict(
-        bounds_mm=[-2, -2, 12, 12],
-        step_mm=1,
-        layers=["F.Cu"],
-        width_mm=0.2,
-        clearance_mm=0.2,
-        layer_penalties={},
-        max_expansions=5000,
-    )
-    raw.update(settings)
-    native = NativeNet(net, (), (), False)
-    return NativeBackend(
-        {
-            net.name: Settings(
-                raw, native, {layer: mm(0.035) for layer in COPPER_LAYERS}
-            )
-        },
-        (),
-        budget,
-    )
+route = RouteBuilder()
+
+
+class RouteCombiner:
+    """Merges routes through the route aggregator with neutral default settings."""
+
+    def __call__(self, *routes, **overrides):
+        values = dict(existing=(), weights=Weights(), layer_penalties={}, guide=())
+        values.update(overrides)
+        return aggregate(tuple(routes), **values)
+
+
+combine = RouteCombiner()
+
+
+class NetBuilder:
+    """Builds a net with one single-pad island per millimetre position."""
+
+    def __call__(self, name, positions):
+        sites = tuple(site(*p) for p in positions)
+        return Net(
+            name,
+            tuple(Island(str(i), (s,)) for i, s in enumerate(sites)),
+            pad_sites=frozenset(sites),
+        )
+
+
+make_net = NetBuilder()
+
+
+class SyntheticBackendBuilder:
+    """Builds a native backend for one net on a 1 mm grid spanning 14 mm by 14 mm."""
+
+    def __call__(self, net, budget, **settings):
+        raw = dict(
+            bounds_mm=[-2, -2, 12, 12],
+            step_mm=1,
+            layers=["F.Cu"],
+            width_mm=0.2,
+            clearance_mm=0.2,
+            layer_penalties={},
+            max_expansions=5000,
+        )
+        raw.update(settings)
+        native = NativeNet(net, (), (), False)
+        return NativeBackend(
+            {
+                net.name: Settings(
+                    raw, native, {layer: mm(0.035) for layer in COPPER_LAYERS}
+                )
+            },
+            (),
+            budget,
+        )
+
+
+synthetic_backend = SyntheticBackendBuilder()
 
 
 class NetGeometryTests(unittest.TestCase):

@@ -14,32 +14,38 @@ from pcb.routability import GridModel, Routability
 from verification import test_route_optimizer as boards
 
 
-def ring(board, center=(2, 2), radius=1.3, count=8, size=1.0):
-    """Through-hole pads of another net around ``center``, closed on every layer."""
-    board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
-    walls = []
-    for index in range(count):
-        angle = 2 * math.pi * index / count
-        at = pcbnew.VECTOR2I(
-            mm(round(center[0] + radius * math.cos(angle), 4)),
-            mm(round(center[1] + radius * math.sin(angle), 4)),
-        )
-        footprint = pcbnew.FOOTPRINT(board)
-        footprint.SetReference(f"W{index + 1}")
-        footprint.SetPosition(at)
-        pad = pcbnew.PAD(footprint)
-        pad.SetNumber("1")
-        pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
-        pad.SetSize(pcbnew.VECTOR2I(mm(size), mm(size)))
-        pad.SetDrillSize(pcbnew.VECTOR2I(mm(0.4), mm(0.4)))
-        pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
-        pad.SetLayerSet(pcbnew.PAD.PTHMask())
-        pad.SetPosition(at)
-        pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
-        footprint.Add(pad)
-        board.Add(footprint)
-        walls.append(footprint)
-    return walls
+class WallRingBuilder:
+    """Builds a ring of foreign-net pads that seals a point."""
+
+    def __call__(self, board, center=(2, 2), radius=1.3, count=8, size=1.0):
+        """Through-hole pads of another net around ``center``, closed on every layer."""
+        board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
+        walls = []
+        for index in range(count):
+            angle = 2 * math.pi * index / count
+            at = pcbnew.VECTOR2I(
+                mm(round(center[0] + radius * math.cos(angle), 4)),
+                mm(round(center[1] + radius * math.sin(angle), 4)),
+            )
+            footprint = pcbnew.FOOTPRINT(board)
+            footprint.SetReference(f"W{index + 1}")
+            footprint.SetPosition(at)
+            pad = pcbnew.PAD(footprint)
+            pad.SetNumber("1")
+            pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+            pad.SetSize(pcbnew.VECTOR2I(mm(size), mm(size)))
+            pad.SetDrillSize(pcbnew.VECTOR2I(mm(0.4), mm(0.4)))
+            pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
+            pad.SetLayerSet(pcbnew.PAD.PTHMask())
+            pad.SetPosition(at)
+            pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
+            footprint.Add(pad)
+            board.Add(footprint)
+            walls.append(footprint)
+        return walls
+
+
+ring = WallRingBuilder()
 
 
 class RoutabilityTests(unittest.TestCase):

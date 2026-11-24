@@ -44,24 +44,36 @@ from pcb.route_optimizer import (
 )
 
 
-def point(x: float, y: float) -> Point:
-    return Point.from_mm([x, y])
+class PointBuilder:
+    """Builds a point from x and y in millimetres."""
+
+    def __call__(self, x: float, y: float) -> Point:
+        return Point.from_mm([x, y])
 
 
-def router(**changes) -> GridRouter:
-    values = {
-        "lower": point(-2, -2),
-        "upper": point(12, 12),
-        "step": mm(1),
-        "layers": ("F.Cu", "B.Cu"),
-        "net": "SIGNAL",
-        "width": mm(0.2),
-        "clearance": mm(0.2),
-        "via_size": mm(0.6),
-        "via_drill": mm(0.3),
-    }
-    values.update(changes)
-    return GridRouter(**values)
+point = PointBuilder()
+
+
+class GridRouterBuilder:
+    """Builds a grid router over a 14 mm square for the net SIGNAL."""
+
+    def __call__(self, **changes) -> GridRouter:
+        values = {
+            "lower": point(-2, -2),
+            "upper": point(12, 12),
+            "step": mm(1),
+            "layers": ("F.Cu", "B.Cu"),
+            "net": "SIGNAL",
+            "width": mm(0.2),
+            "clearance": mm(0.2),
+            "via_size": mm(0.6),
+            "via_drill": mm(0.3),
+        }
+        values.update(changes)
+        return GridRouter(**values)
+
+
+router = GridRouterBuilder()
 
 
 class RouteOptimizerTests(unittest.TestCase):

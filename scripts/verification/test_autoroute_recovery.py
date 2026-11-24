@@ -13,26 +13,32 @@ from pcb.route_optimizer import GridRouter, NoGridRoute, Obstacle, Point, mm
 from verification import test_net_routing as fixtures
 
 
-def request():
-    return {
-        "shared": {
-            "bounds_mm": [0, 0, 20, 20],
-            "layers": ["F.Cu"],
-            "step_mm": 1,
-            "width_mm": 0.2,
-            "clearance_mm": 0.2,
-            "via": {"size_mm": 0.6, "drill_mm": 0.3},
-            "gentle_turns": True,
-            "forbid_staircase": True,
-            "current_model": {"unchanged": "evidence"},
-        },
-        "nets": [{"name": "SIGNAL"}],
-        "search": {"seconds": 30},
-        "max_islands": 3,
-        "checkpoint_offset": 0,
-        "recovery_stage": 0,
-        "recovery_bounds_mm": [-10, -10, 40, 40],
-    }
+class RecoveryRequestBuilder:
+    """Builds the autoroute request that the recovery tests start from."""
+
+    def __call__(self):
+        return {
+            "shared": {
+                "bounds_mm": [0, 0, 20, 20],
+                "layers": ["F.Cu"],
+                "step_mm": 1,
+                "width_mm": 0.2,
+                "clearance_mm": 0.2,
+                "via": {"size_mm": 0.6, "drill_mm": 0.3},
+                "gentle_turns": True,
+                "forbid_staircase": True,
+                "current_model": {"unchanged": "evidence"},
+            },
+            "nets": [{"name": "SIGNAL"}],
+            "search": {"seconds": 30},
+            "max_islands": 3,
+            "checkpoint_offset": 0,
+            "recovery_stage": 0,
+            "recovery_bounds_mm": [-10, -10, 40, 40],
+        }
+
+
+request = RecoveryRequestBuilder()
 
 
 class RecoveryTests(unittest.TestCase):

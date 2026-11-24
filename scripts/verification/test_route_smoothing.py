@@ -23,34 +23,65 @@ from pcb.route_validation import RouteContract, validate_routes
 from verification import test_route_optimizer as route_tests
 
 
-def point(x, y):
-    return Point(mm(x), mm(y))
+class PointBuilder:
+    """Builds a point from x and y in millimetres."""
+
+    def __call__(self, x, y):
+        return Point(mm(x), mm(y))
 
 
-def simple_route():
-    pts = [point(1, 1), point(3, 1), point(4, 2), point(5, 2), point(6, 1), point(8, 1)]
-    return Route(
-        tuple(Segment(a, b, "B.Cu") for a, b in zip(pts, pts[1:])), (), (), 0, 0, 0, 3
-    )
+point = PointBuilder()
 
 
-def router(obstacles=(), **kwargs):
-    return GridRouter(
-        point(0, 0),
-        point(10, 10),
-        mm(0.25),
-        ("B.Cu", "F.Cu"),
-        "N",
-        mm(0.2),
-        mm(0.2),
-        mm(0.6),
-        mm(0.3),
-        obstacles,
-        weights=Weights(length=1, bend=1, via=10, diagonal=0),
-        gentle_turns=True,
-        forbid_staircase=True,
-        **kwargs,
-    )
+class SimpleRouteBuilder:
+    """Builds a back-copper route with bends that a clear path makes unnecessary."""
+
+    def __call__(self):
+        pts = [
+            point(1, 1),
+            point(3, 1),
+            point(4, 2),
+            point(5, 2),
+            point(6, 1),
+            point(8, 1),
+        ]
+        return Route(
+            tuple(Segment(a, b, "B.Cu") for a, b in zip(pts, pts[1:])),
+            (),
+            (),
+            0,
+            0,
+            0,
+            3,
+        )
+
+
+simple_route = SimpleRouteBuilder()
+
+
+class GridRouterBuilder:
+    """Builds a grid router over a 10 mm square for the net N."""
+
+    def __call__(self, obstacles=(), **kwargs):
+        return GridRouter(
+            point(0, 0),
+            point(10, 10),
+            mm(0.25),
+            ("B.Cu", "F.Cu"),
+            "N",
+            mm(0.2),
+            mm(0.2),
+            mm(0.6),
+            mm(0.3),
+            obstacles,
+            weights=Weights(length=1, bend=1, via=10, diagonal=0),
+            gentle_turns=True,
+            forbid_staircase=True,
+            **kwargs,
+        )
+
+
+router = GridRouterBuilder()
 
 
 class RouteSmoothingTests(unittest.TestCase):

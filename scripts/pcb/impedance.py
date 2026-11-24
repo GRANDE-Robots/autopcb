@@ -1,8 +1,8 @@
 """impedance.py: Screen routed straight differential pairs against stackup geometry.
 
-The screen compares measured track width, pair gap and sampled adjacent reference
-copper with the reviewed, layer-specific targets of an engineering stackup. It
-measures layout geometry only; it does not verify manufactured impedance.
+The screen compares measured track width, pair gap and sampled adjacent reference copper
+with the reviewed, layer-specific targets of an engineering stackup. It measures layout
+geometry only; it does not verify manufactured impedance.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -438,9 +438,9 @@ class PairAudit:
 
         Outputs:
             The report: stackup identifier, per-pair layer measurements, issues, via
-                counts, unsupported curved segments, whether the geometry matches, and
-                ``electrically_verified`` as False. Raises ValueError when the nets of a
-                pair do not share one configured net class.
+            counts, unsupported curved segments, whether the geometry matches, and
+            ``electrically_verified`` as False. Raises ValueError when the nets of a
+            pair do not share one configured net class.
         """
         results, issues = [], []
         for a, b in self.pairs:

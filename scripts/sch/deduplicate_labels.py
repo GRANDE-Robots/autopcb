@@ -74,7 +74,11 @@ class PhysicalWires:
         first: tuple[float, float],
         second: tuple[float, float],
     ) -> bool:
-        """Exact-grid point lies on a horizontal/vertical/diagonal wire segment."""
+        """Whether a point lies on the wire segment from ``first`` to ``second``.
+
+        The test allows 1e-6 mm of slack and covers horizontal, vertical and
+        diagonal segments.
+        """
         cross = (point[0] - first[0]) * (second[1] - first[1]) - (
             point[1] - first[1]
         ) * (second[0] - first[0])

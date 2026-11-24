@@ -1424,7 +1424,7 @@ class PlacementSearch:
         static_text_boxes: Visible text and artwork of everything that stays put.
         max_travel_mm: Largest displacement of a block from its first position.
         preserve_location: Skip the body collision checks and try only a small
-            neighbourhood, for in-place trials.
+            neighborhood, for in-place trials.
     The search records each accepted block as an obstacle for the next.
     """
 

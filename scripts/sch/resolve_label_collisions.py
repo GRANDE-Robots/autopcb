@@ -271,7 +271,7 @@ class BundleShifter:
 
 
 class LabelCollisions:
-    """Plans the shifts that clear left-facing labels off neighbouring bodies."""
+    """Plans the shifts that clear left-facing labels off neighboring bodies."""
 
     @staticmethod
     def at_point(block: str) -> tuple[float, float] | None:
@@ -393,7 +393,7 @@ class LabelCollisions:
 
     @classmethod
     def build_plan(cls, source: str) -> tuple[str, list[tuple[str, float, float, int]]]:
-        """Shift the label-owning bundles whose labels print through a neighbour.
+        """Shift the label-owning bundles whose labels print through a neighbor.
 
         Inputs:
             source: Complete schematic text.

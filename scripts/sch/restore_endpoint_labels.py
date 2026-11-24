@@ -106,12 +106,10 @@ class EndpointLabels:
         return dsu, segments, degree
 
     @staticmethod
-    def outward_angle(
-        point: tuple[float, float], neighbour: tuple[float, float]
-    ) -> int:
-        """Label angle, 180 or 0 degrees, that points away from the wire's neighbour."""
-        if abs(point[0] - neighbour[0]) > 1e-6:
-            return 180 if point[0] < neighbour[0] else 0
+    def outward_angle(point: tuple[float, float], neighbor: tuple[float, float]) -> int:
+        """Label angle, 180 or 0 degrees, that points away from the wire's neighbor."""
+        if abs(point[0] - neighbor[0]) > 1e-6:
+            return 180 if point[0] < neighbor[0] else 0
         # A vertical stub has no natural text side; retain the project's standard
         # right-justified outward label rather than generating rotated text.
         return 180
@@ -145,7 +143,8 @@ class EndpointLabels:
         Outputs:
             The (point, net name, angle) of each hidden tag to add, sorted by
             point, and the sorted bare ends whose conductor has no single global
-            name. Raises ValueError when the source is not a KiCad schematic.
+            name. Raises ValueError when the source is not a KiCad schematic or a
+            wire or global label is malformed.
         """
         root_start = source.find("(kicad_sch")
         if root_start < 0:
@@ -171,7 +170,7 @@ class EndpointLabels:
         additions = []
         unresolved = []
         for first, second, _wire_start, _wire_end, _simple in segments:
-            for point, neighbour in ((first, second), (second, first)):
+            for point, neighbor in ((first, second), (second, first)):
                 if degree[point] != 1 or point in attachments:
                     continue
                 names = names_by_component.get(dsu.find(point), set())
@@ -179,7 +178,7 @@ class EndpointLabels:
                     unresolved.append(point)
                     continue
                 additions.append(
-                    (point, next(iter(names)), cls.outward_angle(point, neighbour))
+                    (point, next(iter(names)), cls.outward_angle(point, neighbor))
                 )
 
         # Defensive deduplication makes reruns idempotent if a malformed source

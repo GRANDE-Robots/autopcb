@@ -1,4 +1,7 @@
-"""Exercise exact trace envelopes without modifying a live KiCad board."""
+"""test_track_capsule.py: exercise exact trace envelopes without modifying a live KiCad board.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import types
@@ -24,27 +27,43 @@ from pcb.route_optimizer import _point_near_segment
 from verification import test_route_optimizer as route_tests
 
 
-def point(x, y):
-    return Point.from_mm((x, y))
+class CapsuleGeometry:
+    """Builds points and the diagonal copper capsule the track capsule tests use."""
 
+    @staticmethod
+    def point(x, y):
+        """Return the Point at (x, y).
 
-def capsule():
-    return Obstacle(
-        point(0.9, 0.9),
-        point(2.1, 2.1),
-        ("B.Cu",),
-        "OTHER",
-        "copper",
-        centerline=(point(1, 1), point(2, 2)),
-        copper_radius=mm(0.1),
-    )
+        Inputs:
+            x, y: coordinates in mm.
+        """
+        return Point.from_mm((x, y))
+
+    @staticmethod
+    def capsule():
+        """Return a B.Cu copper Obstacle of net OTHER shaped as a capsule.
+
+        The centerline runs from (1, 1) mm to (2, 2) mm with a copper radius of
+        0.1 mm inside the box (0.9, 0.9) mm to (2.1, 2.1) mm.
+        """
+        return Obstacle(
+            CapsuleGeometry.point(0.9, 0.9),
+            CapsuleGeometry.point(2.1, 2.1),
+            ("B.Cu",),
+            "OTHER",
+            "copper",
+            centerline=(CapsuleGeometry.point(1, 1), CapsuleGeometry.point(2, 2)),
+            copper_radius=mm(0.1),
+        )
 
 
 class TrackCapsuleTests(unittest.TestCase):
+    """Tests for capsule obstacles in the grid router and native track conversion."""
+
     def test_long_diagonal_rasterization_avoids_the_empty_bounding_rectangle(self):
         model = GridRouter(
-            point(-1, -1),
-            point(61, 61),
+            CapsuleGeometry.point(-1, -1),
+            CapsuleGeometry.point(61, 61),
             mm(0.1),
             ("B.Cu",),
             "SIGNAL",
@@ -54,10 +73,14 @@ class TrackCapsuleTests(unittest.TestCase):
             mm(0.3),
             max_cells=500_000,
         )
-        first, last, radius = point(0, 0), point(60, 60), mm(0.2)
+        first, last, radius = (
+            CapsuleGeometry.point(0, 0),
+            CapsuleGeometry.point(60, 60),
+            mm(0.2),
+        )
         obstacle = Obstacle(
-            point(-0.2, -0.2),
-            point(60.2, 60.2),
+            CapsuleGeometry.point(-0.2, -0.2),
+            CapsuleGeometry.point(60.2, 60.2),
             ("B.Cu",),
             "OTHER",
             "copper",
@@ -67,6 +90,7 @@ class TrackCapsuleTests(unittest.TestCase):
         calls = 0
 
         def counted(*args):
+            """Count the call and return the result of the point-to-segment test."""
             nonlocal calls
             calls += 1
             return _point_near_segment(*args)
@@ -86,8 +110,8 @@ class TrackCapsuleTests(unittest.TestCase):
 
     def test_capsule_scanline_matches_brute_force_for_arbitrary_directions(self):
         model = GridRouter(
-            point(-3, -3),
-            point(3, 3),
+            CapsuleGeometry.point(-3, -3),
+            CapsuleGeometry.point(3, 3),
             mm(0.25),
             ("B.Cu",),
             "SIGNAL",
@@ -99,9 +123,9 @@ class TrackCapsuleTests(unittest.TestCase):
         rng = random.Random(894)
         cases = [
             (Point(0, 0), Point(0, 0)),
-            (point(0, -2), point(0, 2)),
-            (point(-2, 0), point(2, 0)),
-            (point(2, -2), point(-2, 2)),
+            (CapsuleGeometry.point(0, -2), CapsuleGeometry.point(0, 2)),
+            (CapsuleGeometry.point(-2, 0), CapsuleGeometry.point(2, 0)),
+            (CapsuleGeometry.point(2, -2), CapsuleGeometry.point(-2, 2)),
         ]
         cases.extend(
             (
@@ -141,8 +165,8 @@ class TrackCapsuleTests(unittest.TestCase):
 
     def test_large_capsule_rasterization_obeys_the_search_deadline(self):
         model = GridRouter(
-            point(-2, -1),
-            point(2, 61),
+            CapsuleGeometry.point(-2, -1),
+            CapsuleGeometry.point(2, 61),
             mm(0.05),
             ("B.Cu",),
             "SIGNAL",
@@ -153,16 +177,17 @@ class TrackCapsuleTests(unittest.TestCase):
             max_cells=200_000,
         )
         obstacle = Obstacle(
-            point(-1, -1),
-            point(1, 61),
+            CapsuleGeometry.point(-1, -1),
+            CapsuleGeometry.point(1, 61),
             ("B.Cu",),
             "OTHER",
             "copper",
-            centerline=(point(0, 0), point(0, 60)),
+            centerline=(CapsuleGeometry.point(0, 0), CapsuleGeometry.point(0, 60)),
             copper_radius=mm(1),
         )
 
         def stop():
+            """Raise RuntimeError as an expired search budget."""
             raise RuntimeError("budget expired")
 
         model.check_budget = stop
@@ -181,8 +206,8 @@ class TrackCapsuleTests(unittest.TestCase):
 
     def test_stronger_lower_bound_preserves_optimum_and_reduces_search(self):
         model = GridRouter(
-            point(-1, -1),
-            point(11, 11),
+            CapsuleGeometry.point(-1, -1),
+            CapsuleGeometry.point(11, 11),
             mm(0.25),
             ("B.Cu",),
             "SIGNAL",
@@ -194,10 +219,16 @@ class TrackCapsuleTests(unittest.TestCase):
             gentle_turns=True,
             forbid_staircase=True,
         )
-        start, end = point(0, 0), point(9, 7)
+        start, end = CapsuleGeometry.point(0, 0), CapsuleGeometry.point(9, 7)
         fast = model.route(start, "B.Cu", end, "B.Cu")
 
         def old_lower_bound(dx, dy, step, axial, diagonal):
+            """Return the earlier lower bound, which ignores the diagonal weight.
+
+            Inputs:
+                dx, dy, step, axial, diagonal: the arguments of the octilinear lower bound;
+                    diagonal is ignored.
+            """
             del diagonal
             return (max(dx, dy) + (math.sqrt(2) - 1) * min(dx, dy)) * step * axial
 
@@ -207,20 +238,62 @@ class TrackCapsuleTests(unittest.TestCase):
         self.assertLess(fast.expanded, old.expanded)
 
     def test_exact_endpoint_and_segments_clear_false_rectangle_corners(self):
-        obstacle = capsule()
+        obstacle = CapsuleGeometry.capsule()
         collision = GridRouter._intersects_box
         margin = mm(0.2)
-        self.assertFalse(collision(point(2.25, 1), point(2.25, 1), obstacle, margin))
-        self.assertFalse(collision(point(2.25, 1), point(2.5, 1), obstacle, margin))
-        self.assertTrue(collision(point(1.5, 1.5), point(1.5, 1.5), obstacle, margin))
-        self.assertTrue(collision(point(1, 2), point(2, 1), obstacle, margin))
-        self.assertTrue(collision(point(1, 0.7), point(2, 0.7), obstacle, margin))
-        self.assertFalse(collision(point(1, 0.699), point(2, 0.699), obstacle, margin))
+        self.assertFalse(
+            collision(
+                CapsuleGeometry.point(2.25, 1),
+                CapsuleGeometry.point(2.25, 1),
+                obstacle,
+                margin,
+            )
+        )
+        self.assertFalse(
+            collision(
+                CapsuleGeometry.point(2.25, 1),
+                CapsuleGeometry.point(2.5, 1),
+                obstacle,
+                margin,
+            )
+        )
+        self.assertTrue(
+            collision(
+                CapsuleGeometry.point(1.5, 1.5),
+                CapsuleGeometry.point(1.5, 1.5),
+                obstacle,
+                margin,
+            )
+        )
+        self.assertTrue(
+            collision(
+                CapsuleGeometry.point(1, 2),
+                CapsuleGeometry.point(2, 1),
+                obstacle,
+                margin,
+            )
+        )
+        self.assertTrue(
+            collision(
+                CapsuleGeometry.point(1, 0.7),
+                CapsuleGeometry.point(2, 0.7),
+                obstacle,
+                margin,
+            )
+        )
+        self.assertFalse(
+            collision(
+                CapsuleGeometry.point(1, 0.699),
+                CapsuleGeometry.point(2, 0.699),
+                obstacle,
+                margin,
+            )
+        )
 
     def test_grid_tracks_and_vias_use_capsule_with_sampling_margin(self):
         model = GridRouter(
-            point(-1, -1),
-            point(4, 4),
+            CapsuleGeometry.point(-1, -1),
+            CapsuleGeometry.point(4, 4),
             mm(0.25),
             ("B.Cu",),
             "SIGNAL",
@@ -228,10 +301,10 @@ class TrackCapsuleTests(unittest.TestCase):
             mm(0.2),
             mm(0.6),
             mm(0.3),
-            obstacles=(capsule(),),
+            obstacles=(CapsuleGeometry.capsule(),),
         )
-        clear = model._index(point(2.25, 1))
-        blocked = model._index(point(1.5, 1.75))
+        clear = model._index(CapsuleGeometry.point(2.25, 1))
+        blocked = model._index(CapsuleGeometry.point(1.5, 1.75))
         self.assertNotIn(clear, model.blocked["B.Cu"])
         self.assertIn(blocked, model.blocked["B.Cu"])
         self.assertIn(blocked, model.via_blocked)
@@ -240,11 +313,16 @@ class TrackCapsuleTests(unittest.TestCase):
         backend = object.__new__(NativeBackend)
         current = types.SimpleNamespace(clearance=mm(0.2))
         backend.settings = {"OTHER": types.SimpleNamespace(clearance=mm(0.4))}
-        enlarged = backend._clearance_envelope(capsule(), current)
+        enlarged = backend._clearance_envelope(CapsuleGeometry.capsule(), current)
         self.assertEqual(enlarged.copper_radius, mm(0.3))
-        self.assertEqual(enlarged.centerline, capsule().centerline)
+        self.assertEqual(enlarged.centerline, CapsuleGeometry.capsule().centerline)
         self.assertTrue(
-            GridRouter._intersects_box(point(1, 0.5), point(1, 0.5), enlarged, mm(0.2))
+            GridRouter._intersects_box(
+                CapsuleGeometry.point(1, 0.5),
+                CapsuleGeometry.point(1, 0.5),
+                enlarged,
+                mm(0.2),
+            )
         )
 
     def test_extra_net_clearance_preserves_rounded_pad_geometry(self):
@@ -252,12 +330,17 @@ class TrackCapsuleTests(unittest.TestCase):
         current = types.SimpleNamespace(clearance=mm(0.2))
         backend.settings = {"OTHER": types.SimpleNamespace(clearance=mm(0.4))}
         pad = Obstacle(
-            point(0, 0), point(2, 1), ("F.Cu",), "OTHER", "pad", corner_radius=mm(0.25)
+            CapsuleGeometry.point(0, 0),
+            CapsuleGeometry.point(2, 1),
+            ("F.Cu",),
+            "OTHER",
+            "pad",
+            corner_radius=mm(0.25),
         )
         enlarged = backend._clearance_envelope(pad, current)
         for x in range(-6, 28):
             for y in range(-6, 18):
-                at = point(x / 10, y / 10)
+                at = CapsuleGeometry.point(x / 10, y / 10)
                 self.assertEqual(
                     GridRouter._intersects_box(at, at, pad, mm(0.4)),
                     GridRouter._intersects_box(at, at, enlarged, mm(0.2)),
@@ -273,7 +356,7 @@ class TrackCapsuleTests(unittest.TestCase):
             GetWidth=lambda: mm(0.2),
         )
         pieces = _track_boxes(item, ("B.Cu",), "OTHER")
-        self.assertEqual(pieces[0].centerline[0], point(0, 0))
+        self.assertEqual(pieces[0].centerline[0], CapsuleGeometry.point(0, 0))
         self.assertEqual(pieces[-1].centerline[-1], Point(mm(1.000001), mm(1)))
         self.assertTrue(all(part.copper_radius >= mm(0.1) + 2 for part in pieces))
         self.assertTrue(
@@ -324,13 +407,18 @@ class TrackCapsuleTests(unittest.TestCase):
         import pcbnew
 
         class ViaWithForbiddenWidth:
+            """Stand-in via that fails the test when its width is read."""
+
             def GetStart(self):
+                """Return the start position (0, 0)."""
                 return types.SimpleNamespace(x=0, y=0)
 
             def GetEnd(self):
+                """Return the end position (0, 0)."""
                 return types.SimpleNamespace(x=0, y=0)
 
             def GetWidth(self, *_args):
+                """Raise AssertionError because reading a via width is unsafe."""
                 raise AssertionError("Called the unsafe via width accessor")
 
         with mock.patch.object(pcbnew, "PCB_VIA", ViaWithForbiddenWidth):
@@ -340,27 +428,32 @@ class TrackCapsuleTests(unittest.TestCase):
     def test_capsule_requires_conservative_bounds_and_nonnegative_radius(self):
         with self.assertRaises(ValueError):
             Obstacle(
-                point(1, 1),
-                point(2, 2),
+                CapsuleGeometry.point(1, 1),
+                CapsuleGeometry.point(2, 2),
                 ("B.Cu",),
                 "X",
                 "copper",
-                centerline=(point(1, 1), point(2, 2)),
+                centerline=(CapsuleGeometry.point(1, 1), CapsuleGeometry.point(2, 2)),
                 copper_radius=mm(0.1),
             )
         with self.assertRaises(ValueError):
             Obstacle(
-                point(0, 0),
-                point(3, 3),
+                CapsuleGeometry.point(0, 0),
+                CapsuleGeometry.point(3, 3),
                 ("B.Cu",),
                 "X",
                 "pad",
-                centerline=(point(1, 1), point(2, 2)),
+                centerline=(CapsuleGeometry.point(1, 1), CapsuleGeometry.point(2, 2)),
                 copper_radius=mm(0.1),
             )
         with self.assertRaises(ValueError):
             Obstacle(
-                point(0, 0), point(3, 3), ("B.Cu",), "X", "copper", copper_radius=-1
+                CapsuleGeometry.point(0, 0),
+                CapsuleGeometry.point(3, 3),
+                ("B.Cu",),
+                "X",
+                "copper",
+                copper_radius=-1,
             )
 
     def test_diagonal_native_copper_route_passes_kicad_validation(self):
@@ -383,10 +476,15 @@ class TrackCapsuleTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
 
     def test_search_reports_work_done_when_limit_is_hit_or_no_path_exists(self):
-        wall = Obstacle(point(4, -2), point(6, 12), ("B.Cu",), "OTHER")
+        wall = Obstacle(
+            CapsuleGeometry.point(4, -2),
+            CapsuleGeometry.point(6, 12),
+            ("B.Cu",),
+            "OTHER",
+        )
         options = dict(
-            lower=point(-2, -2),
-            upper=point(12, 12),
+            lower=CapsuleGeometry.point(-2, -2),
+            upper=CapsuleGeometry.point(12, 12),
             step=mm(0.5),
             layers=("B.Cu",),
             net="SIGNAL",
@@ -396,14 +494,16 @@ class TrackCapsuleTests(unittest.TestCase):
             via_drill=mm(0.3),
             obstacles=(wall,),
         )
-        start, end = point(0.1, 0.1), point(9.1, 9.1)
+        start, end = CapsuleGeometry.point(0.1, 0.1), CapsuleGeometry.point(9.1, 9.1)
         with self.assertRaises(SearchLimitReached) as limited:
             GridRouter(**options, max_expansions=1).route(start, "B.Cu", end, "B.Cu")
         self.assertEqual(limited.exception.expanded, 1)
         # Exhaust the grid itself without the additional off-grid access-pair
         # search, which may correctly stop at its own resource limit.
         with self.assertRaises(NoGridRoute) as exhausted:
-            GridRouter(**options).route(point(0, 0), "B.Cu", point(9, 9), "B.Cu")
+            GridRouter(**options).route(
+                CapsuleGeometry.point(0, 0), "B.Cu", CapsuleGeometry.point(9, 9), "B.Cu"
+            )
         self.assertGreater(exhausted.exception.expanded, 0)
 
 

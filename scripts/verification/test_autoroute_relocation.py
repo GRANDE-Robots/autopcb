@@ -1,4 +1,8 @@
-"""Native witnesses for obstacle diagnosis and transactional bottom movement."""
+"""test_autoroute_relocation.py: check native witnesses for obstacle diagnosis and transactional bottom-part
+movement.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -34,12 +38,18 @@ BOTTOM_ONLY = {"sides": ["bottom"]}
 
 
 class ObstructionHitsTests(unittest.TestCase):
+    """Tests for which nets ObstructionScan.hits reports as blocking a route."""
+
     def test_same_net_copper_is_not_mistaken_for_a_blocking_trace(self):
         class Profile:
+            """Routing profile stub with a 0.2 mm track width and a 0.2 mm clearance."""
+
             def pieces(self, segment):
+                """Return the segment as one piece with a width of 0.2 mm."""
                 return ((segment, mm(0.2)),)
 
             def clearance_at(self, segment, shape, *, width):
+                """Return a clearance of 0.2 mm for any piece and shape."""
                 return mm(0.2)
 
         route = Route(
@@ -65,10 +75,14 @@ class ObstructionHitsTests(unittest.TestCase):
 
     def test_new_vias_still_consider_nearby_existing_same_net_vias(self):
         class Profile:
+            """Routing profile stub with a 0.2 mm track width and a 0.2 mm clearance."""
+
             def pieces(self, segment):
+                """Return the segment as one piece with a width of 0.2 mm."""
                 return ((segment, mm(0.2)),)
 
             def clearance_at(self, segment, shape, *, width):
+                """Return a clearance of 0.2 mm for any piece and shape."""
                 return mm(0.2)
 
         route = Route((), (Via(Point.from_mm((2, 2)), "F.Cu", "B.Cu"),), (), 0, 0, 0, 0)
@@ -95,36 +109,63 @@ class ObstructionHitsTests(unittest.TestCase):
         )
 
 
-def track(board, net, start, end, *, bottom=False, width=0.25):
-    item = pcbnew.PCB_TRACK(board)
-    item.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
-    item.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-    item.SetLayer(pcbnew.B_Cu if bottom else pcbnew.F_Cu)
-    item.SetWidth(mm(width))
-    item.SetNetCode(board.FindNet(net).GetNetCode())
-    board.Add(item)
-    return item
+class BoardBuilder:
+    """Adds tracks and multi-net components to native boards for the relocation tests."""
 
+    @staticmethod
+    def add_track(board, net, start, end, *, bottom=False, width=0.25):
+        """Add a straight track to a board and return it.
 
-def add_multinet_component(board):
-    component = fixture.NativeNetRoutingTests.add_pad(board, "U50", (3, 3), bottom=True)
-    names = {"SIGNAL"}
-    for index in range(1, 8):
-        name = f"INCIDENT_{index}"
-        names.add(name)
-        board.Add(pcbnew.NETINFO_ITEM(board, name))
-        pad = pcbnew.PAD(component)
-        pad.SetNumber(str(index + 1))
-        pad.SetSize(pcbnew.VECTOR2I(mm(0.3), mm(0.3)))
-        pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
-        pad.SetLayerSet(pcbnew.LSET.BackMask())
-        pad.SetPosition(pcbnew.VECTOR2I(mm(round(3 + 0.65 * index, 2)), mm(3)))
-        pad.SetNetCode(board.FindNet(name).GetNetCode())
-        component.Add(pad)
-    return names
+        Inputs:
+            board: native board that already holds the net.
+            net: name of the net the track joins.
+            start, end: (x, y) positions in mm.
+            bottom: place the track on B.Cu when true, on F.Cu otherwise.
+            width: track width in mm.
+        Outputs:
+            The added PCB_TRACK.
+        """
+        item = pcbnew.PCB_TRACK(board)
+        item.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
+        item.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
+        item.SetLayer(pcbnew.B_Cu if bottom else pcbnew.F_Cu)
+        item.SetWidth(mm(width))
+        item.SetNetCode(board.FindNet(net).GetNetCode())
+        board.Add(item)
+        return item
+
+    @staticmethod
+    def add_multinet_component(board):
+        """Add a bottom-side component U50 at (3, 3) mm with seven extra pads, each on
+        its own new net INCIDENT_1 to INCIDENT_7.
+
+        Inputs:
+            board: native board that already holds the SIGNAL net.
+        Outputs:
+            The set of net names SIGNAL and INCIDENT_1 to INCIDENT_7.
+        """
+        component = fixture.NativeNetRoutingTests.add_pad(
+            board, "U50", (3, 3), bottom=True
+        )
+        names = {"SIGNAL"}
+        for index in range(1, 8):
+            name = f"INCIDENT_{index}"
+            names.add(name)
+            board.Add(pcbnew.NETINFO_ITEM(board, name))
+            pad = pcbnew.PAD(component)
+            pad.SetNumber(str(index + 1))
+            pad.SetSize(pcbnew.VECTOR2I(mm(0.3), mm(0.3)))
+            pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+            pad.SetLayerSet(pcbnew.LSET.BackMask())
+            pad.SetPosition(pcbnew.VECTOR2I(mm(round(3 + 0.65 * index, 2)), mm(3)))
+            pad.SetNetCode(board.FindNet(name).GetNetCode())
+            component.Add(pad)
+        return names
 
 
 class RelocationTests(unittest.TestCase):
+    """Tests for obstruction diagnosis, anchor poses and placement moves of bottom-side parts."""
+
     def test_protected_anchor_candidates_leave_protected_pad_and_copper_untouched(self):
         from pcb.net_routing.relocation import AnchorRequests, protected_anchor_pose
 
@@ -144,8 +185,12 @@ class RelocationTests(unittest.TestCase):
             anchor.SetPosition(pcbnew.VECTOR2I(mm(4), mm(3)))
             anchor.SetNetCode(board.FindNet("PROTECTED").GetNetCode())
             part.Add(anchor)
-            signal_track = track(board, "SIGNAL", (3, 3), (3, 4), bottom=True)
-            protected_track = track(board, "PROTECTED", (4, 3), (4, 2.5), bottom=True)
+            signal_track = BoardBuilder.add_track(
+                board, "SIGNAL", (3, 3), (3, 4), bottom=True
+            )
+            protected_track = BoardBuilder.add_track(
+                board, "PROTECTED", (4, 3), (4, 2.5), bottom=True
+            )
             pcbnew.SaveBoard(str(source), board)
             pose = protected_anchor_pose(part, {"PROTECTED"})
             self.assertIsNotNone(pose)
@@ -310,8 +355,12 @@ class RelocationTests(unittest.TestCase):
             ground.SetPosition(pcbnew.VECTOR2I(mm(4), mm(3)))
             ground.SetNetCode(board.FindNet("GND").GetNetCode())
             part.Add(ground)
-            signal_track = track(board, "SIGNAL", (3, 3), (3, 4), bottom=True)
-            ground_track = track(board, "GND", (4, 3), (4, 2.5), bottom=True)
+            signal_track = BoardBuilder.add_track(
+                board, "SIGNAL", (3, 3), (3, 4), bottom=True
+            )
+            ground_track = BoardBuilder.add_track(
+                board, "GND", (4, 3), (4, 2.5), bottom=True
+            )
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             policy = {"route": request["shared"], "max_pins": 2}
@@ -444,6 +493,12 @@ class RelocationTests(unittest.TestCase):
 
     def test_local_escape_finds_only_copper_trapping_the_pad(self):
         def box(x1, y1, x2, y2, net):
+            """Return a copper Obstacle on F.Cu and the given net spanning two corners.
+
+            Inputs:
+                x1, y1, x2, y2: opposite corners in mm.
+                net: name of the obstacle's net.
+            """
             return Obstacle(
                 Point.from_mm((x1, y1)),
                 Point.from_mm((x2, y2)),
@@ -508,7 +563,7 @@ class RelocationTests(unittest.TestCase):
                 ((2.9, 2.9), (1.1, 2.9)),
                 ((1.1, 2.9), (1.1, 1.1)),
             ):
-                item = track(board, "OTHER", first, last, width=0.1)
+                item = BoardBuilder.add_track(board, "OTHER", first, last, width=0.1)
                 box = item.GetBoundingBox()
                 records.append(
                     Obstruction(
@@ -618,6 +673,7 @@ class RelocationTests(unittest.TestCase):
         soft = {str(index): (inner,) for index in range(500)}
 
         def stop():
+            """Raise SearchBudgetExceeded as an expired diagnostic budget."""
             raise SearchBudgetExceeded("diagnostic expired")
 
         with self.assertRaises(SearchBudgetExceeded):
@@ -637,7 +693,7 @@ class RelocationTests(unittest.TestCase):
             board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
             records = []
             for x in (3.5, 6.5):
-                item = track(board, "OTHER", (x, -1), (x, 9))
+                item = BoardBuilder.add_track(board, "OTHER", (x, -1), (x, 9))
                 box = item.GetBoundingBox()
                 records.append(
                     Obstruction(
@@ -744,7 +800,9 @@ class RelocationTests(unittest.TestCase):
             fixture.NativeNetRoutingTests.add_pad(
                 board, "R51", (5, 3), bottom=True, net_name="OTHER"
             )
-            old = track(board, "OTHER", (3, 3), (5, 3), bottom=True, width=0.5)
+            old = BoardBuilder.add_track(
+                board, "OTHER", (3, 3), (5, 3), bottom=True, width=0.5
+            )
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
@@ -796,6 +854,19 @@ class RelocationTests(unittest.TestCase):
         # Locked walls close the top layer and leave one bottom-layer gap,
         # which R50 fills. Two nearer bottom parts block nothing.
         def part(board, reference, at, size, net, *, bottom, locked=False):
+            """Add a single-pad footprint with a rectangular pad and hidden texts and return it.
+
+            Inputs:
+                board: native board that already holds the net.
+                reference: reference designator of the footprint.
+                at: (x, y) position in mm.
+                size: (width, height) of the pad in mm.
+                net: name of the pad's net.
+                bottom: place the footprint on the bottom side when true.
+                locked: lock the footprint when true.
+            Outputs:
+                The added footprint.
+            """
             footprint = fixture.NativeNetRoutingTests.add_pad(
                 board, reference, at, bottom=bottom, net_name=net
             )
@@ -1201,9 +1272,11 @@ class RelocationTests(unittest.TestCase):
             board = pcbnew.LoadBoard(str(source))
             fixture.NativeNetRoutingTests.add_pad(board, "R50", (2, 2), bottom=True)
             fixture.NativeNetRoutingTests.add_pad(board, "R51", (8, 2), bottom=True)
-            first = track(board, "SIGNAL", (2, 2), (4, 2), bottom=True)
-            middle = track(board, "SIGNAL", (4, 2), (6, 2), bottom=True)
-            last = track(board, "SIGNAL", (6, 2), (8, 2), bottom=True)
+            first = BoardBuilder.add_track(board, "SIGNAL", (2, 2), (4, 2), bottom=True)
+            middle = BoardBuilder.add_track(
+                board, "SIGNAL", (4, 2), (6, 2), bottom=True
+            )
+            last = BoardBuilder.add_track(board, "SIGNAL", (6, 2), (8, 2), bottom=True)
             removals = {
                 "SIGNAL": [{"kind": "segment", "uuid": middle.m_Uuid.AsString()}]
             }
@@ -1252,9 +1325,11 @@ class RelocationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-exposed-branch-") as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
             board = pcbnew.LoadBoard(str(source))
-            removed = track(board, "SIGNAL", (2, 3), (4, 3), bottom=True)
-            track(board, "SIGNAL", (4, 3), (6, 3), bottom=True)
-            track(board, "SIGNAL", (4, 3), (4, 5), bottom=True)
+            removed = BoardBuilder.add_track(
+                board, "SIGNAL", (2, 3), (4, 3), bottom=True
+            )
+            BoardBuilder.add_track(board, "SIGNAL", (4, 3), (6, 3), bottom=True)
+            BoardBuilder.add_track(board, "SIGNAL", (4, 3), (4, 5), bottom=True)
             extra = PlacementRepair.extend_exposed_copper(
                 board,
                 {"SIGNAL": [{"kind": "segment", "uuid": removed.m_Uuid.AsString()}]},
@@ -1272,9 +1347,11 @@ class RelocationTests(unittest.TestCase):
             board = pcbnew.LoadBoard(str(source))
             fixture.NativeNetRoutingTests.add_pad(board, "R50", (2, 2), bottom=True)
             fixture.NativeNetRoutingTests.add_pad(board, "R51", (8, 2), bottom=True)
-            first = track(board, "SIGNAL", (2, 2), (4, 2), bottom=True)
-            middle = track(board, "SIGNAL", (4, 2), (6, 2), bottom=True)
-            track(board, "SIGNAL", (6, 2), (8, 2), bottom=True)
+            first = BoardBuilder.add_track(board, "SIGNAL", (2, 2), (4, 2), bottom=True)
+            middle = BoardBuilder.add_track(
+                board, "SIGNAL", (4, 2), (6, 2), bottom=True
+            )
+            BoardBuilder.add_track(board, "SIGNAL", (6, 2), (8, 2), bottom=True)
             removals = {
                 "SIGNAL": [{"kind": "segment", "uuid": middle.m_Uuid.AsString()}]
             }
@@ -1306,7 +1383,7 @@ class RelocationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
             board = pcbnew.LoadBoard(str(source))
-            names = add_multinet_component(board)
+            names = BoardBuilder.add_multinet_component(board)
             pcbnew.SaveBoard(str(source), board)
             before = source.read_bytes()
             request = fixture.NativeNetRoutingTests.config()
@@ -1345,7 +1422,7 @@ class RelocationTests(unittest.TestCase):
             project = Path(folder)
             source = boards.RouteOptimizerTests.make_board(project)
             board = pcbnew.LoadBoard(str(source))
-            names = add_multinet_component(board)
+            names = BoardBuilder.add_multinet_component(board)
             pcbnew.SaveBoard(str(source), board)
             schematic = project / "v4.1.kicad_sch"
             schematic.write_text("(kicad_sch (lib_symbols))")
@@ -1394,7 +1471,7 @@ class RelocationTests(unittest.TestCase):
             fixture.NativeNetRoutingTests.add_pad(
                 board, "R50", (3, 3), bottom=True, net_name="OTHER"
             )
-            old = track(board, "OTHER", (3, 3), (5, 3), bottom=True)
+            old = BoardBuilder.add_track(board, "OTHER", (3, 3), (5, 3), bottom=True)
             pcbnew.SaveBoard(str(source), board)
             request = fixture.NativeNetRoutingTests.config()
             request.update(max_islands=2, recovery_stage=4)
@@ -1447,7 +1524,7 @@ class RelocationTests(unittest.TestCase):
             fixture.NativeNetRoutingTests.add_pad(
                 board, "R51", (6, 3), bottom=True, net_name="OTHER"
             )
-            old = track(board, "OTHER", (4, 3), (6, 3), bottom=True)
+            old = BoardBuilder.add_track(board, "OTHER", (4, 3), (6, 3), bottom=True)
             group = pcbnew.PCB_GROUP(board)
             group.SetName("Mixed group: only the bottom members may move")
             for reference in ("R50", "R51", "J1"):

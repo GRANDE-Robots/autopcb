@@ -1,4 +1,7 @@
-"""Exercise source-preserving joint placement and routing search."""
+"""test_joint_optimizer.py: check source-preserving joint placement and routing search.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -13,8 +16,11 @@ import verification.test_route_optimizer as route_tests
 
 
 class JointOptimizerTests(unittest.TestCase):
+    """Checks the staircase test and the placement search of the joint optimizer."""
+
     def test_repeated_diagonal_steps_are_rejected(self):
         def segment(a, b, layer="B.Cu"):
+            """Build a track segment record between two points in mm on one layer."""
             return {"from_mm": a, "to_mm": b, "layer": layer}
 
         self.assertTrue(

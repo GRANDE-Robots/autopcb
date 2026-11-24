@@ -1,4 +1,8 @@
-"""Validate generated document consistency, source binding and locator guards."""
+"""test_factory_documents.py: check generated document consistency, source binding and
+locator guards.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -10,7 +14,24 @@ from release.generate_factory_documents import FactoryDocuments
 
 
 class FactoryDocumentTests(unittest.TestCase):
+    """Checks the factory documents against their source identity and evidence."""
+
     def fixture(self, root, count=301, fill_count=0):
+        """Create a project and a manufacturing folder that agree with each other.
+
+        The project holds the stackup record with its evidence, a build document and the
+        reviewed input manifest. The manufacturing folder holds the source identity, the
+        assembly scope, test record, rule and drill evidence, the filled via list, the
+        register, the required modules and the placement list.
+
+        Inputs:
+            root: Folder that receives the project and output folders.
+            count: Placement count recorded in the source identity; two of the
+                placements are required modules.
+            fill_count: Number of filled and capped vias recorded and listed.
+        Outputs:
+            The project folder, the output folder and the manufacturing folder.
+        """
         p = root / "project"
         out = root / "output"
         m = out / "jlcpcb"
@@ -153,6 +174,12 @@ class FactoryDocumentTests(unittest.TestCase):
         return p, out, m
 
     def generate(self, p, out):
+        """Generate the factory documents of a project into an output folder.
+
+        Inputs:
+            p: The project folder.
+            out: The output folder.
+        """
         FactoryDocuments.generate(p, out)
 
     def test_dynamic_counts_zero_fills_and_owner_stock(self):

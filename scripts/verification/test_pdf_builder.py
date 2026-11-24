@@ -70,11 +70,16 @@ class PDFBuilderTests(unittest.TestCase):
                 mock.patch.object(pdf, "require_chrome", return_value="chrome"),
                 mock.patch.object(pdf, "require_tool", return_value="pdfinfo"),
                 mock.patch.object(pdf, "render_html", return_value=("Test", "<html/>")),
-                mock.patch.object(pdf, "validate_pdf", side_effect=RuntimeError("bad PDF")),
+                mock.patch.object(
+                    pdf, "validate_pdf", side_effect=RuntimeError("bad PDF")
+                ),
                 mock.patch.object(pdf, "run", side_effect=render),
             ):
                 error = io.StringIO()
-                with contextlib.redirect_stderr(error), self.assertRaisesRegex(RuntimeError, "browser failed"):
+                with (
+                    contextlib.redirect_stderr(error),
+                    self.assertRaisesRegex(RuntimeError, "browser failed"),
+                ):
                     pdf.build_pdf(source, output, project=project)
             self.assertIn("trying Chromium", error.getvalue())
             self.assertEqual(output.read_bytes(), b"old output")

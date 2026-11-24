@@ -47,26 +47,41 @@ class NativeObstacleCache:
             raise ValueError("Expected an existing saved KiCad PCB snapshot")
         rules = source.with_suffix(".kicad_pro")
         board_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-        rules_hash = hashlib.sha256(rules.read_bytes()).hexdigest() if rules.is_file() else None
+        rules_hash = (
+            hashlib.sha256(rules.read_bytes()).hexdigest() if rules.is_file() else None
+        )
         return board_hash, rules_hash
 
-    def load(self, path: Path, net: str, *, assume_refill: bool = False,
-             removals: list[dict[str, str]] | None = None) -> NativeSnapshot:
+    def load(
+        self,
+        path: Path,
+        net: str,
+        *,
+        assume_refill: bool = False,
+        removals: list[dict[str, str]] | None = None,
+    ) -> NativeSnapshot:
         if not isinstance(net, str) or not net or not isinstance(assume_refill, bool):
             raise ValueError("A target net and boolean refill option are required")
         source = Path(path).resolve()
         # Removals are infrequent and require native UUID validation each time.
         if removals:
-            return read_native_obstacles(source, net, assume_refill=assume_refill, removals=removals)
+            return read_native_obstacles(
+                source, net, assume_refill=assume_refill, removals=removals
+            )
         fingerprint = self._fingerprint(source)
         key = (source, net, assume_refill, fingerprint)
         if self._entry is not None and self._entry[0] == key:
             result = self._entry[1]
         else:
             result = read_native_obstacles(source, net, assume_refill=assume_refill)
-        if self._fingerprint(source) != fingerprint or result.source_sha256 != fingerprint[0]:
+        if (
+            self._fingerprint(source) != fingerprint
+            or result.source_sha256 != fingerprint[0]
+        ):
             self._entry = None
-            raise RuntimeError("PCB or project rules changed during obstacle inspection")
+            raise RuntimeError(
+                "PCB or project rules changed during obstacle inspection"
+            )
         self._entry = (key, result)
         return result
 
@@ -74,7 +89,8 @@ class NativeObstacleCache:
 def _configured_copper_thicknesses(original: bytes) -> tuple[tuple[str, int], ...]:
     """Read nominal stackup from the captured bytes, not a live editor."""
     setups = tuple(
-        parse(form) for form in select_direct_children(original.decode("utf-8-sig"), "setup")
+        parse(form)
+        for form in select_direct_children(original.decode("utf-8-sig"), "setup")
     )
     if len(setups) != 1:
         raise ValueError("PCB must have exactly one setup section")
@@ -120,15 +136,21 @@ def _via_obstacle(board, via, layers: tuple[str, ...]) -> Obstacle:
     # KiCad's inclusive BOX2I upper edge is commonly one nanometre beyond
     # the physical radius. Centering on that box would hide an existing via
     # from exact-grid reuse; keep a symmetric conservative envelope instead.
-    radius = max((max([drill, *widths]) + 1) // 2,
-                 int(position.x - bounds.GetX()), int(bounds.GetRight() - position.x),
-                 int(position.y - bounds.GetY()), int(bounds.GetBottom() - position.y))
+    radius = max(
+        (max([drill, *widths]) + 1) // 2,
+        int(position.x - bounds.GetX()),
+        int(bounds.GetRight() - position.x),
+        int(position.y - bounds.GetY()),
+        int(bounds.GetBottom() - position.y),
+    )
     annular = max(0, (min(widths) - drill) // 2) if widths else 0
     settings = board.GetDesignSettings()
     return Obstacle(
         Point(int(position.x) - radius, int(position.y) - radius),
         Point(int(position.x) + radius, int(position.y) + radius),
-        layers, via.GetNetname(), "via",
+        layers,
+        via.GetNetname(),
+        "via",
         min_track_clearance=max(0, int(settings.m_HoleClearance) - annular),
         min_via_clearance=max(0, int(settings.m_HoleToHoleMin) - annular),
     )
@@ -150,19 +172,39 @@ def _pad_obstacle(board, pad, layers: tuple[str, ...]) -> Obstacle:
         if pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH:
             track_clearance = max(track_clearance, int(settings.m_CopperEdgeClearance))
         via_clearance = max(track_clearance, int(settings.m_HoleToHoleMin))
-    active = [board.GetLayerID(layer) for layer in layers
-              if pad.IsOnLayer(board.GetLayerID(layer))]
-    if (active and pad.GetAttribute() == pcbnew.PAD_ATTRIB_PTH
-            and drill.x > 0 and drill.x == drill.y):
+    active = [
+        board.GetLayerID(layer)
+        for layer in layers
+        if pad.IsOnLayer(board.GetLayerID(layer))
+    ]
+    if (
+        active
+        and pad.GetAttribute() == pcbnew.PAD_ATTRIB_PTH
+        and drill.x > 0
+        and drill.x == drill.y
+    ):
         inscribed = []
         for layer in active:
             size, offset = pad.GetSize(layer), pad.GetOffset(layer)
             shape = pad.GetShape(layer)
-            if (shape not in {pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT,
-                              pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_ROUNDRECT}
-                    or min(size.x, size.y) <= 0 or offset.x or offset.y
-                    or (shape == pcbnew.PAD_SHAPE_ROUNDRECT
-                        and not 0 <= pad.GetRoundRectCornerRadius(layer) <= min(size.x, size.y) / 2)):
+            if (
+                shape
+                not in {
+                    pcbnew.PAD_SHAPE_CIRCLE,
+                    pcbnew.PAD_SHAPE_RECT,
+                    pcbnew.PAD_SHAPE_OVAL,
+                    pcbnew.PAD_SHAPE_ROUNDRECT,
+                }
+                or min(size.x, size.y) <= 0
+                or offset.x
+                or offset.y
+                or (
+                    shape == pcbnew.PAD_SHAPE_ROUNDRECT
+                    and not 0
+                    <= pad.GetRoundRectCornerRadius(layer)
+                    <= min(size.x, size.y) / 2
+                )
+            ):
                 break
             inscribed.append(min(int(size.x), int(size.y)) // 2)
         else:
@@ -175,14 +217,23 @@ def _pad_obstacle(board, pad, layers: tuple[str, ...]) -> Obstacle:
             annular = max(0, min(inscribed) - (int(drill.x) + 1) // 2)
             track_clearance = max(0, int(settings.m_HoleClearance) - annular)
             via_clearance = max(0, int(settings.m_HoleToHoleMin) - annular)
-    clearance = {"min_track_clearance": track_clearance,
-                 "min_via_clearance": via_clearance}
+    clearance = {
+        "min_track_clearance": track_clearance,
+        "min_via_clearance": via_clearance,
+    }
     fallback = Obstacle(
-        Point(min(int(bounds.GetX()), int(at.x) - drill_radius),
-              min(int(bounds.GetY()), int(at.y) - drill_radius)),
-        Point(max(int(bounds.GetRight()), int(at.x) + drill_radius),
-              max(int(bounds.GetBottom()), int(at.y) + drill_radius)),
-        layers, pad.GetNetname(), "pad", **clearance,
+        Point(
+            min(int(bounds.GetX()), int(at.x) - drill_radius),
+            min(int(bounds.GetY()), int(at.y) - drill_radius),
+        ),
+        Point(
+            max(int(bounds.GetRight()), int(at.x) + drill_radius),
+            max(int(bounds.GetBottom()), int(at.y) + drill_radius),
+        ),
+        layers,
+        pad.GetNetname(),
+        "pad",
+        **clearance,
     )
     if not active or drill.x != drill.y:
         return fallback
@@ -193,44 +244,74 @@ def _pad_obstacle(board, pad, layers: tuple[str, ...]) -> Obstacle:
     if (
         math.isfinite(pad.GetOrientationDegrees())
         and pad.GetOrientationDegrees() % 90 == 0
-        and all(shape in {pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_ROUNDRECT}
-                for shape in shapes)
+        and all(
+            shape in {pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_ROUNDRECT}
+            for shape in shapes
+        )
     ):
         radii = []
         for layer, shape in strict_zip(active, shapes):
             size, offset = pad.GetSize(layer), pad.GetOffset(layer)
-            if (size.x <= 0 or size.y <= 0 or offset.x or offset.y
-                    or max(int(drill.x), int(drill.y)) > min(int(size.x), int(size.y))):
+            if (
+                size.x <= 0
+                or size.y <= 0
+                or offset.x
+                or offset.y
+                or max(int(drill.x), int(drill.y)) > min(int(size.x), int(size.y))
+            ):
                 return fallback
-            radius = (min(int(size.x), int(size.y)) // 2
-                      if shape == pcbnew.PAD_SHAPE_OVAL
-                      else int(pad.GetRoundRectCornerRadius(layer)))
+            radius = (
+                min(int(size.x), int(size.y)) // 2
+                if shape == pcbnew.PAD_SHAPE_OVAL
+                else int(pad.GetRoundRectCornerRadius(layer))
+            )
             radii.append(radius)
         # Shrinking the corner radius slightly makes the representation a
         # superset despite KiCad's integer-coordinate rounding.
         corner = max(0, min(radii) - 2)
-        if corner * 2 <= min(fallback.upper.x - fallback.lower.x,
-                             fallback.upper.y - fallback.lower.y):
-            return Obstacle(fallback.lower, fallback.upper, layers, pad.GetNetname(),
-                            "pad", corner_radius=corner, **clearance)
+        if corner * 2 <= min(
+            fallback.upper.x - fallback.lower.x, fallback.upper.y - fallback.lower.y
+        ):
+            return Obstacle(
+                fallback.lower,
+                fallback.upper,
+                layers,
+                pad.GetNetname(),
+                "pad",
+                corner_radius=corner,
+                **clearance,
+            )
         return fallback
     diameters = []
     for layer in active:
         size, offset = pad.GetSize(layer), pad.GetOffset(layer)
-        if (pad.GetShape(layer) != pcbnew.PAD_SHAPE_CIRCLE or size.x != size.y
-                or size.x <= 0 or offset.x or offset.y):
+        if (
+            pad.GetShape(layer) != pcbnew.PAD_SHAPE_CIRCLE
+            or size.x != size.y
+            or size.x <= 0
+            or offset.x
+            or offset.y
+        ):
             return fallback
         diameters.append(int(size.x))
     radius = (max(*diameters, int(drill.x), int(drill.y)) + 1) // 2 + 2
     center = Point(int(at.x), int(at.y))
-    if (fallback.lower.x < center.x - radius or fallback.lower.y < center.y - radius
-            or fallback.upper.x > center.x + radius or fallback.upper.y > center.y + radius):
+    if (
+        fallback.lower.x < center.x - radius
+        or fallback.lower.y < center.y - radius
+        or fallback.upper.x > center.x + radius
+        or fallback.upper.y > center.y + radius
+    ):
         return fallback
     return Obstacle(
         Point(center.x - radius, center.y - radius),
         Point(center.x + radius, center.y + radius),
-        layers, pad.GetNetname(), "pad", centerline=(center, center),
-        copper_radius=radius, **clearance,
+        layers,
+        pad.GetNetname(),
+        "pad",
+        centerline=(center, center),
+        copper_radius=radius,
+        **clearance,
     )
 
 
@@ -328,8 +409,12 @@ def read_native_obstacles(
             raise ValueError(f"Net is not present on the saved PCB: {net}")
         removed_ids = validate_removals(board, removals or [], net)
         if board.GetCopperLayerCount() > len(COPPER_LAYERS):
-            raise ValueError("The saved board exceeds KiCad's supported copper-layer count")
-        enabled_layers = tuple(board.GetLayerName(layer) for layer in board.GetEnabledLayers().CuStack())
+            raise ValueError(
+                "The saved board exceeds KiCad's supported copper-layer count"
+            )
+        enabled_layers = tuple(
+            board.GetLayerName(layer) for layer in board.GetEnabledLayers().CuStack()
+        )
         layer_ids = {layer: board.GetLayerID(layer) for layer in enabled_layers}
         if not enabled_layers:
             raise ValueError("The saved board has no supported enabled copper layers")
@@ -407,13 +492,21 @@ def read_native_obstacles(
         if rules_bytes is not None:
             from pcb.net_routing.reference import high_speed_nets, reference_corridors
 
-            board_nets = {item.GetNetname() for item in (*board.GetPads(), *board.GetTracks()) if item.GetNetname()}
+            board_nets = {
+                item.GetNetname()
+                for item in (*board.GetPads(), *board.GetTracks())
+                if item.GetNetname()
+            }
             critical = high_speed_nets(rules_bytes, board_nets)
             corridors = reference_corridors(board, critical)
             obstacles.extend(corridors.obstacles)
             reference_count = len(corridors.obstacles)
             reference_unmodeled = corridors.unsupported_items
-            reference_status = "unmodeled_inner_high_speed" if reference_unmodeled else "local_reservations_only"
+            reference_status = (
+                "unmodeled_inner_high_speed"
+                if reference_unmodeled
+                else "local_reservations_only"
+            )
     if (
         not source.is_file()
         or hashlib.sha256(source.read_bytes()).hexdigest() != digest
@@ -422,8 +515,15 @@ def read_native_obstacles(
     if (rules_path.read_bytes() if rules_path.is_file() else None) != rules_bytes:
         raise RuntimeError("Project net-class rules changed during inspection")
     return NativeSnapshot(
-        digest, tuple(obstacles), ignored_zones, tuple(vias), copper_thicknesses,
-        reference_status, reference_count, reference_unmodeled, enabled_layers,
+        digest,
+        tuple(obstacles),
+        ignored_zones,
+        tuple(vias),
+        copper_thicknesses,
+        reference_status,
+        reference_count,
+        reference_unmodeled,
+        enabled_layers,
     )
 
 

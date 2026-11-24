@@ -223,7 +223,9 @@ def audit(project, manufacturing, gallery=None, archive=None):
                 and ".." not in relative.parts
                 and relative.parts[0] in {"data", "design"}
             )
-            evidence_path = data_reference(project, relative.as_posix()) if valid_path else None
+            evidence_path = (
+                data_reference(project, relative.as_posix()) if valid_path else None
+            )
             check(
                 evidence_path is not None
                 and evidence_path.is_file()

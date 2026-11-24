@@ -77,8 +77,10 @@ def _without_unattached_tail(board, item, pieces, proposed, vias, protected_site
         return pieces
     tail = matching[0]
     join = tail.end if tail.start == marker else tail.start
-    if any(layer == tail.layer and _point_in_trace(site, tail, int(copper_width(item)))
-           for site, layer in protected_sites):
+    if any(
+        layer == tail.layer and _point_in_trace(site, tail, int(copper_width(item)))
+        for site, layer in protected_sites
+    ):
         return pieces
     # The proposed copper must not need the part we intend to remove.
     if any(_contacts(tail, segment) - {join} for segment in proposed):
@@ -89,23 +91,46 @@ def _without_unattached_tail(board, item, pieces, proposed, vias, protected_site
     # Bounding boxes deliberately overselect: pads, traces, vias and zones on
     # the same net anywhere along this tail make removal ineligible.
     radius = (copper_width(item) + 1) // 2
-    left, right = min(tail.start.x, tail.end.x) - radius, max(tail.start.x, tail.end.x) + radius
-    top, bottom = min(tail.start.y, tail.end.y) - radius, max(tail.start.y, tail.end.y) + radius
+    left, right = (
+        min(tail.start.x, tail.end.x) - radius,
+        max(tail.start.x, tail.end.x) + radius,
+    )
+    top, bottom = (
+        min(tail.start.y, tail.end.y) - radius,
+        max(tail.start.y, tail.end.y) + radius,
+    )
     identifier = item.m_Uuid.AsString()
     layer = board.GetLayerID(tail.layer)
     for other in (*board.GetPads(), *board.GetTracks(), *board.Zones()):
-        if (other.m_Uuid.AsString() == identifier or other.GetNetname() != item.GetNetname()
-                or not other.IsOnLayer(layer)):
+        if (
+            other.m_Uuid.AsString() == identifier
+            or other.GetNetname() != item.GetNetname()
+            or not other.IsOnLayer(layer)
+        ):
             continue
         bounds = other.GetBoundingBox()
-        if (bounds.GetX() <= right and bounds.GetRight() >= left
-                and bounds.GetY() <= bottom and bounds.GetBottom() >= top):
+        if (
+            bounds.GetX() <= right
+            and bounds.GetRight() >= left
+            and bounds.GetY() <= bottom
+            and bounds.GetBottom() >= top
+        ):
             return pieces
     return tuple(piece for piece in pieces if piece != tail)
 
 
-def _merge_collinear_extensions(board, old, segments, split_ids, removed_ids,
-                                net, width, via_size, vias, segment_dimensions):
+def _merge_collinear_extensions(
+    board,
+    old,
+    segments,
+    split_ids,
+    removed_ids,
+    net,
+    width,
+    via_size,
+    vias,
+    segment_dimensions,
+):
     """Merge exact, unanchored degree-two joins without changing copper shape."""
     import pcbnew
 
@@ -125,17 +150,28 @@ def _merge_collinear_extensions(board, old, segments, split_ids, removed_ids,
     def anchored(point, layer):
         location = pcbnew.VECTOR2I(point.x, point.y)
         layer_id = board.GetLayerID(layer)
-        if any(pad.IsOnLayer(layer_id) and pad.HitTest(location) for pad in board.GetPads()):
+        if any(
+            pad.IsOnLayer(layer_id) and pad.HitTest(location) for pad in board.GetPads()
+        ):
             return True
-        if any(math.hypot(via.at.x - point.x, via.at.y - point.y) <= via_size / 2 for via in vias):
+        if any(
+            math.hypot(via.at.x - point.x, via.at.y - point.y) <= via_size / 2
+            for via in vias
+        ):
             return True
         for item in board.GetTracks():
-            if (item.m_Uuid.AsString() in removed_ids or item.GetNetname() != net
-                    or not item.IsOnLayer(layer_id)):
+            if (
+                item.m_Uuid.AsString() in removed_ids
+                or item.GetNetname() != net
+                or not item.IsOnLayer(layer_id)
+            ):
                 continue
             if isinstance(item, pcbnew.PCB_VIA):
                 center = item.GetPosition()
-                if math.hypot(center.x - point.x, center.y - point.y) <= copper_width(item, layer=layer_id) / 2:
+                if (
+                    math.hypot(center.x - point.x, center.y - point.y)
+                    <= copper_width(item, layer=layer_id) / 2
+                ):
                     return True
             elif isinstance(item, pcbnew.PCB_ARC) and item.HitTest(location):
                 return True
@@ -150,18 +186,30 @@ def _merge_collinear_extensions(board, old, segments, split_ids, removed_ids,
             for joint in (current.start, current.end):
                 if anchored(joint, current.layer):
                     continue
-                if any(i != index and other.layer == current.layer and on_segment(joint, other)
-                       for i, other in enumerate(result)):
+                if any(
+                    i != index
+                    and other.layer == current.layer
+                    and on_segment(joint, other)
+                    for i, other in enumerate(result)
+                ):
                     continue
-                touching = [(item, segment) for item, segment in old
-                            if item.m_Uuid.AsString() not in consumed and segment.layer == current.layer
-                            and on_segment(joint, segment)]
+                touching = [
+                    (item, segment)
+                    for item, segment in old
+                    if item.m_Uuid.AsString() not in consumed
+                    and segment.layer == current.layer
+                    and on_segment(joint, segment)
+                ]
                 if len(touching) != 1:
                     continue
                 item, previous = touching[0]
-                if (item.m_Uuid.AsString() in split_ids
-                        or joint not in (previous.start, previous.end) or item.IsLocked()
-                        or item.GetParentGroup() is not None or copper_width(item) != current_width):
+                if (
+                    item.m_Uuid.AsString() in split_ids
+                    or joint not in (previous.start, previous.end)
+                    or item.IsLocked()
+                    or item.GetParentGroup() is not None
+                    or copper_width(item) != current_width
+                ):
                     continue
                 first = previous.end if previous.start == joint else previous.start
                 last = current.end if current.start == joint else current.start
@@ -217,10 +265,14 @@ def junction_changes(
         raise ValueError("merge_collinear must be true or false")
     if pruned_tails is not None and not isinstance(pruned_tails, list):
         raise ValueError("pruned_tails must be a list")
-    if (not isinstance(protected_sites, tuple) or any(
-        not isinstance(site, tuple) or len(site) != 2 or not isinstance(site[0], Point)
-        or not isinstance(site[1], str) or not site[1] for site in protected_sites
-    )):
+    if not isinstance(protected_sites, tuple) or any(
+        not isinstance(site, tuple)
+        or len(site) != 2
+        or not isinstance(site[0], Point)
+        or not isinstance(site[1], str)
+        or not site[1]
+        for site in protected_sites
+    ):
         raise ValueError("Protected sites must be point and layer pairs")
     segments = route.segments
     cuts = [{s.start, s.end} for s in segments]
@@ -282,13 +334,24 @@ def junction_changes(
     )
     if merge_collinear:
         new_segments, merged = _merge_collinear_extensions(
-            board, old, new_segments,
-            {item.m_Uuid.AsString() for item, _ in replacements}, removed_copper_ids,
-            net, width, via_size, (*route.vias, *route.reused_vias), segment_dimensions,
+            board,
+            old,
+            new_segments,
+            {item.m_Uuid.AsString() for item, _ in replacements},
+            removed_copper_ids,
+            net,
+            width,
+            via_size,
+            (*route.vias, *route.reused_vias),
+            segment_dimensions,
         )
         replacements.extend((item, ()) for item in merged)
     changes = campaign_changes(
-        replace(route, segments=new_segments), net, width, via_size, via_drill,
+        replace(route, segments=new_segments),
+        net,
+        width,
+        via_size,
+        via_drill,
         segment_dimensions=segment_dimensions,
     )
     removals = []
@@ -314,10 +377,13 @@ def junction_changes(
             removal = {"kind": "segment", "uuid": identifier}
             removals.append(removal)
             if prune_dangling_tails:
-                retained = _without_unattached_tail(board, item, pieces, segments, route.vias,
-                                                     protected_sites)
+                retained = _without_unattached_tail(
+                    board, item, pieces, segments, route.vias, protected_sites
+                )
                 if pruned_tails is not None:
-                    pruned_tails.extend((identifier, piece) for piece in pieces if piece not in retained)
+                    pruned_tails.extend(
+                        (identifier, piece) for piece in pieces if piece not in retained
+                    )
                 pieces = retained
             replacement = replace(route, segments=pieces, vias=(), reused_vias=())
             changes.extend(

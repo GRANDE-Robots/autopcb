@@ -34,7 +34,9 @@ from pcb.route_validation import _copy_inputs, _drc as _native_drc
 from core.toolchain import RouterCache
 from core.compat import strict_zip
 
-FASTROUTE_014_SHA256 = "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714ddae23f1e5"
+FASTROUTE_014_SHA256 = (
+    "764d6289173d5a3c66d34bc1c1d8e3e1ceea6121a78c51c7738714ddae23f1e5"
+)
 
 
 def _java_executable(value: str) -> str:
@@ -50,7 +52,9 @@ def _java_executable(value: str) -> str:
             r'\s*@echo\s+off\s*\r?\n\s*"([^"\r\n]+)"\s+%\*\s*', text, re.I
         )
         if not match or not Path(match.group(1)).is_file():
-            raise ValueError("Java is a batch wrapper; supply the path to the java executable")
+            raise ValueError(
+                "Java is a batch wrapper; supply the path to the java executable"
+            )
         path = Path(match.group(1))
     return str(path)
 
@@ -68,7 +72,9 @@ def _required_java(jar: Path) -> int:
         with zipfile.ZipFile(jar) as archive:
             header = archive.read("app/freerouting/Freerouting.class")[:8]
     except (OSError, KeyError, zipfile.BadZipFile) as error:
-        raise ValueError("The Freerouting JAR has no readable entry-point class") from error
+        raise ValueError(
+            "The Freerouting JAR has no readable entry-point class"
+        ) from error
     if len(header) != 8 or header[:4] != bytes.fromhex("cafebabe"):
         raise ValueError("The Freerouting entry-point class has an invalid header")
     version = int.from_bytes(header[6:8], "big") - 44
@@ -80,7 +86,13 @@ def _required_java(jar: Path) -> int:
 def _java_candidates() -> list[str]:
     candidates = []
     if os.environ.get("JAVA_HOME"):
-        candidates.append(str(Path(os.environ["JAVA_HOME"]) / "bin" / ("java.exe" if os.name == "nt" else "java")))
+        candidates.append(
+            str(
+                Path(os.environ["JAVA_HOME"])
+                / "bin"
+                / ("java.exe" if os.name == "nt" else "java")
+            )
+        )
     if shutil.which("java"):
         candidates.append("java")
     private = RouterCache.root()
@@ -92,10 +104,17 @@ def _java_candidates() -> list[str]:
 
 def _java_version(executable: str) -> int:
     result = subprocess.run(
-        [executable, "-version"], capture_output=True, text=True, timeout=10, check=False
+        [executable, "-version"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
-    match = re.search(r'(?:version\s+")?(?:openjdk\s+)?(1\.)?(\d+)(?:[.\s"\-]|$)',
-                      result.stderr + "\n" + result.stdout, re.I)
+    match = re.search(
+        r'(?:version\s+")?(?:openjdk\s+)?(1\.)?(\d+)(?:[.\s"\-]|$)',
+        result.stderr + "\n" + result.stdout,
+        re.I,
+    )
     if result.returncode or not match:
         raise ValueError(f"Could not determine the Java version for {executable}")
     return int(match.group(2))
@@ -107,7 +126,9 @@ def _select_java(value: str, jar: Path) -> str:
         executable = _java_executable(value)
         available = _java_version(executable)
         if available < required:
-            raise ValueError(f"Freerouting needs Java {required} or newer; {executable} is Java {available}")
+            raise ValueError(
+                f"Freerouting needs Java {required} or newer; {executable} is Java {available}"
+            )
         return executable
     for candidate in _java_candidates():
         try:
@@ -116,7 +137,9 @@ def _select_java(value: str, jar: Path) -> str:
                 return executable
         except (OSError, ValueError, subprocess.SubprocessError):
             continue
-    raise ValueError(f"Freerouting needs Java {required} or newer; install it or pass --java")
+    raise ValueError(
+        f"Freerouting needs Java {required} or newer; install it or pass --java"
+    )
 
 
 def _fingerprints(files: list[Path], root: Path) -> dict[str, str]:
@@ -131,7 +154,9 @@ def _source_files(board: Path) -> list[Path]:
 
     paths = ProjectPaths(board)
     if not all(path.is_file() for path in paths.sources):
-        raise ValueError("Freerouting needs a saved PCB, schematic, KiCad project and custom rules")
+        raise ValueError(
+            "Freerouting needs a saved PCB, schematic, KiCad project and custom rules"
+        )
     return list(paths.audit_inputs())
 
 
@@ -185,7 +210,9 @@ def _native_zone_keys(board: Any) -> set[tuple[str, str]]:
     }
 
 
-def _strip_zone_planes(design: Path, zone_keys: set[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+def _strip_zone_planes(
+    design: Path, zone_keys: set[tuple[str, str]]
+) -> tuple[tuple[str, str], ...]:
     """Avoid assuming a KiCad signal-layer zone is an uninterrupted plane.
 
     Only the temporary DSN changes. KiCad refills the original zones and the
@@ -206,9 +233,12 @@ def _strip_zone_planes(design: Path, zone_keys: set[tuple[str, str]]) -> tuple[t
     removed = []
     for plane in structure.children("plane"):
         atoms, shapes = plane.atoms(), plane.children()
-        if (len(atoms) != 2 or len(shapes) != 1
-                or shapes[0].name not in {"polygon", "rect", "path"}
-                or len(shapes[0].atoms()) < 2):
+        if (
+            len(atoms) != 2
+            or len(shapes) != 1
+            or shapes[0].name not in {"polygon", "rect", "path"}
+            or len(shapes[0].atoms()) < 2
+        ):
             raise ValueError("Cannot safely interpret an exported DSN plane")
         key = (atoms[1].value, shapes[0].atoms()[1].value)
         if key[1] not in layers:
@@ -246,23 +276,30 @@ def _set_equal_layer_costs(design: Path, *, optimizer: bool = False) -> tuple[st
     if len(set(names)) != len(names):
         raise ValueError("The exported DSN has duplicate layers")
     local_after = layers[-1].end
-    if any(item.start < local_after for name in ("plane", "keepout", "via_keepout", "place_keepout")
-           for item in structure.children(name)):
+    if any(
+        item.start < local_after
+        for name in ("plane", "keepout", "via_keepout", "place_keepout")
+        for item in structure.children(name)
+    ):
         raise ValueError("The exported DSN defines obstacles before all copper layers")
     after = start + local_after
     angle = structure.children("snap_angle")
-    if angle and (len(angle) != 1 or len(angle[0].atoms()) != 2
-                  or angle[0].atoms()[1].value != "fortyfive_degree"):
+    if angle and (
+        len(angle) != 1
+        or len(angle[0].atoms()) != 2
+        or angle[0].atoms()[1].value != "fortyfive_degree"
+    ):
         raise ValueError("The exported DSN has incompatible snap-angle settings")
     rules = [
-        f'    (layer_rule {quote(name)} (active on) (preferred_direction horizontal) '
-        '(preferred_direction_trace_costs 1.0) (against_preferred_direction_trace_costs 1.0))'
+        f"    (layer_rule {quote(name)} (active on) (preferred_direction horizontal) "
+        "(preferred_direction_trace_costs 1.0) (against_preferred_direction_trace_costs 1.0))"
         for name in names
     ]
     postroute = "on" if optimizer else "off"
-    settings = (f"\n    (autoroute_settings (autoroute on) (postroute {postroute}) (vias on) "
-                "(via_costs 10) (plane_via_costs 10)\n"
-                + "\n".join(rules) + ")\n")
+    settings = (
+        f"\n    (autoroute_settings (autoroute on) (postroute {postroute}) (vias on) "
+        "(via_costs 10) (plane_via_costs 10)\n" + "\n".join(rules) + ")\n"
+    )
     if not angle:
         settings += "    (snap_angle fortyfive_degree)\n"
     design.write_text(text[:after] + settings + text[after:], encoding="utf-8")
@@ -270,21 +307,30 @@ def _set_equal_layer_costs(design: Path, *, optimizer: bool = False) -> tuple[st
 
 
 def _prepare_router_dsn(
-    board: Any, design: Path, *, optimizer: bool, ground_contact_margin_mm: float = .5,
+    board: Any,
+    design: Path,
+    *,
+    optimizer: bool,
+    ground_contact_margin_mm: float = 0.5,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
     """Apply the same conservative temporary export to every router path."""
     import pcbnew
 
     from pcb.net_routing.export_reservations import temporary_router_reservations
 
-    with temporary_router_reservations(board, ground_contact_margin_mm=ground_contact_margin_mm) as reservations:
+    with temporary_router_reservations(
+        board, ground_contact_margin_mm=ground_contact_margin_mm
+    ) as reservations:
         if not pcbnew.ExportSpecctraDSN(board, str(design)):
             raise RuntimeError("KiCad could not export a temporary router DSN")
         if any(reservations.values()):
-            print("Local search reservations: "
-                  f"{reservations['reference_areas']} reference corridors, "
-                  f"{reservations['ground_contact_areas']} ground-contact regions",
-                  file=sys.stderr, flush=True)
+            print(
+                "Local search reservations: "
+                f"{reservations['reference_areas']} reference corridors, "
+                f"{reservations['ground_contact_areas']} ground-contact regions",
+                file=sys.stderr,
+                flush=True,
+            )
     removed = _strip_zone_planes(design, _native_zone_keys(board))
     return _set_equal_layer_costs(design, optimizer=optimizer), removed
 
@@ -296,8 +342,12 @@ def _complete_fastroute_session(path: Path) -> bool:
     except (OSError, UnicodeError, ValueError):
         return False
     routes = session.children("routes")
-    return (session.name == "session" and len(session.children("base_design")) == 1
-            and len(routes) == 1 and len(routes[0].children("network_out")) == 1)
+    return (
+        session.name == "session"
+        and len(session.children("base_design")) == 1
+        and len(routes) == 1
+        and len(routes[0].children("network_out")) == 1
+    )
 
 
 def _routing_only_session(source: str) -> str:
@@ -305,14 +355,18 @@ def _routing_only_session(source: str) -> str:
     session = parse(source)
     placements = session.children("placement")
     routes = session.children("routes")
-    if (session.name != "session" or len(session.children("base_design")) != 1
-            or len(placements) > 1 or len(routes) != 1
-            or len(routes[0].children("network_out")) != 1):
+    if (
+        session.name != "session"
+        or len(session.children("base_design")) != 1
+        or len(placements) > 1
+        or len(routes) != 1
+        or len(routes[0].children("network_out")) != 1
+    ):
         raise ValueError("Cannot safely interpret the routing session")
     if not placements:
         return source
     placement = placements[0]
-    return source[:placement.start] + source[placement.end:]
+    return source[: placement.start] + source[placement.end :]
 
 
 def _routing_only_session_file(session: Path) -> Path:
@@ -349,31 +403,42 @@ def _alias_deferred_default(design: Path, deferred: tuple[str, ...]) -> tuple[st
     text = design.read_text(encoding="utf-8")
     start, network = _dsn_scope(text, "network")
     classes = network.children("class")
-    defaults = [item for item in classes if len(item.atoms()) >= 2
-                and item.atoms()[1].value == "kicad_default"]
+    defaults = [
+        item
+        for item in classes
+        if len(item.atoms()) >= 2 and item.atoms()[1].value == "kicad_default"
+    ]
     alias = "AUTOPCB_DEFER_DEFAULT"
-    if len(defaults) != 1 or any(len(item.atoms()) >= 2 and item.atoms()[1].value == alias for item in classes):
+    if len(defaults) != 1 or any(
+        len(item.atoms()) >= 2 and item.atoms()[1].value == alias for item in classes
+    ):
         raise ValueError("Cannot safely alias the exported default net class")
     name = defaults[0].atoms()[1]
     edits = [(start + name.start, start + name.end, alias)]
     for _, members in _cross_class_members(network):
-        edits.extend((start + atom.start, start + atom.end, alias)
-                     for atom in members if atom.value == "kicad_default")
+        edits.extend(
+            (start + atom.start, start + atom.end, alias)
+            for atom in members
+            if atom.value == "kicad_default"
+        )
     for first, last, replacement in sorted(edits, reverse=True):
         text = text[:first] + replacement + text[last:]
     design.write_text(text, encoding="utf-8")
     return tuple(alias if item == "kicad_default" else item for item in deferred)
 
 
-def _defer_selected_nets(design: Path, nets: tuple[str, ...],
-                         deferred_classes: tuple[str, ...]) -> tuple[str, ...]:
+def _defer_selected_nets(
+    design: Path, nets: tuple[str, ...], deferred_classes: tuple[str, ...]
+) -> tuple[str, ...]:
     """Temporarily split net classes without changing their routing rules."""
     if not nets:
         return ()
     text = design.read_text(encoding="utf-8")
     start, network = _dsn_scope(text, "network")
     classes = network.children("class")
-    existing_names = {item.atoms()[1].value for item in classes if len(item.atoms()) >= 2}
+    existing_names = {
+        item.atoms()[1].value for item in classes if len(item.atoms()) >= 2
+    }
     matches = {name: [] for name in nets}
     for item in classes:
         for atom in item.atoms()[2:]:
@@ -405,8 +470,12 @@ def _defer_selected_nets(design: Path, nets: tuple[str, ...],
         existing_names.add(alias)
         aliases[class_name] = alias
         # Preserve every class setting, including widths, clearances and vias.
-        settings = " ".join(text[start + child.start:start + child.end] for child in item.children())
-        member_names = " ".join(text[start + atom.start:start + atom.end] for atom in chosen)
+        settings = " ".join(
+            text[start + child.start : start + child.end] for child in item.children()
+        )
+        member_names = " ".join(
+            text[start + atom.start : start + atom.end] for atom in chosen
+        )
         additions.append(f"\n    (class {alias} {member_names} {settings})")
         ignored.append(alias)
         edits.extend((start + atom.start, start + atom.end, "") for atom in chosen)
@@ -419,16 +488,29 @@ def _defer_selected_nets(design: Path, nets: tuple[str, ...],
             changed = [atom for atom in members if atom.value in aliases]
             if len(changed) > 8:
                 raise ValueError("A cross-class rule has too many alias combinations")
-            source = text[start + rule.start:start + rule.end]
+            source = text[start + rule.start : start + rule.end]
             for mask in range(1, 1 << len(changed)):
                 duplicate = source
-                replacements = [(atom.start - rule.start, atom.end - rule.start, aliases[atom.value])
-                                for index, atom in enumerate(changed) if mask & (1 << index)]
+                replacements = [
+                    (
+                        atom.start - rule.start,
+                        atom.end - rule.start,
+                        aliases[atom.value],
+                    )
+                    for index, atom in enumerate(changed)
+                    if mask & (1 << index)
+                ]
                 for first, last, replacement in sorted(replacements, reverse=True):
                     duplicate = duplicate[:first] + replacement + duplicate[last:]
                 inherited.add(duplicate)
         additions.extend("\n    " + rule for rule in sorted(inherited))
-        edits.append((start + network.end - 1, start + network.end - 1, "".join(additions) + "\n  "))
+        edits.append(
+            (
+                start + network.end - 1,
+                start + network.end - 1,
+                "".join(additions) + "\n  ",
+            )
+        )
         for first, last, replacement in sorted(edits, reverse=True):
             text = text[:first] + replacement + text[last:]
         design.write_text(text, encoding="utf-8")
@@ -442,8 +524,13 @@ def _dsn_width_factor(text: str) -> int:
     return {"um": 1_000, "mm": 1_000_000, "mil": 25_400, "inch": 25_400_000}[units[0]]
 
 
-def _compiled_router_widths(board, rules_path: Path, *, ignore_nets: tuple[str, ...] = (),
-                            ignore_classes: tuple[str, ...] = ()) -> dict[str, int]:
+def _compiled_router_widths(
+    board,
+    rules_path: Path,
+    *,
+    ignore_nets: tuple[str, ...] = (),
+    ignore_classes: tuple[str, ...] = (),
+) -> dict[str, int]:
     """Compile conservative whole-net search widths from the saved custom rules.
 
     Local escape minima cannot become trunk widths. A definite named-net rule
@@ -455,10 +542,10 @@ def _compiled_router_widths(board, rules_path: Path, *, ignore_nets: tuple[str, 
     eligible = []
     for raw in board.GetNetsByName():
         name = str(raw)
-        if not name or name.startswith('unconnected-') or name in ignore_nets:
+        if not name or name.startswith("unconnected-") or name in ignore_nets:
             continue
         netclass = str(board.FindNet(name).GetNetClassName())
-        router_class = 'kicad_default' if netclass == 'Default' else netclass
+        router_class = "kicad_default" if netclass == "Default" else netclass
         if router_class not in ignore_classes:
             eligible.append(name)
     if not eligible:
@@ -474,48 +561,61 @@ def _set_net_widths(design: Path, widths: dict[str, int]) -> None:
     clearance relationship. All edits are made to a disposable DSN, after the
     complete class inventory and bounded alias expansion have been checked.
     """
-    if (not isinstance(widths, dict) or len(widths) > 4096 or any(
-            not isinstance(name, str) or not name or isinstance(width, bool)
-            or not isinstance(width, int) or width <= 0 for name, width in widths.items())):
-        raise ValueError('Router widths require named nets and positive integer dimensions')
+    if (
+        not isinstance(widths, dict)
+        or len(widths) > 4096
+        or any(
+            not isinstance(name, str)
+            or not name
+            or isinstance(width, bool)
+            or not isinstance(width, int)
+            or width <= 0
+            for name, width in widths.items()
+        )
+    ):
+        raise ValueError(
+            "Router widths require named nets and positive integer dimensions"
+        )
     if not widths:
         return
-    text = design.read_text(encoding='utf-8')
+    text = design.read_text(encoding="utf-8")
     factor = _dsn_width_factor(text)
-    start, network = _dsn_scope(text, 'network')
-    classes = network.children('class')
+    start, network = _dsn_scope(text, "network")
+    classes = network.children("class")
     matches = {name: [] for name in widths}
     names = set()
     for item in classes:
         atoms = item.atoms()
         if len(atoms) < 2 or atoms[1].value in names:
-            raise ValueError('The exported DSN contains an invalid net class')
+            raise ValueError("The exported DSN contains an invalid net class")
         names.add(atoms[1].value)
         for atom in atoms[2:]:
             if atom.value in matches:
                 matches[atom.value].append(item)
     if any(len(found) != 1 for found in matches.values()):
-        raise ValueError('Cannot safely identify compiled-width net class membership')
+        raise ValueError("Cannot safely identify compiled-width net class membership")
     edits, additions, aliases = [], [], defaultdict(list)
     for item in classes:
         atoms = item.atoms()
         selected = [atom for atom in atoms[2:] if atom.value in widths]
         if not selected:
             continue
-        rules = item.children('rule')
-        values = rules[0].children('width') if len(rules) == 1 else []
+        rules = item.children("rule")
+        values = rules[0].children("width") if len(rules) == 1 else []
         tokens = values[0].atoms() if len(values) == 1 else []
         if len(tokens) != 2:
-            raise ValueError('Cannot safely interpret a router class width')
+            raise ValueError("Cannot safely interpret a router class width")
         try:
             existing = Decimal(tokens[1].value)
         except InvalidOperation as error:
-            raise ValueError('Cannot safely interpret a router class width') from error
+            raise ValueError("Cannot safely interpret a router class width") from error
         if not existing.is_finite() or existing <= 0:
-            raise ValueError('Cannot safely interpret a router class width')
+            raise ValueError("Cannot safely interpret a router class width")
         groups = defaultdict(list)
         for atom in selected:
-            width = (Decimal(widths[atom.value]) / factor).quantize(Decimal('0.000001'), rounding=ROUND_CEILING)
+            width = (Decimal(widths[atom.value]) / factor).quantize(
+                Decimal("0.000001"), rounding=ROUND_CEILING
+            )
             if width != existing:
                 groups[width].append(atom)
         changed = {atom.value for members in groups.values() for atom in members}
@@ -523,45 +623,67 @@ def _set_net_widths(design: Path, widths: dict[str, int]) -> None:
             # Keep one group on the original class, avoiding empty classes.
             width = min(groups)
             groups.pop(width)
-            edits.append((start + tokens[1].start, start + tokens[1].end, format(width, 'f')))
+            edits.append(
+                (start + tokens[1].start, start + tokens[1].end, format(width, "f"))
+            )
         for width, members in sorted(groups.items()):
-            alias = f'AUTOPCB_WIDTH_{len(additions) + 1}'
+            alias = f"AUTOPCB_WIDTH_{len(additions) + 1}"
             if alias in names:
-                raise ValueError('A temporary compiled-width class already exists')
+                raise ValueError("A temporary compiled-width class already exists")
             names.add(alias)
             aliases[atoms[1].value].append(alias)
             chosen = {atom.value for atom in members}
-            snippet = text[start + item.start:start + item.end]
-            local = [(tokens[1].start - item.start, tokens[1].end - item.start, format(width, 'f')),
-                     (atoms[1].start - item.start, atoms[1].end - item.start, quote(alias))]
-            local.extend((atom.start - item.start, atom.end - item.start, '')
-                         for atom in atoms[2:] if atom.value not in chosen)
+            snippet = text[start + item.start : start + item.end]
+            local = [
+                (
+                    tokens[1].start - item.start,
+                    tokens[1].end - item.start,
+                    format(width, "f"),
+                ),
+                (atoms[1].start - item.start, atoms[1].end - item.start, quote(alias)),
+            ]
+            local.extend(
+                (atom.start - item.start, atom.end - item.start, "")
+                for atom in atoms[2:]
+                if atom.value not in chosen
+            )
             for first, last, replacement in sorted(local, reverse=True):
                 snippet = snippet[:first] + replacement + snippet[last:]
             additions.append(snippet)
-            edits.extend((start + atom.start, start + atom.end, '') for atom in members)
+            edits.extend((start + atom.start, start + atom.end, "") for atom in members)
     inherited = set()
     for rule, members in _cross_class_members(network):
         choices = [(atom.value, *aliases[atom.value]) for atom in members]
         count = math.prod(len(choice) for choice in choices)
         if count > 1024 or len(inherited) + count > 4096:
-            raise ValueError('Compiled-width clearance inheritance exceeds its expansion budget')
+            raise ValueError(
+                "Compiled-width clearance inheritance exceeds its expansion budget"
+            )
         for variant in product(*choices):
             if all(name == atom.value for atom, name in strict_zip(members, variant)):
                 continue
-            snippet = text[start + rule.start:start + rule.end]
-            replacements = [(atom.start - rule.start, atom.end - rule.start, quote(name))
-                            for atom, name in strict_zip(members, variant) if atom.value != name]
+            snippet = text[start + rule.start : start + rule.end]
+            replacements = [
+                (atom.start - rule.start, atom.end - rule.start, quote(name))
+                for atom, name in strict_zip(members, variant)
+                if atom.value != name
+            ]
             for first, last, replacement in sorted(replacements, reverse=True):
                 snippet = snippet[:first] + replacement + snippet[last:]
             inherited.add(snippet)
     additions.extend(sorted(inherited))
     if additions:
-        edits.append((start + network.end - 1, start + network.end - 1, '\n    ' + '\n    '.join(additions) + '\n'))
+        edits.append(
+            (
+                start + network.end - 1,
+                start + network.end - 1,
+                "\n    " + "\n    ".join(additions) + "\n",
+            )
+        )
     if edits:
         for first, last, replacement in sorted(edits, reverse=True):
             text = text[:first] + replacement + text[last:]
-        design.write_text(text, encoding='utf-8')
+        design.write_text(text, encoding="utf-8")
 
 
 def _enforce_width_floors(design: Path, floors: dict[str, int]) -> None:
@@ -571,10 +693,16 @@ def _enforce_width_floors(design: Path, floors: dict[str, int]) -> None:
     never changes project rules or reduces a width; native checks still apply.
     """
     if not isinstance(floors, dict) or any(
-        not isinstance(name, str) or not name or isinstance(width, bool)
-        or not isinstance(width, int) or width <= 0 for name, width in floors.items()
+        not isinstance(name, str)
+        or not name
+        or isinstance(width, bool)
+        or not isinstance(width, int)
+        or width <= 0
+        for name, width in floors.items()
     ):
-        raise ValueError("Router width floors require named nets and positive integer dimensions")
+        raise ValueError(
+            "Router width floors require named nets and positive integer dimensions"
+        )
     if not floors:
         return
     text = design.read_text(encoding="utf-8")
@@ -593,7 +721,9 @@ def _enforce_width_floors(design: Path, floors: dict[str, int]) -> None:
         raise ValueError("Cannot safely identify width-floor net class membership")
     edits = []
     for item in classes:
-        requested = [floors[atom.value] for atom in item.atoms()[2:] if atom.value in floors]
+        requested = [
+            floors[atom.value] for atom in item.atoms()[2:] if atom.value in floors
+        ]
         if not requested:
             continue
         rules = item.children("rule")
@@ -608,9 +738,12 @@ def _enforce_width_floors(design: Path, floors: dict[str, int]) -> None:
         if not existing.is_finite() or existing <= 0:
             raise ValueError("Cannot safely interpret a router class width")
         required = (Decimal(max(requested)) / factor).quantize(
-            Decimal("0.000001"), rounding=ROUND_CEILING)
+            Decimal("0.000001"), rounding=ROUND_CEILING
+        )
         if required > existing:
-            edits.append((start + atoms[1].start, start + atoms[1].end, format(required, "f")))
+            edits.append(
+                (start + atoms[1].start, start + atoms[1].end, format(required, "f"))
+            )
     if edits:
         for first, last, replacement in sorted(edits, reverse=True):
             text = text[:first] + replacement + text[last:]
@@ -624,12 +757,19 @@ def _verify_reported_costs(log: Path, layer_count: int) -> None:
     found = re.findall(r"Layer\s+(\d+):\s*" + number + r"\s*/\s*" + number, text)
     vias = re.findall(r"Via Costs:\s*(\d+),\s*Plane Via Costs:\s*(\d+)", text)
     last = found[-layer_count:]
-    if (len(last) != layer_count
-            or [int(item[0]) for item in last] != list(range(1, layer_count + 1))
-            or any(float(preferred) != 1.0 or float(other) != 1.0
-                   for _, preferred, other in last)
-            or not vias or vias[-1] != ("10", "10")):
-        raise RuntimeError(f"Freerouting did not use the requested equal layer costs; inspect {log}")
+    if (
+        len(last) != layer_count
+        or [int(item[0]) for item in last] != list(range(1, layer_count + 1))
+        or any(
+            float(preferred) != 1.0 or float(other) != 1.0
+            for _, preferred, other in last
+        )
+        or not vias
+        or vias[-1] != ("10", "10")
+    ):
+        raise RuntimeError(
+            f"Freerouting did not use the requested equal layer costs; inspect {log}"
+        )
 
 
 def _snapshot(board: Path, destination: Path) -> dict[str, str]:
@@ -643,7 +783,9 @@ def _snapshot(board: Path, destination: Path) -> dict[str, str]:
     _copy_inputs(list(files), board, destination)
     if files != _source_files(board) or _fingerprints(files, board.parent) != before:
         raise RuntimeError("Project inputs changed while taking the snapshot")
-    copied = _fingerprints(_source_files(native_path(destination, ".kicad_pcb")), destination)
+    copied = _fingerprints(
+        _source_files(native_path(destination, ".kicad_pcb")), destination
+    )
     if copied != before:
         raise RuntimeError("The trial copy does not match the saved project inputs")
     return before
@@ -729,7 +871,7 @@ def preview(
     engine: str = "Freerouting",
     minimum_widths: dict[str, int] | None = None,
     trial_root: Path | None = None,
-    ground_contact_margin_mm: float = .5,
+    ground_contact_margin_mm: float = 0.5,
     search_pad_neckdown: bool = False,
 ) -> dict[str, Any]:
     import pcbnew
@@ -749,7 +891,9 @@ def preview(
         raise ValueError(f"The {engine} executable is required")
     jar_sha256 = hashlib.sha256(jar.read_bytes()).hexdigest()
     if engine == "fastroute" and jar_sha256 != FASTROUTE_014_SHA256:
-        raise ValueError("The fastroute executable does not match the verified 0.1.14 release")
+        raise ValueError(
+            "The fastroute executable does not match the verified 0.1.14 release"
+        )
     executable = _select_java(java, jar) if engine == "Freerouting" else str(jar)
     if passes < 1 or timeout < 1:
         raise ValueError("Passes and timeout must both be positive")
@@ -761,15 +905,28 @@ def preview(
         raise ValueError("ignore_high_speed must be true or false")
     if max_items is not None and (isinstance(max_items, bool) or max_items < 1):
         raise ValueError("The item limit must be a positive integer")
-    if (not isinstance(ignore_net_classes, tuple)
-            or any(not isinstance(name, str) or not name or "," in name
-                   or any(ord(char) < 32 for char in name) for name in ignore_net_classes)
-            or len(set(ignore_net_classes)) != len(ignore_net_classes)):
+    if (
+        not isinstance(ignore_net_classes, tuple)
+        or any(
+            not isinstance(name, str)
+            or not name
+            or "," in name
+            or any(ord(char) < 32 for char in name)
+            for name in ignore_net_classes
+        )
+        or len(set(ignore_net_classes)) != len(ignore_net_classes)
+    ):
         raise ValueError("Deferred net classes must be distinct, nonempty class names")
-    if (not isinstance(ignore_nets, tuple)
-            or any(not isinstance(name, str) or not name or any(ord(char) < 32 for char in name)
-                   for name in ignore_nets)
-            or len(set(ignore_nets)) != len(ignore_nets)):
+    if (
+        not isinstance(ignore_nets, tuple)
+        or any(
+            not isinstance(name, str)
+            or not name
+            or any(ord(char) < 32 for char in name)
+            for name in ignore_nets
+        )
+        or len(set(ignore_nets)) != len(ignore_nets)
+    ):
         raise ValueError("Deferred nets must be distinct, nonempty net names")
     trial = Path(tempfile.mkdtemp(prefix="jessie-freeroute-", dir=trial_root))
     inputs = _snapshot(board, trial)
@@ -780,18 +937,41 @@ def preview(
     cli = kicad_cli()
     if not cli.is_file():
         raise RuntimeError("KiCad CLI is required")
-    baseline = {} if defer_native_checks else _drc(cli, trial_board, trial / "baseline-drc.json")
+    baseline = (
+        {}
+        if defer_native_checks
+        else _drc(cli, trial_board, trial / "baseline-drc.json")
+    )
     design, session = trial / "candidate.dsn", trial / "candidate.ses"
     layers, removed_zone_planes = _prepare_router_dsn(
-        native, design, optimizer=not skip_optimizer, ground_contact_margin_mm=ground_contact_margin_mm)
-    critical = (_high_speed_reservations((native_path(trial, ".kicad_pro")).read_bytes(), native)
-                if ignore_high_speed else ())
+        native,
+        design,
+        optimizer=not skip_optimizer,
+        ground_contact_margin_mm=ground_contact_margin_mm,
+    )
+    critical = (
+        _high_speed_reservations(
+            (native_path(trial, ".kicad_pro")).read_bytes(), native
+        )
+        if ignore_high_speed
+        else ()
+    )
     all_deferred_nets = tuple(dict.fromkeys((*ignore_nets, *critical)))
-    _set_net_widths(design, _compiled_router_widths(
-        native, trial_board.with_suffix('.kicad_dru'),
-        ignore_nets=all_deferred_nets, ignore_classes=ignore_net_classes))
-    router_deferred = ignore_net_classes + _defer_selected_nets(design, all_deferred_nets, ignore_net_classes)
-    router_deferred = _alias_deferred_default(design, tuple(dict.fromkeys(router_deferred)))
+    _set_net_widths(
+        design,
+        _compiled_router_widths(
+            native,
+            trial_board.with_suffix(".kicad_dru"),
+            ignore_nets=all_deferred_nets,
+            ignore_classes=ignore_net_classes,
+        ),
+    )
+    router_deferred = ignore_net_classes + _defer_selected_nets(
+        design, all_deferred_nets, ignore_net_classes
+    )
+    router_deferred = _alias_deferred_default(
+        design, tuple(dict.fromkeys(router_deferred))
+    )
     if minimum_widths is not None:
         _enforce_width_floors(design, minimum_widths)
     print(f"{engine} trial: {trial}", file=sys.stderr, flush=True)
@@ -806,20 +986,43 @@ def preview(
     result = None
     with (trial / "freerouting.log").open("w", encoding="utf-8") as log:
         if engine == "Freerouting":
-            command = [executable, f"-Duser.home={home}", "-jar", str(jar),
-                       "-de", str(design), "-do", str(session), "-mp", str(passes),
-                       f"--user_data_path={home}", "--gui.enabled=false",
-                       "--router.fanout.enabled=false",
-                       f"--router.automatic_neckdown={str(search_pad_neckdown).lower()}",
-                       "--router.strict_drc=true", "--router.optimizer.max_threads=1",
-                       "--logging.console.level=DEBUG", "-da"]
+            command = [
+                executable,
+                f"-Duser.home={home}",
+                "-jar",
+                str(jar),
+                "-de",
+                str(design),
+                "-do",
+                str(session),
+                "-mp",
+                str(passes),
+                f"--user_data_path={home}",
+                "--gui.enabled=false",
+                "--router.fanout.enabled=false",
+                f"--router.automatic_neckdown={str(search_pad_neckdown).lower()}",
+                "--router.strict_drc=true",
+                "--router.optimizer.max_threads=1",
+                "--logging.console.level=DEBUG",
+                "-da",
+            ]
         else:
-            command = [executable, "-de", str(design), "-do", str(session), "-mp", str(passes),
-                       f"--max-time={max(1, timeout - 10)}", f"--multi-start={starts}",
-                       "--router.autorouter.max_threads=1", "--router.optimizer.max_threads=1",
-                       "--router.fanout.enabled=false",
-                       f"--router.automatic_neckdown={str(search_pad_neckdown).lower()}",
-                       "--router.strict_drc=true"]
+            command = [
+                executable,
+                "-de",
+                str(design),
+                "-do",
+                str(session),
+                "-mp",
+                str(passes),
+                f"--max-time={max(1, timeout - 10)}",
+                f"--multi-start={starts}",
+                "--router.autorouter.max_threads=1",
+                "--router.optimizer.max_threads=1",
+                "--router.fanout.enabled=false",
+                f"--router.automatic_neckdown={str(search_pad_neckdown).lower()}",
+                "--router.strict_drc=true",
+            ]
         if skip_optimizer:
             command.append("--router.optimizer.enabled=false")
         if max_items is not None:
@@ -829,7 +1032,10 @@ def preview(
             if engine == "Freerouting":
                 command.extend(["-inc", ",".join(router_deferred)])
             else:
-                command.append("--router.autorouter.ignore_net_classes=" + ",".join(router_deferred))
+                command.append(
+                    "--router.autorouter.ignore_net_classes="
+                    + ",".join(router_deferred)
+                )
         try:
             result = subprocess.run(
                 command,
@@ -847,48 +1053,71 @@ def preview(
                     f"try a smaller --max-items. Log: {trial / 'freerouting.log'}"
                 ) from error
             timed_out = True
-            print("fastroute timed out; checking its last complete private checkpoint",
-                  file=sys.stderr, flush=True)
+            print(
+                "fastroute timed out; checking its last complete private checkpoint",
+                file=sys.stderr,
+                flush=True,
+            )
     if (result is not None and result.returncode) or not session.is_file():
-        detail = "\n".join((trial / "freerouting.log").read_text(encoding="utf-8").splitlines()[-5:])
-        raise RuntimeError(f"{engine} failed: {detail}; log: {trial / 'freerouting.log'}")
+        detail = "\n".join(
+            (trial / "freerouting.log").read_text(encoding="utf-8").splitlines()[-5:]
+        )
+        raise RuntimeError(
+            f"{engine} failed: {detail}; log: {trial / 'freerouting.log'}"
+        )
     current = _source_files(board)
     if _fingerprints(current, project) != inputs:
         raise RuntimeError(
             "Saved project inputs changed during routing; discard this candidate"
         )
     if hashlib.sha256(jar.read_bytes()).hexdigest() != jar_sha256:
-        raise RuntimeError(
-            f"{engine} changed during the trial; discard this candidate"
-        )
+        raise RuntimeError(f"{engine} changed during the trial; discard this candidate")
     optimizer_status = "disabled" if skip_optimizer else "requested_not_verified"
     if engine == "Freerouting":
         _verify_reported_costs(trial / "freerouting.log", len(layers))
     else:
-        log_text = (trial / "freerouting.log").read_text(encoding="utf-8", errors="replace")
-        if "fastroute 0.1.14" not in log_text or f": {len(layers)} layers," not in log_text:
-            raise RuntimeError("fastroute did not report the expected version and layer count")
+        log_text = (trial / "freerouting.log").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        if (
+            "fastroute 0.1.14" not in log_text
+            or f": {len(layers)} layers," not in log_text
+        ):
+            raise RuntimeError(
+                "fastroute did not report the expected version and layer count"
+            )
         if not skip_optimizer:
-            optimizer_status = ("observed" if "Optimization stage started" in log_text
-                                else "requested_not_observed")
+            optimizer_status = (
+                "observed"
+                if "Optimization stage started" in log_text
+                else "requested_not_observed"
+            )
     if not pcbnew.ImportSpecctraSES(native, str(_routing_only_session_file(session))):
         raise RuntimeError("KiCad could not import the trial session")
     restored = _restore_bottom_rounding(native, positions)
     if not pcbnew.SaveBoard(str(trial_board), native):
         raise RuntimeError("KiCad could not save the trial board")
-    candidate = {} if defer_native_checks else _drc(cli, trial_board, trial / "candidate-drc.json")
+    candidate = (
+        {}
+        if defer_native_checks
+        else _drc(cli, trial_board, trial / "candidate-drc.json")
+    )
     if _fingerprints(_source_files(board), project) != inputs:
         raise RuntimeError(
             "Saved project inputs changed during validation; discard this candidate"
         )
     return {
         "status": "unapproved_trial_only",
-        "native_drc": "deferred_to_proposal_filter" if defer_native_checks else "checked",
+        "native_drc": "deferred_to_proposal_filter"
+        if defer_native_checks
+        else "checked",
         "engine": engine,
         "router_passes": passes,
         "router_timed_out": timed_out,
         "optimizer_status": optimizer_status,
-        "layer_cost_evidence": "router_log" if engine == "Freerouting" else "dsn_and_pinned_source_only",
+        "layer_cost_evidence": "router_log"
+        if engine == "Freerouting"
+        else "dsn_and_pinned_source_only",
         "saved_board_sha256": inputs[board.name],
         "freerouting_jar_sha256": jar_sha256,
         "trial_board": str(trial_board),
@@ -914,9 +1143,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project", type=Path, required=True)
     newest = RouterCache.freerouting()
     parser.add_argument(
-        "--jar", type=Path, default=newest if newest.is_file() else RouterCache.root() / "freerouting.jar"
+        "--jar",
+        type=Path,
+        default=newest if newest.is_file() else RouterCache.root() / "freerouting.jar",
     )
-    parser.add_argument("--java", default="auto", help="Java executable, or auto to find a compatible runtime")
+    parser.add_argument(
+        "--java",
+        default="auto",
+        help="Java executable, or auto to find a compatible runtime",
+    )
     parser.add_argument("--passes", type=int, default=1)
     parser.add_argument(
         "--timeout", type=int, default=600, help="routing timeout in seconds"
@@ -924,11 +1159,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-optimizer", action="store_true", help="export the raw routing pass"
     )
-    parser.add_argument("--max-items", type=int, help="limit attempted items in the routing pass")
-    parser.add_argument("--ground-contact-guard-mm", type=float, default=.5,
-                        help="extra search-only ground-pad margin; native physical rules remain unchanged")
-    parser.add_argument("--search-pad-neckdown", action="store_true",
-                        help="propose smaller pad exits; saved width rules and native checks still apply")
+    parser.add_argument(
+        "--max-items", type=int, help="limit attempted items in the routing pass"
+    )
+    parser.add_argument(
+        "--ground-contact-guard-mm",
+        type=float,
+        default=0.5,
+        help="extra search-only ground-pad margin; native physical rules remain unchanged",
+    )
+    parser.add_argument(
+        "--search-pad-neckdown",
+        action="store_true",
+        help="propose smaller pad exits; saved width rules and native checks still apply",
+    )
     args = parser.parse_args(argv)
     try:
         print(

@@ -10,11 +10,27 @@ import tempfile
 from uuid import uuid4
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QPointF, QRectF, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QFileDialog, QGraphicsScene, QGraphicsView,
-    QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
-    QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QApplication,
+    QCheckBox,
+    QFileDialog,
+    QGraphicsScene,
+    QGraphicsView,
+    QHeaderView,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 
@@ -22,6 +38,33 @@ from autopcb.workspace import Workspace
 
 
 class BoardView(QGraphicsView):
+    @staticmethod
+    def contour_path(rings: list) -> QPainterPath:
+        path = QPainterPath()
+        for ring in rings:
+            if ring:
+                path.moveTo(*ring[0])
+                for point in ring[1:]:
+                    path.lineTo(*point)
+                path.closeSubpath()
+        return path
+
+    @staticmethod
+    def round_stroke(scene, start, end, width: float, color: QColor):
+        x, y = start
+        if start == end:
+            return scene.addEllipse(
+                x - width / 2,
+                y - width / 2,
+                width,
+                width,
+                QPen(Qt.PenStyle.NoPen),
+                color,
+            )
+        pen = QPen(color, width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        return scene.addLine(x, y, *end, pen)
+
     def __init__(self):
         super().__init__()
         self.setScene(QGraphicsScene(self))
@@ -35,47 +78,102 @@ class BoardView(QGraphicsView):
         scene.clear()
         self.highlight = None
         if not board:
+            scene.setSceneRect(QRectF())
             return
         (x0, y0), (x1, y1) = board["bounds"]
         if not (x1 > x0 and y1 > y0):
             scene.setSceneRect(QRectF())
             return
-        scene.addRect(QRectF(x0, y0, x1-x0, y1-y0), QPen(QColor("#7c9a8c"), .10), QColor("#26352f"))
+        edge, surface = QPen(QColor("#7c9a8c"), 0.10), QColor("#15372f")
+        no_pen = QPen(Qt.PenStyle.NoPen)
+        hole_color = QColor("#131c21")
+        if "outline" in board:
+            scene.addPath(BoardView.contour_path(board["outline"]), edge, surface)
+        else:
+            scene.addRect(QRectF(x0, y0, x1 - x0, y1 - y0), edge, surface)
         for track in board["tracks"]:
-            (x, y), (end_x, end_y) = track["start"], track["end"]
-            width = max(track.get("width_mm", .2), .1)
-            if track["via"]:
-                item = scene.addEllipse(x-width/2, y-width/2, width, width, QPen(Qt.PenStyle.NoPen),
-                                        QColor("#ffc782"))
+            layer = track["layer"]
+            copper = {"F.Cu": "#f08a68", "B.Cu": "#67c5df"}.get(layer, "#b7a1d8")
+            color = QColor("#e9c674" if track["via"] else copper)
+            if "contours" in track:
+                item = scene.addPath(
+                    BoardView.contour_path(track["contours"]), no_pen, color
+                )
             else:
-                color = {"F.Cu": "#ef9c72", "B.Cu": "#65a2c3"}.get(track["layer"], "#bb9daa")
-                pen = QPen(QColor(color), width)
-                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                item = scene.addLine(x, y, end_x, end_y, pen)
-            item.setToolTip(f"{track['net']} · {track['layer']}")
+                item = BoardView.round_stroke(
+                    scene,
+                    track["start"],
+                    track["end"],
+                    track.get("width_mm", 0.2),
+                    color,
+                )
+            item.setZValue(4 if track["via"] else {"F.Cu": 3, "B.Cu": 1}.get(layer, 2))
+            item.setToolTip(f"{track['net']} · {layer}")
+            if track.get("drill_mm", 0) > 0:
+                hole = BoardView.round_stroke(
+                    scene, track["start"], track["start"], track["drill_mm"], hole_color
+                )
+                hole.setZValue(6)
+                hole.setToolTip(item.toolTip())
         for fp in board["footprints"]:
+            for rings in fp.get("front_silk", ()):
+                scene.addPath(
+                    BoardView.contour_path(rings), no_pen, QColor("#d9e9d7")
+                ).setZValue(4)
             for pad in fp["pads"]:
-                x, y = pad["at"]
-                w, h = pad["size"]
-                item = scene.addRect(x-w/2, y-h/2, w, h, QPen(Qt.PenStyle.NoPen), QColor("#ddd392"))
+                if "contours" in pad:
+                    item = scene.addPath(
+                        BoardView.contour_path(pad["contours"]),
+                        no_pen,
+                        QColor("#e9c674"),
+                    )
+                else:
+                    x, y = pad["at"]
+                    w, h = pad["size"]
+                    item = scene.addRect(
+                        x - w / 2, y - h / 2, w, h, no_pen, QColor("#e9c674")
+                    )
+                item.setZValue(5)
                 item.setToolTip(f"{fp['ref']}.{pad['number']} · {pad['net']}")
+                if pad.get("hole"):
+                    drill = pad["hole"]
+                    hole = BoardView.round_stroke(
+                        scene,
+                        drill["start"],
+                        drill["end"],
+                        drill["width_mm"],
+                        hole_color,
+                    )
+                    hole.setZValue(6)
+                    hole.setToolTip(item.toolTip())
             text = scene.addText(fp["ref"], QFont("Inter", 9))
             text.setDefaultTextColor(QColor("#ecf1e9"))
-            text.setScale(.12)
-            text.setPos(*fp["at"])
-        region = QRectF(x0, y0, x1-x0, y1-y0).adjusted(-3, -3, 3, 3)
+            text.setScale(0.12)
+            label_at = fp.get("label_at", fp["at"])
+            text.setPos(
+                QPointF(*label_at) - text.boundingRect().center() * text.scale()
+            )
+            text.setZValue(7)
+        region = QRectF(x0, y0, x1 - x0, y1 - y0).adjusted(-3, -3, 3, 3)
         scene.setSceneRect(region)
         self.fitInView(region, Qt.AspectRatioMode.KeepAspectRatio)
 
     def locate(self, x: float, y: float) -> None:
         if self.highlight:
             self.scene().removeItem(self.highlight)
-        self.highlight = self.scene().addEllipse(x-.9, y-.9, 1.8, 1.8, QPen(QColor("#fff4bc"), .2))
+        self.highlight = self.scene().addEllipse(
+            x - 0.9, y - 0.9, 1.8, 1.8, QPen(QColor("#fff4bc"), 0.2)
+        )
         self.highlight.setZValue(100)
+        visible = self.mapToScene(self.viewport().rect()).boundingRect()
+        if min(visible.width(), visible.height()) > 14:
+            self.fitInView(
+                QRectF(x - 7, y - 7, 14, 14), Qt.AspectRatioMode.KeepAspectRatio
+            )
         self.centerOn(QPointF(x, y))
 
     def wheelEvent(self, event):
-        zoom = 1.15 if event.angleDelta().y() > 0 else 1/1.15
+        zoom = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.scale(zoom, zoom)
         event.accept()
@@ -91,13 +189,23 @@ def _panel(title: str, parent: QWidget | None) -> tuple[QWidget, QVBoxLayout]:
 
 
 class Desktop(QMainWindow):
-    def __init__(self, project: Path, cli: Path | None, python: Path | None, *, workspace: Path | None = None):
+    def __init__(
+        self,
+        project: Path,
+        cli: Path | None,
+        python: Path | None,
+        *,
+        workspace: Path | None = None,
+    ):
         super().__init__()
         self.setWindowTitle("AutoPCB")
         self.resize(1280, 820)
         self.temp = tempfile.TemporaryDirectory(prefix="autopcb-desktop-")
         self.location = project.resolve()
-        self.workspace = Workspace(workspace or (self.location if self.location.is_dir() else self.location.parent))
+        self.workspace = Workspace(
+            workspace
+            or (self.location if self.location.is_dir() else self.location.parent)
+        )
         self.cli, self.python = cli, python
         self.run_id = None
         self.proposal_file = None
@@ -136,7 +244,9 @@ class Desktop(QMainWindow):
         self._layout()
         self._verify()
         self._export()
-        self.menuBar().addMenu("Tools").addAction("Export toolchain diagnostics", self.diagnostics)
+        self.menuBar().addMenu("Tools").addAction(
+            "Export toolchain diagnostics", self.diagnostics
+        )
         if self.location.is_file():
             self.select_project(self.location)
 
@@ -149,10 +259,14 @@ class Desktop(QMainWindow):
     def _requirements(self):
         page, box = _panel("What should the board do?", self)
         self.requirements = QPlainTextEdit()
-        self.requirements.setPlaceholderText("Describe the circuit, supply voltage, layer count, and board size.")
+        self.requirements.setPlaceholderText(
+            "Describe the circuit, supply voltage and layer count. Give exact board dimensions if required."
+        )
         if self.workspace.requirements.is_file():
             try:
-                self.requirements.setPlainText(self.workspace.requirements.read_text(encoding="utf-8-sig"))
+                self.requirements.setPlainText(
+                    self.workspace.requirements.read_text(encoding="utf-8-sig")
+                )
             except (OSError, UnicodeError) as error:
                 self.status.setText(str(error))
         box.addWidget(self.requirements, 1)
@@ -166,17 +280,25 @@ class Desktop(QMainWindow):
         page, box = _panel("Proposed parts and connections", self)
         self.proposal = QPlainTextEdit(readOnly=True)
         box.addWidget(self.proposal, 1)
-        self.draft_button = self.button("Open schematic draft in KiCad", self.open_draft, box)
+        self.draft_button = self.button(
+            "Open schematic draft in KiCad", self.open_draft, box
+        )
         self.draft_button.setEnabled(False)
-        self.create_button = self.button("Approve and create KiCad project", self.create, box)
+        self.create_button = self.button(
+            "Approve and create KiCad project", self.create, box
+        )
         self.create_button.setEnabled(False)
         self.tabs.addTab(page, "Design")
 
     def _layout(self):
         page, box = _panel("Board comparison", self)
         bar = QHBoxLayout()
-        self.button("Load saved board", lambda: self.start("inspect", self.show_saved), bar)
-        self.button("Create routing policy", lambda: self.start("configure-layout"), bar)
+        self.button(
+            "Load saved board", lambda: self.start("inspect", self.show_saved), bar
+        )
+        self.button(
+            "Create routing policy", lambda: self.start("configure-layout"), bar
+        )
         self.move_parts = QCheckBox("Allow eligible placement edits")
         bar.addWidget(self.move_parts)
         self.button("Preview routing", self.preview_route, bar)
@@ -194,13 +316,30 @@ class Desktop(QMainWindow):
         split.addWidget(original)
         split.addWidget(candidate)
         box.addWidget(split, 1)
+        box.addWidget(
+            QLabel(
+                '<span style="color:#f08a68">●</span> Front tracks &nbsp; '
+                '<span style="color:#67c5df">●</span> Back tracks &nbsp; '
+                '<span style="color:#b7a1d8">●</span> Inner tracks &nbsp; '
+                '<span style="color:#c3a05b">●</span> Pads and vias &nbsp; · &nbsp; Copper fills hidden'
+            )
+        )
         self.tabs.addTab(page, "Layout")
 
     def _verify(self):
         page, box = _panel("Native checks", self)
-        self.button("Run independent verification", lambda: self.start("verify", self.findings_ready), box)
+        self.button(
+            "Run independent verification",
+            lambda: self.start("verify", self.findings_ready),
+            box,
+        )
         self.findings = QTreeWidget()
         self.findings.setHeaderLabels(("Check", "Finding", "Location"))
+        header = self.findings.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.findings.itemActivated.connect(self.finding_selected)
         box.addWidget(self.findings, 1)
         self.tabs.addTab(page, "Verify")
@@ -221,9 +360,16 @@ class Desktop(QMainWindow):
         self.cancelled = False
         self.callbacks[action] = callback
         self.status.setText("Running " + action.replace("-", " ") + "…")
-        self.cancel_button.setEnabled(action in ("doctor", "propose", "inspect", "route", "compare", "verify"))
+        self.cancel_button.setEnabled(
+            action in ("doctor", "propose", "inspect", "route", "compare", "verify")
+        )
         self.open_button.setEnabled(False)
-        arguments = ["--workspace", str(self.workspace.root), "--project", str(self.location)]
+        arguments = [
+            "--workspace",
+            str(self.workspace.root),
+            "--project",
+            str(self.location),
+        ]
         if self.cli:
             arguments.extend(("--kicad-cli", str(self.cli)))
         if self.python:
@@ -233,7 +379,9 @@ class Desktop(QMainWindow):
         runtime.insert("PYTHONDONTWRITEBYTECODE", "1")
         self.process.setProcessEnvironment(runtime)
         invocation = [] if getattr(sys, "frozen", False) else ["-B", "-m", "autopcb"]
-        self.process.start(sys.executable, [*invocation, *arguments, action, *map(str, options)])
+        self.process.start(
+            sys.executable, [*invocation, *arguments, action, *map(str, options)]
+        )
         return True
 
     def process_failed(self, error):
@@ -243,7 +391,11 @@ class Desktop(QMainWindow):
             self.open_button.setEnabled(True)
 
     def engine_message(self):
-        detail = bytes(self.process.readAllStandardError()).decode("utf-8", "replace").strip()
+        detail = (
+            bytes(self.process.readAllStandardError())
+            .decode("utf-8", "replace")
+            .strip()
+        )
         if detail:
             self.status.setText(detail.splitlines()[-1][:280])
 
@@ -251,15 +403,22 @@ class Desktop(QMainWindow):
         pid = self.process.processId()
         self.cancelled = True
         if pid and sys.platform == "win32":
-            subprocess.Popen(["taskkill", "/PID", str(pid), "/T", "/F"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=subprocess.CREATE_NO_WINDOW)
+            subprocess.Popen(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
         else:
             self.process.terminate()
 
     def finished(self, code, _exit_status):
         raw = bytes(self.process.readAllStandardOutput()).decode("utf-8", "replace")
-        error = bytes(self.process.readAllStandardError()).decode("utf-8", "replace").strip()
+        error = (
+            bytes(self.process.readAllStandardError())
+            .decode("utf-8", "replace")
+            .strip()
+        )
         self.cancel_button.setEnabled(False)
         self.open_button.setEnabled(True)
         if self.cancelled:
@@ -270,15 +429,27 @@ class Desktop(QMainWindow):
         except ValueError:
             self.status.setText(error or f"Job stopped with exit code {code}.")
             return
-        summary = result.get("error") or result.get("status", "Result available").replace("_", " ").capitalize()
+        summary = (
+            result.get("error")
+            or result.get("status", "Result available").replace("_", " ").capitalize()
+        )
         self.status.setText(summary)
         callback = self.callbacks.get(self.action)
-        if callback and (not code or "native" in result or "unresolved" in result or "run_id" in result):
+        if callback and (
+            not code
+            or "native" in result
+            or "unresolved" in result
+            or "run_id" in result
+        ):
             callback(result)
 
     def open_project(self):
-        target, _ = QFileDialog.getOpenFileName(self, "Open a KiCad project, board, or schematic",
-                                               str(self.location), "KiCad files (*.kicad_pro *.kicad_pcb *.kicad_sch)")
+        target, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open a KiCad project, board, or schematic",
+            str(self.location),
+            "KiCad files (*.kicad_pro *.kicad_pcb *.kicad_sch)",
+        )
         if target:
             self.select_project(Path(target))
 
@@ -289,6 +460,7 @@ class Desktop(QMainWindow):
         self.apply_button.setEnabled(False)
         self.resume.setEnabled(False)
         self.findings.clear()
+        self.before.show_board({})
         self.after.show_board({})
         self.tabs.setCurrentIndex(2)
         self.start("inspect", self.show_saved)
@@ -299,12 +471,16 @@ class Desktop(QMainWindow):
     def save_requirements(self):
         target = self.workspace.requirements
         if target.exists():
-            choice = QMessageBox.question(self, "Replace saved requirements?", str(target))
+            choice = QMessageBox.question(
+                self, "Replace saved requirements?", str(target)
+            )
             if choice != QMessageBox.StandardButton.Yes:
                 return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(self.requirements.toPlainText().strip() + "\n", encoding="utf-8")
+            target.write_text(
+                self.requirements.toPlainText().strip() + "\n", encoding="utf-8"
+            )
         except OSError as error:
             self.status.setText(str(error))
             return
@@ -317,7 +493,15 @@ class Desktop(QMainWindow):
         proposal = base / f"{identifier}.json"
         text.write_text(self.requirements.toPlainText(), encoding="utf-8")
         draft = base / f"{identifier}.kicad_sch"
-        if self.start("propose", self.proposal_ready, text, "--output", proposal, "--schematic-draft", draft):
+        if self.start(
+            "propose",
+            self.proposal_ready,
+            text,
+            "--output",
+            proposal,
+            "--schematic-draft",
+            draft,
+        ):
             self.proposal_file = proposal
             self.schematic_draft = draft
             self.create_button.setEnabled(False)
@@ -328,22 +512,63 @@ class Desktop(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.schematic_draft)))
 
     def proposal_ready(self, result):
-        parts = [f"{ref}  {item['manufacturer']} {item['mpn']}  ({item['value']})\n"
-                 f"    {', '.join(str(key) + ' → ' + (value or 'NC') for key, value in item['nets'].items())}\n"
-                 f"    {item['source']}"
-                 for ref, item in result.get("components", {}).items()]
-        self.proposal.setPlainText("\n\n".join([result.get("description", "Requirements review"),
-                                    *parts, *result.get("assumptions", []), *result.get("unresolved", [])]))
+        parts = [
+            f"{ref}  {item['manufacturer']} {item['mpn']}  ({item['value']})\n"
+            f"    {', '.join(str(key) + ' → ' + (value or 'NC') for key, value in item['nets'].items())}\n"
+            f"    {item['source']}"
+            for ref, item in result.get("components", {}).items()
+        ]
+        size = result.get("size_mm")
+        outline = []
+        if size:
+            width, height = size
+            if compact := result.get("compact_outline"):
+                min_width, min_height = compact["minimum_mm"]
+                outline.append(
+                    f"Flexible outline. Placement minimizes area between {min_width:g} × {min_height:g} mm "
+                    f"and {width:g} × {height:g} mm."
+                )
+            else:
+                outline.append(f"Fixed outline. {width:g} × {height:g} mm.")
+        self.proposal.setPlainText(
+            "\n\n".join(
+                [
+                    result.get("description", "Requirements review"),
+                    *outline,
+                    *parts,
+                    *result.get("assumptions", []),
+                    *result.get("unresolved", []),
+                ]
+            )
+        )
         self.proposal_id = result.get("proposal_id")
         self.create_button.setEnabled(result["status"] == "proposed")
-        self.draft_button.setEnabled(result["status"] == "proposed" and self.schematic_draft.is_file())
+        self.draft_button.setEnabled(
+            result["status"] == "proposed" and self.schematic_draft.is_file()
+        )
         self.tabs.setCurrentIndex(1)
 
     def create(self):
-        name, accepted = QInputDialog.getText(self, "Name the new KiCad project", "Project name")
+        name, accepted = QInputDialog.getText(
+            self, "Name the new KiCad project", "Project name"
+        )
         if accepted and name and self.proposal_file is not None and self.proposal_id:
-            self.start("create", lambda result: self.select_project(Path(result["project"])),
-                       self.proposal_file, "--approve", self.proposal_id, "--name", name)
+            self.start(
+                "create",
+                self.created,
+                self.proposal_file,
+                "--approve",
+                self.proposal_id,
+                "--name",
+                name,
+            )
+
+    def created(self, result):
+        self.select_project(Path(result["project"]))
+        width, height = result["outline"]["size_mm"]
+        self.project_label.setText(
+            f"{self.location.name}   ·   {width:g} × {height:g} mm"
+        )
 
     def preview_route(self):
         options = ("--allow-placement",) if self.move_parts.isChecked() else ()
@@ -356,53 +581,112 @@ class Desktop(QMainWindow):
 
     def route_ready(self, result):
         self.run_id = result["run_id"]
-        before, after = result.get("saved_board_opens"), result.get("best_preview_opens")
-        self.resume.setEnabled(True)
+        before, after = (
+            result.get("saved_board_opens"),
+            result.get("best_preview_opens"),
+        )
+        zero_open_preview = result["status"] == "preview_zero_opens"
+        self.resume.setEnabled(not zero_open_preview)
         self.apply_button.setEnabled(False)
         if isinstance(before, int) and isinstance(after, int) and after < before:
             self.start("compare", self.comparison_ready, self.run_id)
+        elif zero_open_preview:
+            self.status.setText(
+                "The preview has zero open connections. Verify checks the saved board."
+            )
         else:
-            details = result.get("blocked_nets") or result.get("failure") or result["status"]
+            details = (
+                result.get("blocked_nets") or result.get("failure") or result["status"]
+            )
             self.status.setText(f"{after} preview opens. {details}")
 
     def comparison_ready(self, result):
         self.before.show_board(result["before"])
         self.after.show_board(result["after"])
         self.apply_button.setEnabled(True)
-        self.status.setText("Preview ready for review. Apply saves the checked changes to KiCad.")
+        self.status.setText(
+            "Preview ready for review. Apply saves the checked changes to KiCad."
+        )
 
     def apply_preview(self):
         if not self.run_id:
             return
-        choice = QMessageBox.question(self, "Apply routing preview", "Save the independently checked routing improvement?")
+        choice = QMessageBox.question(
+            self,
+            "Apply routing preview",
+            "Save the independently checked routing improvement?",
+        )
         if choice == QMessageBox.StandardButton.Yes:
-            self.start("apply", lambda _: self.select_project(self.location), self.run_id)
+            self.start(
+                "apply", lambda _: self.select_project(self.location), self.run_id
+            )
 
     def findings_ready(self, result):
         self.findings.clear()
         rows = list(result["native"]["findings"])
         reference = result.get("reference_screen") or {}
         for message in reference.get("blockers", []):
-            rows.append({"check": "reference copper", "description": message, "positions_mm": []})
-        labels = {"sampled_reference_gap": "Gap in sampled reference copper",
-                  "via_transition": "Layer transition needs return-path review",
-                  "unsupported_trace": "Trace geometry needs reference review"}
+            rows.append(
+                {
+                    "check": "reference copper",
+                    "description": message,
+                    "positions_mm": [],
+                }
+            )
+        labels = {
+            "sampled_reference_gap": "Gap in sampled reference copper",
+            "via_transition": "Layer transition needs return-path review",
+            "unsupported_trace": "Trace geometry needs reference review",
+        }
         for finding in reference.get("findings", []):
-            rows.append({"check": "reference copper",
-                         "description": f"{finding['net']} on {finding['signal_layer']} — {labels[finding['type']]}",
-                         "positions_mm": finding["positions_mm"]})
+            route = f"{finding['net']} on {finding['signal_layer']}"
+            spans = finding.get("gap_spans")
+            if spans:
+                for span in spans:
+                    pads = ", ".join(
+                        f"{pad['reference']}.{pad['pad']}"
+                        for pad in span["endpoint_pads"]
+                    )
+                    detail = f"Gap on {finding['reference_layer']}"
+                    if pads:
+                        detail += f" at {pads}"
+                    rows.append(
+                        {
+                            "check": "reference copper",
+                            "description": f"{route} · {detail}",
+                            "positions_mm": [span["position_mm"]],
+                        }
+                    )
+            else:
+                detail = (
+                    f"No single reference polygon spans the trace on {finding['reference_layer']}"
+                    if spans == []
+                    else labels[finding["type"]]
+                )
+                rows.append(
+                    {
+                        "check": "reference copper",
+                        "description": f"{route} · {detail}",
+                        "positions_mm": finding["positions_mm"],
+                    }
+                )
         if result.get("electrical_review_blocker"):
-            rows.append({"check": "electrical", "description": result["electrical_review_blocker"],
-                         "positions_mm": []})
+            rows.append(
+                {
+                    "check": "electrical",
+                    "description": result["electrical_review_blocker"],
+                    "positions_mm": [],
+                }
+            )
         for row in rows:
             locations = row["positions_mm"]
             first = locations[0] if locations else None
             text = f"{first['x']:.3f}, {first['y']:.3f} mm" if first else ""
             item = QTreeWidgetItem((row["check"], row["description"], text))
+            item.setToolTip(1, row["description"])
             if first and row["check"] != "erc":
                 item.setData(0, Qt.ItemDataRole.UserRole, (first["x"], first["y"]))
             self.findings.addTopLevelItem(item)
-        self.findings.resizeColumnToContents(0)
 
     def finding_selected(self, item, _column):
         point = item.data(0, Qt.ItemDataRole.UserRole)
@@ -412,13 +696,26 @@ class Desktop(QMainWindow):
 
     def export(self, draft):
         options = ("--draft",) if draft else ()
-        self.start("export", lambda value: self.exports.setPlainText(json.dumps(value, indent=2)), *options)
+        self.start(
+            "export",
+            lambda value: self.exports.setPlainText(json.dumps(value, indent=2)),
+            *options,
+        )
 
     def diagnostics(self):
-        target, _ = QFileDialog.getSaveFileName(self, "Export toolchain diagnostics", "autopcb-toolchain.json",
-                                                "JSON (*.json)")
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export toolchain diagnostics",
+            "autopcb-toolchain.json",
+            "JSON (*.json)",
+        )
         if target:
-            self.start("doctor", lambda _: self.status.setText("Toolchain diagnostics saved."), "--output", target)
+            self.start(
+                "doctor",
+                lambda _: self.status.setText("Toolchain diagnostics saved."),
+                "--output",
+                target,
+            )
 
     def closeEvent(self, event):
         if self.process.state() != QProcess.ProcessState.NotRunning:
@@ -429,7 +726,13 @@ class Desktop(QMainWindow):
         super().closeEvent(event)
 
 
-def main(project: Path, cli: Path | None, python: Path | None, *, workspace: Path | None = None) -> int:
+def main(
+    project: Path,
+    cli: Path | None,
+    python: Path | None,
+    *,
+    workspace: Path | None = None,
+) -> int:
     app = QApplication.instance() or QApplication([])
     app.setFont(QFont("Inter", 10))
     app.setStyleSheet("""

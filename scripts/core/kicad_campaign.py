@@ -216,7 +216,11 @@ class CampaignPlanner:
         if not isinstance(document, str) or not document:
             raise ValueError("Each change needs a document")
         roles = {"pcb": ".kicad_pcb", "schematic": ".kicad_sch"}
-        relative = Path(native_path(self.project, roles[document]).name if document in roles else document)
+        relative = Path(
+            native_path(self.project, roles[document]).name
+            if document in roles
+            else document
+        )
         if relative.is_absolute():
             raise ValueError("Document paths must be relative to the project")
         path = (self.project / relative).resolve()
@@ -387,7 +391,9 @@ class CampaignFile:
         self.directory = storage.campaigns.resolve()
         self.relative_root = storage.workspace or storage.legacy
         if not self.directory.is_relative_to(storage.workspace or root):
-            raise ValueError("Campaign directory must remain inside its workspace or project")
+            raise ValueError(
+                "Campaign directory must remain inside its workspace or project"
+            )
 
     def path(self, name: str) -> Path:
         path = Path(name)

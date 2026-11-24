@@ -40,11 +40,13 @@ class JunctionTests(unittest.TestCase):
         track.SetStart(pcbnew.VECTOR2I(mm(2), mm(2)))
         track.SetEnd(pcbnew.VECTOR2I(mm(6), mm(2)))
         track.SetLayer(pcbnew.F_Cu)
-        track.SetWidth(mm(.4))
+        track.SetWidth(mm(0.4))
         track.SetNetCode(net.GetNetCode())
         board.Add(track)
         if intermediate_pad:
-            net_tests.NativeNetRoutingTests.add_pad(board, "J3", (5, 2), net_name="SIGNAL")
+            net_tests.NativeNetRoutingTests.add_pad(
+                board, "J3", (5, 2), net_name="SIGNAL"
+            )
         pcbnew.SaveBoard(str(source), board)
         return source, board, track.m_Uuid.AsString()
 
@@ -57,20 +59,36 @@ class JunctionTests(unittest.TestCase):
                 Segment(point(7, 5), point(8, 5), "F.Cu"),
             )
             changes, removals = junction_changes(
-                board, original, proposed, "SIGNAL", mm(.2), mm(.6), mm(.3)
+                board, original, proposed, "SIGNAL", mm(0.2), mm(0.6), mm(0.3)
             )
             self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-            self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 1)
+            self.assertEqual(
+                sum("(width 0.4)" in c.get("expression", "") for c in changes), 1
+            )
             evidence = validate_routes(
-                source, hashlib.sha256(original).hexdigest(), changes,
-                [RouteContract("SIGNAL", point(2, 2), "F.Cu", point(8, 5), "F.Cu",
-                               tuple(removals))],
+                source,
+                hashlib.sha256(original).hexdigest(),
+                changes,
+                [
+                    RouteContract(
+                        "SIGNAL",
+                        point(2, 2),
+                        "F.Cu",
+                        point(8, 5),
+                        "F.Cu",
+                        tuple(removals),
+                    )
+                ],
             )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
             self.assertFalse(evidence["schematic_parity_checked"])
             self.assertIsNone(evidence["candidate_schematic_parity"])
-            self.assertLess(evidence["candidate_violations"], evidence["baseline_violations"])
-            self.assertLess(evidence["candidate_unconnected"], evidence["baseline_unconnected"])
+            self.assertLess(
+                evidence["candidate_violations"], evidence["baseline_violations"]
+            )
+            self.assertLess(
+                evidence["candidate_unconnected"], evidence["baseline_unconnected"]
+            )
             self.assertEqual(source.read_bytes(), original)
 
     def test_native_parity_is_checked_and_new_findings_reject_candidate(self):
@@ -79,14 +97,14 @@ class JunctionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-parity-junction-") as folder:
             source, board, _ = self.board_with_dangling_track(folder)
             schematic = source.with_suffix(".kicad_sch")
-            schematic.write_text('(kicad_sch (lib_symbols))', encoding="utf-8")
+            schematic.write_text("(kicad_sch (lib_symbols))", encoding="utf-8")
             original, schematic_bytes = source.read_bytes(), schematic.read_bytes()
             proposed = route(
                 Segment(point(4, 2), point(7, 5), "F.Cu"),
                 Segment(point(7, 5), point(8, 5), "F.Cu"),
             )
             changes, removals = junction_changes(
-                board, original, proposed, "SIGNAL", mm(.2), mm(.6), mm(.3)
+                board, original, proposed, "SIGNAL", mm(0.2), mm(0.6), mm(0.3)
             )
             contract = RouteContract(
                 "SIGNAL", point(2, 2), "F.Cu", point(8, 5), "F.Cu", tuple(removals)
@@ -96,30 +114,44 @@ class JunctionTests(unittest.TestCase):
             def add_candidate_parity(*args, **kwargs):
                 report = real_drc(*args, **kwargs)
                 if args[1].parent.name == "after":
-                    report["schematic_parity"].append({
-                        "type": "test_new_parity", "severity": "error", "items": []
-                    })
+                    report["schematic_parity"].append(
+                        {"type": "test_new_parity", "severity": "error", "items": []}
+                    )
                 return report
 
-            with mock.patch.object(route_validation, "_drc", side_effect=add_candidate_parity):
+            with mock.patch.object(
+                route_validation, "_drc", side_effect=add_candidate_parity
+            ):
                 evidence = validate_routes(
                     source, hashlib.sha256(original).hexdigest(), changes, [contract]
                 )
             self.assertTrue(evidence["schematic_parity_checked"])
             self.assertEqual(evidence["status"], "rejected", evidence)
-            self.assertEqual(evidence["new_schematic_parity"][0]["type"], "test_new_parity")
+            self.assertEqual(
+                evidence["new_schematic_parity"][0]["type"], "test_new_parity"
+            )
             self.assertEqual(source.read_bytes(), original)
             self.assertEqual(schematic.read_bytes(), schematic_bytes)
 
     def test_tail_with_an_intermediate_same_net_pad_is_preserved(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-connected-tail-") as folder:
-            source, board, track_id = self.board_with_dangling_track(folder, intermediate_pad=True)
+            source, board, track_id = self.board_with_dangling_track(
+                folder, intermediate_pad=True
+            )
             proposed = route(Segment(point(4, 2), point(7, 5), "F.Cu"))
             changes, removals = junction_changes(
-                board, source.read_bytes(), proposed, "SIGNAL", mm(.2), mm(.6), mm(.3)
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.2),
+                mm(0.6),
+                mm(0.3),
             )
             self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-            self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+            self.assertEqual(
+                sum("(width 0.4)" in c.get("expression", "") for c in changes), 2
+            )
 
     def test_tail_cleanup_preserves_a_required_contract_endpoint(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-contract-tail-") as folder:
@@ -130,14 +162,33 @@ class JunctionTests(unittest.TestCase):
                 Segment(point(7, 5), point(8, 5), "F.Cu"),
             )
             changes, removals = junction_changes(
-                board, original, proposed, "SIGNAL", mm(.2), mm(.6), mm(.3),
+                board,
+                original,
+                proposed,
+                "SIGNAL",
+                mm(0.2),
+                mm(0.6),
+                mm(0.3),
                 protected_sites=((point(6, 2), "F.Cu"),),
             )
             self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-            self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+            self.assertEqual(
+                sum("(width 0.4)" in c.get("expression", "") for c in changes), 2
+            )
             evidence = validate_routes(
-                source, hashlib.sha256(original).hexdigest(), changes,
-                [RouteContract("SIGNAL", point(6, 2), "F.Cu", point(8, 5), "F.Cu", tuple(removals))],
+                source,
+                hashlib.sha256(original).hexdigest(),
+                changes,
+                [
+                    RouteContract(
+                        "SIGNAL",
+                        point(6, 2),
+                        "F.Cu",
+                        point(8, 5),
+                        "F.Cu",
+                        tuple(removals),
+                    )
+                ],
             )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
             self.assertEqual(source.read_bytes(), original)
@@ -146,18 +197,34 @@ class JunctionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-offset-anchor-") as folder:
             source, board, track_id = self.board_with_dangling_track(folder)
             original = source.read_bytes()
-            proposed = route(Segment(point(4, 2), point(7, 5), "F.Cu"),
-                             Segment(point(7, 5), point(8, 5), "F.Cu"))
+            proposed = route(
+                Segment(point(4, 2), point(7, 5), "F.Cu"),
+                Segment(point(7, 5), point(8, 5), "F.Cu"),
+            )
             anchor = point(6, 2.15)
             changes, removals = junction_changes(
-                board, original, proposed, "SIGNAL", mm(.2), mm(.6), mm(.3),
+                board,
+                original,
+                proposed,
+                "SIGNAL",
+                mm(0.2),
+                mm(0.6),
+                mm(0.3),
                 protected_sites=((anchor, "F.Cu"),),
             )
             self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-            self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+            self.assertEqual(
+                sum("(width 0.4)" in c.get("expression", "") for c in changes), 2
+            )
             evidence = validate_routes(
-                source, hashlib.sha256(original).hexdigest(), changes,
-                [RouteContract("SIGNAL", anchor, "F.Cu", point(8, 5), "F.Cu", tuple(removals))],
+                source,
+                hashlib.sha256(original).hexdigest(),
+                changes,
+                [
+                    RouteContract(
+                        "SIGNAL", anchor, "F.Cu", point(8, 5), "F.Cu", tuple(removals)
+                    )
+                ],
             )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
 
@@ -166,52 +233,89 @@ class JunctionTests(unittest.TestCase):
             source, board, _ = self.board_with_dangling_track(folder)
             proposed = route(Segment(point(4, 2), point(7, 5), "F.Cu"))
             changes, _ = junction_changes(
-                board, source.read_bytes(), proposed, "SIGNAL", mm(.2), mm(.6), mm(.3),
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.2),
+                mm(0.6),
+                mm(0.3),
                 prune_dangling_tails=False,
             )
-            self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+            self.assertEqual(
+                sum("(width 0.4)" in c.get("expression", "") for c in changes), 2
+            )
 
     def test_workflow_prices_tail_removal_before_selecting_a_candidate(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-tail-cost-") as folder:
             source, _, _ = self.board_with_dangling_track(folder)
             original = source.read_bytes()
-            pruning = replace(route(
-                Segment(point(4, 2), point(7, 5), "F.Cu"),
-                Segment(point(7, 5), point(8, 5), "F.Cu"),
-            ), cost=1.0)
-            retaining = replace(route(
-                Segment(point(6, 2), point(8, 4), "F.Cu"),
-                Segment(point(8, 4), point(8, 5), "F.Cu"),
-            ), cost=2.0)
-            choices = (BoardPlan((NetPlan("SIGNAL", pruning),)),
-                       BoardPlan((NetPlan("SIGNAL", retaining),)))
-            with mock.patch.object(workflow, "search_orders", return_value=(choices, ())):
+            pruning = replace(
+                route(
+                    Segment(point(4, 2), point(7, 5), "F.Cu"),
+                    Segment(point(7, 5), point(8, 5), "F.Cu"),
+                ),
+                cost=1.0,
+            )
+            retaining = replace(
+                route(
+                    Segment(point(6, 2), point(8, 4), "F.Cu"),
+                    Segment(point(8, 4), point(8, 5), "F.Cu"),
+                ),
+                cost=2.0,
+            )
+            choices = (
+                BoardPlan((NetPlan("SIGNAL", pruning),)),
+                BoardPlan((NetPlan("SIGNAL", retaining),)),
+            )
+            with mock.patch.object(
+                workflow, "search_orders", return_value=(choices, ())
+            ):
                 result = workflow.plan_nets(
-                    net_tests.NativeNetRoutingTests.config(), Path(folder),
-                    validate=False, include_changes=True,
+                    net_tests.NativeNetRoutingTests.config(),
+                    Path(folder),
+                    validate=False,
+                    include_changes=True,
                 )
             self.assertEqual(result["status"], "geometric_candidate_only", result)
             self.assertEqual(result["routing_cost"], 2.0)
             self.assertEqual(result["rework_cost"], 0.0)
-            self.assertFalse(any(change["op"] == "remove"
-                                 for change in result["unvalidated_campaign_changes"]))
+            self.assertFalse(
+                any(
+                    change["op"] == "remove"
+                    for change in result["unvalidated_campaign_changes"]
+                )
+            )
             self.assertEqual(source.read_bytes(), original)
 
     def test_workflow_propagates_native_validation_failures(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-drc-failure-") as folder:
             source, _, _ = self.board_with_dangling_track(folder)
             original = source.read_bytes()
-            candidate = NetPlan("SIGNAL", route(
-                Segment(point(4, 2), point(7, 5), "F.Cu"),
-                Segment(point(7, 5), point(8, 5), "F.Cu"),
-            ))
-            with mock.patch.object(
-                workflow, "search_orders", return_value=((BoardPlan((candidate,)),), ())
-            ), mock.patch.object(
-                workflow, "validate_routes", side_effect=RuntimeError("native DRC failed")
-            ), self.assertRaisesRegex(RuntimeError, "native DRC failed"):
+            candidate = NetPlan(
+                "SIGNAL",
+                route(
+                    Segment(point(4, 2), point(7, 5), "F.Cu"),
+                    Segment(point(7, 5), point(8, 5), "F.Cu"),
+                ),
+            )
+            with (
+                mock.patch.object(
+                    workflow,
+                    "search_orders",
+                    return_value=((BoardPlan((candidate,)),), ()),
+                ),
+                mock.patch.object(
+                    workflow,
+                    "validate_routes",
+                    side_effect=RuntimeError("native DRC failed"),
+                ),
+                self.assertRaisesRegex(RuntimeError, "native DRC failed"),
+            ):
                 workflow.plan_nets(
-                    net_tests.NativeNetRoutingTests.config(), Path(folder), validate=True
+                    net_tests.NativeNetRoutingTests.config(),
+                    Path(folder),
+                    validate=True,
                 )
             self.assertEqual(source.read_bytes(), original)
 
@@ -219,15 +323,24 @@ class JunctionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-tail-accounting-") as folder:
             source, _, _ = self.board_with_dangling_track(folder)
             original = source.read_bytes()
-            candidate = NetPlan("SIGNAL", replace(route(
-                Segment(point(4, 2), point(7, 5), "F.Cu"),
-                Segment(point(7, 5), point(8, 5), "F.Cu"),
-            ), cost=1.0))
-            with mock.patch.object(workflow, "search_orders",
-                                   return_value=((BoardPlan((candidate,)),), ())):
+            candidate = NetPlan(
+                "SIGNAL",
+                replace(
+                    route(
+                        Segment(point(4, 2), point(7, 5), "F.Cu"),
+                        Segment(point(7, 5), point(8, 5), "F.Cu"),
+                    ),
+                    cost=1.0,
+                ),
+            )
+            with mock.patch.object(
+                workflow, "search_orders", return_value=((BoardPlan((candidate,)),), ())
+            ):
                 result = workflow.plan_nets(
-                    net_tests.NativeNetRoutingTests.config(), Path(folder),
-                    validate=False, include_changes=True,
+                    net_tests.NativeNetRoutingTests.config(),
+                    Path(folder),
+                    validate=False,
+                    include_changes=True,
                 )
             self.assertEqual(result["status"], "geometric_candidate_only", result)
             self.assertAlmostEqual(result["rework_cost"], 3.0)
@@ -236,7 +349,10 @@ class JunctionTests(unittest.TestCase):
 
     def test_tail_with_other_same_net_copper_or_zone_is_preserved(self):
         for kind in ("track", "via", "zone"):
-            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix="autopcb-tail-items-") as folder:
+            with (
+                self.subTest(kind=kind),
+                tempfile.TemporaryDirectory(prefix="autopcb-tail-items-") as folder,
+            ):
                 source, board, track_id = self.board_with_dangling_track(folder)
                 net = board.FindNet("SIGNAL")
                 if kind == "track":
@@ -244,13 +360,13 @@ class JunctionTests(unittest.TestCase):
                     other.SetStart(pcbnew.VECTOR2I(mm(5), mm(2)))
                     other.SetEnd(pcbnew.VECTOR2I(mm(5), mm(3)))
                     other.SetLayer(pcbnew.F_Cu)
-                    other.SetWidth(mm(.2))
+                    other.SetWidth(mm(0.2))
                 elif kind == "via":
                     other = pcbnew.PCB_VIA(board)
                     other.SetPosition(pcbnew.VECTOR2I(mm(5), mm(2)))
                     other.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-                    other.SetWidth(mm(.6))
-                    other.SetDrill(mm(.3))
+                    other.SetWidth(mm(0.6))
+                    other.SetDrill(mm(0.3))
                 else:
                     other = pcbnew.ZONE(board)
                     other.SetLayer(pcbnew.F_Cu)
@@ -262,26 +378,51 @@ class JunctionTests(unittest.TestCase):
                 board.Add(other)
                 pcbnew.SaveBoard(str(source), board)
                 changes, removals = junction_changes(
-                    board, source.read_bytes(), route(Segment(point(4, 2), point(7, 5), "F.Cu")),
-                    "SIGNAL", mm(.2), mm(.6), mm(.3),
+                    board,
+                    source.read_bytes(),
+                    route(Segment(point(4, 2), point(7, 5), "F.Cu")),
+                    "SIGNAL",
+                    mm(0.2),
+                    mm(0.6),
+                    mm(0.3),
                 )
                 self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-                self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+                self.assertEqual(
+                    sum("(width 0.4)" in c.get("expression", "") for c in changes), 2
+                )
 
     def test_tail_needed_by_a_proposed_via_or_segment_is_preserved(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-tail-proposal-") as folder:
             source, board, _ = self.board_with_dangling_track(folder)
             for proposal in (
-                Route((Segment(point(4, 2), point(7, 5), "F.Cu"),),
-                      (Via(point(5, 2), "F.Cu", "B.Cu"),), (), 0, 0, 0, 0),
-                route(Segment(point(4, 2), point(7, 5), "F.Cu"),
-                      Segment(point(6, 2), point(7, 3), "F.Cu")),
+                Route(
+                    (Segment(point(4, 2), point(7, 5), "F.Cu"),),
+                    (Via(point(5, 2), "F.Cu", "B.Cu"),),
+                    (),
+                    0,
+                    0,
+                    0,
+                    0,
+                ),
+                route(
+                    Segment(point(4, 2), point(7, 5), "F.Cu"),
+                    Segment(point(6, 2), point(7, 3), "F.Cu"),
+                ),
             ):
                 with self.subTest(proposal=proposal):
                     changes, _ = junction_changes(
-                        board, source.read_bytes(), proposal, "SIGNAL", mm(.2), mm(.6), mm(.3)
+                        board,
+                        source.read_bytes(),
+                        proposal,
+                        "SIGNAL",
+                        mm(0.2),
+                        mm(0.6),
+                        mm(0.3),
                     )
-                    self.assertEqual(sum("(width 0.4)" in c.get("expression", "") for c in changes), 2)
+                    self.assertEqual(
+                        sum("(width 0.4)" in c.get("expression", "") for c in changes),
+                        2,
+                    )
 
     def board_with_track(self, folder: str, *, locked: bool = False):
         source = route_tests.RouteOptimizerTests.make_board(Path(folder))
@@ -355,10 +496,12 @@ class JunctionTests(unittest.TestCase):
             original = source.read_bytes()
             proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"))
             changes, removals = junction_changes(
-                board, original, proposed, "SIGNAL", mm(.4), mm(.6), mm(.3)
+                board, original, proposed, "SIGNAL", mm(0.4), mm(0.6), mm(0.3)
             )
             self.assertEqual(removals, [{"kind": "segment", "uuid": track_id}])
-            insertions = [item["expression"] for item in changes if item["op"] == "insert"]
+            insertions = [
+                item["expression"] for item in changes if item["op"] == "insert"
+            ]
             self.assertEqual(len(insertions), 1)
             self.assertIn("(start 2 2)", insertions[0])
             self.assertIn("(end 8 2)", insertions[0])
@@ -371,27 +514,48 @@ class JunctionTests(unittest.TestCase):
             original = source.read_bytes()
             straight = Segment(point(6, 2), point(8, 2), "F.Cu")
             branch = Segment(point(6, 2), point(7, 3), "F.Cu")
-            for proposed, width in ((route(straight, branch), mm(.4)), (route(straight), mm(.2))):
-                _, removals = junction_changes(board, original, proposed, "SIGNAL", width, mm(.6), mm(.3))
+            for proposed, width in (
+                (route(straight, branch), mm(0.4)),
+                (route(straight), mm(0.2)),
+            ):
+                _, removals = junction_changes(
+                    board, original, proposed, "SIGNAL", width, mm(0.6), mm(0.3)
+                )
                 self.assertEqual(removals, [])
 
     def test_collinear_extension_does_not_move_locked_source_copper(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-locked-joint-") as folder:
             source, board, track_id = self.board_with_dangling_track(folder)
-            track = next(item for item in board.GetTracks() if item.m_Uuid.AsString() == track_id)
+            track = next(
+                item for item in board.GetTracks() if item.m_Uuid.AsString() == track_id
+            )
             track.SetLocked(True)
             pcbnew.SaveBoard(str(source), board)
             proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"))
-            _, removals = junction_changes(board, source.read_bytes(), proposed,
-                                           "SIGNAL", mm(.4), mm(.6), mm(.3))
+            _, removals = junction_changes(
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.4),
+                mm(0.6),
+                mm(0.3),
+            )
             self.assertEqual(removals, [])
 
     def test_collinear_extension_preserves_a_pad_anchor(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-anchored-joint-") as folder:
             source, board, _ = self.board_with_track(folder)
             proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"))
-            _, removals = junction_changes(board, source.read_bytes(), proposed,
-                                           "SIGNAL", mm(.4), mm(.6), mm(.3))
+            _, removals = junction_changes(
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.4),
+                mm(0.6),
+                mm(0.3),
+            )
             self.assertEqual(removals, [])
 
     def test_collinear_extension_preserves_an_existing_split_branch(self):
@@ -400,17 +564,26 @@ class JunctionTests(unittest.TestCase):
             branch = pcbnew.PCB_TRACK(board)
             branch.SetStart(pcbnew.VECTOR2I(mm(6), mm(2)))
             branch.SetEnd(pcbnew.VECTOR2I(mm(6), mm(4)))
-            branch.SetWidth(mm(.4))
+            branch.SetWidth(mm(0.4))
             branch.SetLayer(pcbnew.F_Cu)
             branch.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(branch)
             branch_id = branch.m_Uuid.AsString()
             pcbnew.SaveBoard(str(source), board)
-            proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"),
-                             Segment(point(6, 3), point(7, 3), "F.Cu"))
-            _, removals = junction_changes(board, source.read_bytes(), proposed,
-                                           "SIGNAL", mm(.4), mm(.6), mm(.3),
-                                           prune_dangling_tails=False)
+            proposed = route(
+                Segment(point(6, 2), point(8, 2), "F.Cu"),
+                Segment(point(6, 3), point(7, 3), "F.Cu"),
+            )
+            _, removals = junction_changes(
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.4),
+                mm(0.6),
+                mm(0.3),
+                prune_dangling_tails=False,
+            )
             identifiers = {item["uuid"] for item in removals}
             self.assertIn(branch_id, identifiers)
             self.assertNotIn(original_id, identifiers)
@@ -422,23 +595,37 @@ class JunctionTests(unittest.TestCase):
             via.SetPosition(pcbnew.VECTOR2I(mm(6), mm(2)))
             via.SetViaType(pcbnew.VIATYPE_THROUGH)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
             pcbnew.SaveBoard(str(source), board)
             proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"))
-            _, removals = junction_changes(board, source.read_bytes(), proposed,
-                                           "SIGNAL", mm(.4), mm(.6), mm(.3))
+            _, removals = junction_changes(
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.4),
+                mm(0.6),
+                mm(0.3),
+            )
             self.assertEqual(removals, [])
 
     def test_collinear_extension_can_defer_during_placement_changes(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-moving-joint-") as folder:
             source, board, _ = self.board_with_dangling_track(folder)
             proposed = route(Segment(point(6, 2), point(8, 2), "F.Cu"))
-            _, removals = junction_changes(board, source.read_bytes(), proposed,
-                                           "SIGNAL", mm(.4), mm(.6), mm(.3),
-                                           merge_collinear=False)
+            _, removals = junction_changes(
+                board,
+                source.read_bytes(),
+                proposed,
+                "SIGNAL",
+                mm(0.4),
+                mm(0.6),
+                mm(0.3),
+                merge_collinear=False,
+            )
             self.assertEqual(removals, [])
 
     def test_locked_existing_copper_is_not_split(self):
@@ -550,23 +737,54 @@ class JunctionTests(unittest.TestCase):
             options = net_tests.NativeNetRoutingTests.config()
             config = project / "config" / "autopcb.json"
             config.parent.mkdir()
-            config.write_text(json.dumps({
-                "schema": 1, "max_pins": 3, "include_nets": ["SIGNAL"],
-                "route": options["shared"], "search": options["search"],
-            }), encoding="utf-8")
+            config.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "max_pins": 3,
+                        "include_nets": ["SIGNAL"],
+                        "route": options["shared"],
+                        "search": options["search"],
+                    }
+                ),
+                encoding="utf-8",
+            )
             plan, items = checkpoints.create_plan(project, config)
-            path = checkpoints.save_plan(project, plan, items).parent / "checkpoints" / "0001.json"
-            pruning = NetPlan("SIGNAL", replace(route(
-                Segment(point(4, 2), point(7, 5), "F.Cu"),
-                Segment(point(7, 5), point(8, 5), "F.Cu"),
-            ), cost=1.0))
-            retaining = NetPlan("SIGNAL", replace(route(
-                Segment(point(6, 2), point(8, 4), "F.Cu"),
-                Segment(point(8, 4), point(8, 5), "F.Cu"),
-            ), cost=2.0))
-            with mock.patch.object(checkpoints, "whole_net", return_value=(pruning, retaining)), \
-                 mock.patch.object(checkpoints.NativeBackend, "refine_complete",
-                                   side_effect=lambda net, prior, candidate: candidate):
+            path = (
+                checkpoints.save_plan(project, plan, items).parent
+                / "checkpoints"
+                / "0001.json"
+            )
+            pruning = NetPlan(
+                "SIGNAL",
+                replace(
+                    route(
+                        Segment(point(4, 2), point(7, 5), "F.Cu"),
+                        Segment(point(7, 5), point(8, 5), "F.Cu"),
+                    ),
+                    cost=1.0,
+                ),
+            )
+            retaining = NetPlan(
+                "SIGNAL",
+                replace(
+                    route(
+                        Segment(point(6, 2), point(8, 4), "F.Cu"),
+                        Segment(point(8, 4), point(8, 5), "F.Cu"),
+                    ),
+                    cost=2.0,
+                ),
+            )
+            with (
+                mock.patch.object(
+                    checkpoints, "whole_net", return_value=(pruning, retaining)
+                ),
+                mock.patch.object(
+                    checkpoints.NativeBackend,
+                    "refine_complete",
+                    side_effect=lambda net, prior, candidate: candidate,
+                ),
+            ):
                 result = checkpoints.attempt(project, path)
             self.assertEqual(result["status"], "validated_candidate", result)
             self.assertEqual(result["route"]["cost"], 2.0)

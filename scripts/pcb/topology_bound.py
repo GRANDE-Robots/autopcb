@@ -17,18 +17,24 @@ def grid_bounds(router: GridRouter, margin: int) -> tuple[int, int, int, int]:
     """Return exact inclusive grid-index bounds for a physical margin."""
     lower = -(-margin // router.step)
     return (
-        lower, lower,
+        lower,
+        lower,
         (router.upper.x - router.lower.x - margin) // router.step,
         (router.upper.y - router.lower.y - margin) // router.step,
     )
 
 
-def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
+def minimum_vias(
+    router: GridRouter,
+    goal: tuple[int, int, int],
+    more_goals: tuple[tuple[int, int, int], ...] = (),
+) -> array:
     """Return per-cell minimum via count, ignoring direction and bend constraints.
 
     Zero-cost existing vias and blocked copper use the same grid as the router.
     Endpoint-specific via prohibitions are deliberately relaxed, making this a
-    lower bound for every route searched from a fixed goal.
+    lower bound for every route searched from a fixed goal. With several goals
+    each cell holds its count to the nearest one.
     """
     nx, ny = router.nx, router.ny
     area = nx * ny
@@ -43,10 +49,11 @@ def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
     via_blocked = bytearray(area)
     for x, y in router.via_blocked:
         via_blocked[y * nx + x] = 1
-    gx, gy, glayer = goal
-    goal_id = glayer * area + gy * nx + gx
-    distance[goal_id] = 0
-    queue = deque([goal_id])
+    queue = deque()
+    for gx, gy, glayer in (goal, *more_goals):
+        goal_id = glayer * area + gy * nx + gx
+        distance[goal_id] = 0
+        queue.append(goal_id)
     edge = router.clearance + math.ceil(router.width / 2)
     via_edge = router.clearance + math.ceil(router.via_size / 2)
     xmin, ymin, xmax, ymax = grid_bounds(router, edge)
@@ -66,7 +73,9 @@ def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
             if not (0 <= xx < nx and 0 <= yy < ny):
                 continue
             next_cell = yy * nx + xx
-            if layer_cells[next_cell] or not (xmin <= xx <= xmax and ymin <= yy <= ymax):
+            if layer_cells[next_cell] or not (
+                xmin <= xx <= xmax and ymin <= yy <= ymax
+            ):
                 continue
             # The detailed router checks the swept diagonal itself. Adjacent
             # blocked vertices do not necessarily obstruct that diagonal, so
@@ -92,10 +101,14 @@ def minimum_vias(router: GridRouter, goal: tuple[int, int, int]) -> array:
     return distance
 
 
-def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
-                  stop_at: tuple[int, int, int] | None = None,
-                  max_expansions: int | None = None,
-                  more_goals: tuple[tuple[int, int, int], ...] = ()) -> array:
+def relaxed_costs(
+    router: GridRouter,
+    goal: tuple[int, int, int],
+    *,
+    stop_at: tuple[int, int, int] | None = None,
+    max_expansions: int | None = None,
+    more_goals: tuple[tuple[int, int, int], ...] = (),
+) -> array:
     """Compute optimistic costs; unfinished cells get the last settled cost.
 
     With several goals each cell holds its cost to the nearest one, which
@@ -105,20 +118,29 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
     area = nx * ny
     nstates = area * len(router.layers)
     if max_expansions is not None and (
-        isinstance(max_expansions, bool) or not isinstance(max_expansions, int)
+        isinstance(max_expansions, bool)
+        or not isinstance(max_expansions, int)
         or max_expansions < 1
     ):
         raise ValueError("Topology expansion limit must be a positive integer")
     stop_id = None
     if stop_at is not None:
-        if (not isinstance(stop_at, tuple) or len(stop_at) != 3
-                or any(isinstance(v, bool) or not isinstance(v, int) for v in stop_at)
-                or not 0 <= stop_at[0] < nx or not 0 <= stop_at[1] < ny
-                or not 0 <= stop_at[2] < len(router.layers)):
+        if (
+            not isinstance(stop_at, tuple)
+            or len(stop_at) != 3
+            or any(isinstance(v, bool) or not isinstance(v, int) for v in stop_at)
+            or not 0 <= stop_at[0] < nx
+            or not 0 <= stop_at[1] < ny
+            or not 0 <= stop_at[2] < len(router.layers)
+        ):
             raise ValueError("Topology start must identify a valid grid cell and layer")
         stop_id = stop_at[2] * area + stop_at[1] * nx + stop_at[0]
     distance = array("d", [math.inf]) * nstates
-    settled = bytearray(nstates) if stop_id is not None or max_expansions is not None else None
+    settled = (
+        bytearray(nstates)
+        if stop_id is not None or max_expansions is not None
+        else None
+    )
     partial = False
     occupied = []
     for layer in router.layers:
@@ -152,7 +174,9 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
         if settled is not None:
             settled[state] = 1
             finalized += 1
-            if state == stop_id or (max_expansions is not None and finalized >= max_expansions):
+            if state == stop_id or (
+                max_expansions is not None and finalized >= max_expansions
+            ):
                 partial = True
                 break
         layer_idx, cell = divmod(state, area)
@@ -165,7 +189,9 @@ def relaxed_costs(router: GridRouter, goal: tuple[int, int, int], *,
             if not (0 <= xx < nx and 0 <= yy < ny):
                 continue
             next_cell = yy * nx + xx
-            if layer_cells[next_cell] or not (xmin <= xx <= xmax and ymin <= yy <= ymax):
+            if layer_cells[next_cell] or not (
+                xmin <= xx <= xmax and ymin <= yy <= ymax
+            ):
                 continue
             diagonal = bool(dx and dy)
             # Keep the relaxed graph at least as permissive as the detailed

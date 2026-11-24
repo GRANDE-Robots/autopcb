@@ -31,15 +31,20 @@ def is_standard_dogleg(directions: Iterable[int]) -> bool:
     if len(directions) != 5:
         return False
     first, diagonal, middle, other_diagonal, last = directions
-    return (first == last and diagonal == other_diagonal
-            and first % 2 == middle % 2 == 0 and diagonal % 2 == 1
-            and (first - middle) % 8 in {2, 6}
-            and (diagonal - first) % 8 in {1, 7}
-            and (diagonal - middle) % 8 in {1, 7})
+    return (
+        first == last
+        and diagonal == other_diagonal
+        and first % 2 == middle % 2 == 0
+        and diagonal % 2 == 1
+        and (first - middle) % 8 in {2, 6}
+        and (diagonal - first) % 8 in {1, 7}
+        and (diagonal - middle) % 8 in {1, 7}
+    )
 
 
-def _advance_staircase_history(memory: int, current: int, following: int,
-                                anchored: bool = False) -> int | None:
+def _advance_staircase_history(
+    memory: int, current: int, following: int, anchored: bool = False
+) -> int | None:
     """Keep three prior runs; resolve a diagonal/cardinal/diagonal after its exit.
 
     A pending final triplet is checked on the complete candidate, where pad
@@ -57,10 +62,17 @@ def _advance_staircase_history(memory: int, current: int, following: int,
         value //= 9
     history.reverse()
     if anchored:
-        return None if len(history) >= 2 and is_staircase_triplet(*history[-2:], current) else -1
+        return (
+            None
+            if len(history) >= 2 and is_staircase_triplet(*history[-2:], current)
+            else -1
+        )
     context = [*history, current, following]
-    if (len(context) == 5 and is_staircase_triplet(*context[1:4])
-            and not is_standard_dogleg(context)):
+    if (
+        len(context) == 5
+        and is_staircase_triplet(*context[1:4])
+        and not is_standard_dogleg(context)
+    ):
         return None
     result = 0
     for direction in (*history, current)[-3:]:
@@ -138,8 +150,12 @@ class Obstacle:
             raise ValueError("Obstacle layers must be copper layers")
         if self.kind not in {"pad", "copper", "via", "keepout"}:
             raise ValueError("Obstacle kind must be pad, copper, via, or keepout")
-        if not isinstance(self.boundary_only, bool) or (self.boundary_only and self.kind != "keepout"):
-            raise ValueError("Only a native rule area can use its boundary without a copper gap")
+        if not isinstance(self.boundary_only, bool) or (
+            self.boundary_only and self.kind != "keepout"
+        ):
+            raise ValueError(
+                "Only a native rule area can use its boundary without a copper gap"
+            )
         if (
             isinstance(self.copper_radius, bool)
             or not isinstance(self.copper_radius, int)
@@ -150,15 +166,21 @@ class Obstacle:
             isinstance(self.corner_radius, bool)
             or not isinstance(self.corner_radius, int)
             or self.corner_radius < 0
-            or self.corner_radius * 2 > min(
-                self.upper.x - self.lower.x, self.upper.y - self.lower.y
+            or self.corner_radius * 2
+            > min(self.upper.x - self.lower.x, self.upper.y - self.lower.y)
+            or (
+                self.corner_radius
+                and (self.kind != "pad" or self.centerline is not None)
             )
-            or (self.corner_radius and (self.kind != "pad" or self.centerline is not None))
         ):
             raise ValueError("Rounded corners require a valid pad rectangle")
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
-               for value in (self.min_track_clearance, self.min_via_clearance)):
-            raise ValueError("Obstacle clearances must be nonnegative integer distances")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (self.min_track_clearance, self.min_via_clearance)
+        ):
+            raise ValueError(
+                "Obstacle clearances must be nonnegative integer distances"
+            )
         if self.centerline is None:
             if self.copper_radius:
                 raise ValueError("Copper radius requires a trace centerline")
@@ -169,7 +191,9 @@ class Obstacle:
             or len(self.centerline) != 2
             or any(not isinstance(point, Point) for point in self.centerline)
         ):
-            raise ValueError("A copper capsule requires two points and a supported kind")
+            raise ValueError(
+                "A copper capsule requires two points and a supported kind"
+            )
         if self.kind == "pad" and self.centerline[0] != self.centerline[1]:
             raise ValueError("A circular pad requires a single center point")
         if any(
@@ -185,7 +209,9 @@ class Obstacle:
         """Native rule areas already define where the copper edge must stop."""
         if self.boundary_only:
             return 0
-        return max(clearance, self.min_track_clearance, self.min_via_clearance if via else 0)
+        return max(
+            clearance, self.min_track_clearance, self.min_via_clearance if via else 0
+        )
 
 
 def _point_near_segment(point: Point, first: Point, last: Point, radius: int) -> bool:
@@ -274,11 +300,15 @@ class PadCopper:
     boxes: tuple[tuple[str, int, int, int, int], ...] = ()
 
     def holds(self, point: Point, layer: str) -> bool:
-        return any(name == layer and x0 <= point.x <= x1 and y0 <= point.y <= y1
-                   for name, x0, y0, x1, y1 in self.boxes)
+        return any(
+            name == layer and x0 <= point.x <= x1 and y0 <= point.y <= y1
+            for name, x0, y0, x1, y1 in self.boxes
+        )
 
     def covers(self, segment: Segment) -> bool:
-        return self.holds(segment.start, segment.layer) and self.holds(segment.end, segment.layer)
+        return self.holds(segment.start, segment.layer) and self.holds(
+            segment.end, segment.layer
+        )
 
 
 @dataclass(frozen=True)
@@ -482,9 +512,16 @@ class GridRouter:
         }
         self._pad_cells = {
             (layers.index(name), x, y)
-            for name, x0, y0, x1, y1 in pad_copper.boxes if name in layers
-            for x in range(max(0, -((lower.x - x0) // step)), min(self.nx - 1, (x1 - lower.x) // step) + 1)
-            for y in range(max(0, -((lower.y - y0) // step)), min(self.ny - 1, (y1 - lower.y) // step) + 1)
+            for name, x0, y0, x1, y1 in pad_copper.boxes
+            if name in layers
+            for x in range(
+                max(0, -((lower.x - x0) // step)),
+                min(self.nx - 1, (x1 - lower.x) // step) + 1,
+            )
+            for y in range(
+                max(0, -((lower.y - y0) // step)),
+                min(self.ny - 1, (y1 - lower.y) // step) + 1,
+            )
         }
         self.via_blocked: set[tuple[int, int]] = set()
         self.existing_vias: dict[tuple[int, int], set[str]] = {}
@@ -498,7 +535,9 @@ class GridRouter:
         self._edge_cache = OrderedDict()
         # Dense searches revisit the same physical edge with many headings.
         # Scale this cache with the actual grid, while bounding memory per router.
-        self._edge_cache_limit = max(8192, min(65536, self.nx * self.ny * len(layers) // 16))
+        self._edge_cache_limit = max(
+            8192, min(65536, self.nx * self.ny * len(layers) // 16)
+        )
         self._spatial = {layer: {} for layer in layers}
         self._spatial_step = mm(2)
         # Masks only eliminate impossible vertices. Every actual edge is
@@ -538,7 +577,9 @@ class GridRouter:
                         self._spatial[layer].setdefault(cell, []).append(obstacle)
                 track_width = profile.minimum_width if profile else width
                 track_clearance = profile.minimum_clearance if profile else clearance
-                track_margin = math.ceil(track_width / 2) + obstacle.gap(track_clearance)
+                track_margin = math.ceil(track_width / 2) + obstacle.gap(
+                    track_clearance
+                )
                 cells = self._covered(obstacle, track_margin)
                 for layer in affected:
                     self.blocked[layer].update(cells)
@@ -550,15 +591,25 @@ class GridRouter:
 
     def _spatial_cells(self, first: Point, last: Point, margin: int = 0):
         step = self._spatial_step
-        for x in range((min(first.x, last.x) - margin) // step, (max(first.x, last.x) + margin) // step + 1):
-            for y in range((min(first.y, last.y) - margin) // step, (max(first.y, last.y) + margin) // step + 1):
+        for x in range(
+            (min(first.x, last.x) - margin) // step,
+            (max(first.x, last.x) + margin) // step + 1,
+        ):
+            for y in range(
+                (min(first.y, last.y) - margin) // step,
+                (max(first.y, last.y) + margin) // step + 1,
+            ):
                 yield x, y
 
     def edge_clear(self, first: Point, last: Point, layer: str) -> bool:
         """Check complete swept copper, including off-grid access and necks."""
         if first == last:
             return True
-        key = (first, last, layer) if (first.x, first.y) < (last.x, last.y) else (last, first, layer)
+        key = (
+            (first, last, layer)
+            if (first.x, first.y) < (last.x, last.y)
+            else (last, first, layer)
+        )
         if key in self._edge_cache:
             self._edge_cache.move_to_end(key)
             return self._edge_cache[key]
@@ -571,21 +622,41 @@ class GridRouter:
                 profile.maximum_clearance if profile else self.clearance,
                 self.max_obstacle_track_clearance,
             )
-            nearby = {id(obstacle): obstacle for cell in self._spatial_cells(piece.start, piece.end, math.ceil(width / 2) + allowance)
-                      for obstacle in self._spatial[layer].get(cell, ())}
-            edge_margin = math.ceil(width / 2) + (profile.minimum_clearance if profile else self.clearance)
-            if not self._inside_point(piece.start, edge_margin) or not self._inside_point(piece.end, edge_margin):
+            nearby = {
+                id(obstacle): obstacle
+                for cell in self._spatial_cells(
+                    piece.start, piece.end, math.ceil(width / 2) + allowance
+                )
+                for obstacle in self._spatial[layer].get(cell, ())
+            }
+            edge_margin = math.ceil(width / 2) + (
+                profile.minimum_clearance if profile else self.clearance
+            )
+            if not self._inside_point(
+                piece.start, edge_margin
+            ) or not self._inside_point(piece.end, edge_margin):
                 clear = False
                 break
+
             def clearance(obstacle):
                 if profile is None:
                     return self.clearance
                 resolve = getattr(profile, "clearance_for_track", None)
-                return resolve(piece, obstacle, width) if resolve else profile.clearance_at(piece, obstacle)
+                return (
+                    resolve(piece, obstacle, width)
+                    if resolve
+                    else profile.clearance_at(piece, obstacle)
+                )
 
-            if any(self._intersects_box(piece.start, piece.end, obstacle,
-                                        math.ceil(width / 2) + obstacle.gap(clearance(obstacle)))
-                   for obstacle in nearby.values()):
+            if any(
+                self._intersects_box(
+                    piece.start,
+                    piece.end,
+                    obstacle,
+                    math.ceil(width / 2) + obstacle.gap(clearance(obstacle)),
+                )
+                for obstacle in nearby.values()
+            ):
                 clear = False
                 break
         self._edge_cache[key] = clear
@@ -664,7 +735,8 @@ class GridRouter:
                 if columns * rows > 32_768 and y_start != lo:
                     self.check_budget()
                 result.update(
-                    (x, y) for y in range(y_start, min(y_start + 4096, hi + 1))
+                    (x, y)
+                    for y in range(y_start, min(y_start + 4096, hi + 1))
                     if _point_near_segment(self._point(x, y), first, last, radius)
                 )
         return result
@@ -721,7 +793,10 @@ class GridRouter:
         return [(start, first, end), (start, second, end)]
 
     def _direct_warm_route(
-        self, start: Point, end: Point, layer: str,
+        self,
+        start: Point,
+        end: Point,
+        layer: str,
         candidate_check: Callable[[Route], bool] | None,
     ) -> Route | None:
         """Try exact same-layer chamfers before a bounded grid search."""
@@ -730,13 +805,32 @@ class GridRouter:
         span = min(abs(dx), abs(dy))
         if dx and dy and span > 1:
             sx, sy = (1 if dx > 0 else -1), (1 if dy > 0 else -1)
-            samples = {span // 4, span // 2, 3 * span // 4,
-                       self.step // 2, self.step, span - self.step // 2, span - self.step}
+            samples = {
+                span // 4,
+                span // 2,
+                3 * span // 4,
+                self.step // 2,
+                self.step,
+                span - self.step // 2,
+                span - self.step,
+            }
             for distance in sorted(value for value in samples if 0 < value < span):
-                paths.append((start, Point(end.x - sx * distance, start.y),
-                              Point(end.x, start.y + sy * distance), end))
-                paths.append((start, Point(start.x, end.y - sy * distance),
-                              Point(start.x + sx * distance, end.y), end))
+                paths.append(
+                    (
+                        start,
+                        Point(end.x - sx * distance, start.y),
+                        Point(end.x, start.y + sy * distance),
+                        end,
+                    )
+                )
+                paths.append(
+                    (
+                        start,
+                        Point(start.x, end.y - sy * distance),
+                        Point(start.x + sx * distance, end.y),
+                        end,
+                    )
+                )
         result = self._checked_warm_paths(paths, layer, candidate_check)
         if result is not None or max(abs(dx), abs(dy)) < max(mm(6), 16 * self.step):
             return result
@@ -745,13 +839,22 @@ class GridRouter:
         # both endpoint corridors are obstructed. Keep short pad escapes cheap
         # and sample these longer patterns only after the simpler paths fail.
         paths = []
-        for distance in sorted({self.step, 2 * self.step, span // 16, span // 8, span // 4}):
+        for distance in sorted(
+            {self.step, 2 * self.step, span // 16, span // 8, span // 4}
+        ):
             if not 0 < 2 * distance < span:
                 continue
             for horizontal in (True, False):
                 room = (abs(dx) if horizontal else abs(dy)) - 2 * distance
-                offsets = {room // 8, room // 4, room // 2, 3 * room // 4,
-                           7 * room // 8, self.step, room - self.step}
+                offsets = {
+                    room // 8,
+                    room // 4,
+                    room // 2,
+                    3 * room // 4,
+                    7 * room // 8,
+                    self.step,
+                    room - self.step,
+                }
                 for offset in sorted(value for value in offsets if 0 < value < room):
                     if horizontal:
                         first = Point(start.x + sx * offset, start.y)
@@ -767,7 +870,9 @@ class GridRouter:
         return self._checked_warm_paths(paths, layer, candidate_check)
 
     def _checked_warm_paths(
-        self, paths: Iterable[tuple[Point, ...]], layer: str,
+        self,
+        paths: Iterable[tuple[Point, ...]],
+        layer: str,
         candidate_check: Callable[[Route], bool] | None,
     ) -> Route | None:
         """Apply identical dimensions, geometry and context gates to warm paths."""
@@ -780,42 +885,84 @@ class GridRouter:
             if len(path) < 2 or any(a == b for a, b in zip(path, path[1:])):
                 continue
             segments = tuple(Segment(a, b, layer) for a, b in zip(path, path[1:]))
-            directions = [self._direction(segment.start, segment.end) for segment in segments]
-            if ((self.initial_directions is not None and directions[0] not in self.initial_directions)
-                    or (self.final_directions is not None and directions[-1] not in self.final_directions)):
+            directions = [
+                self._direction(segment.start, segment.end) for segment in segments
+            ]
+            if (
+                self.initial_directions is not None
+                and directions[0] not in self.initial_directions
+            ) or (
+                self.final_directions is not None
+                and directions[-1] not in self.final_directions
+            ):
                 continue
-            turns = [(right - left) % 8 for left, right in zip(directions, directions[1:])]
-            if any(self._illegal_turn(turn, at, layer) for turn, at in zip(turns, path[1:])):
+            turns = [
+                (right - left) % 8 for left, right in zip(directions, directions[1:])
+            ]
+            if any(
+                self._illegal_turn(turn, at, layer) for turn, at in zip(turns, path[1:])
+            ):
                 continue
             if self.forbid_staircase and self._staircase_off_pads(segments):
                 continue
-            distances = [math.hypot(seg.end.x - seg.start.x, seg.end.y - seg.start.y)
-                         for seg in segments]
-            short = [value < self.min_segment_length and not self.pad_copper.covers(segment)
-                     for segment, value in strict_zip(segments, distances)]
-            if any(short[1:-1]) or self.enforce_endpoint_spacing and (short[0] or short[-1]):
+            distances = [
+                math.hypot(seg.end.x - seg.start.x, seg.end.y - seg.start.y)
+                for seg in segments
+            ]
+            short = [
+                value < self.min_segment_length and not self.pad_copper.covers(segment)
+                for segment, value in strict_zip(segments, distances)
+            ]
+            if (
+                any(short[1:-1])
+                or self.enforce_endpoint_spacing
+                and (short[0] or short[-1])
+            ):
                 continue
             length = sum(distances) / NM_PER_MM
-            diagonal = sum(distance for segment, distance in strict_zip(segments, distances)
-                           if segment.start.x != segment.end.x and segment.start.y != segment.end.y) / NM_PER_MM
-            symmetry = sum(distance / NM_PER_MM * _guide_distance(segment.end, self.guide)
-                           for segment, distance in strict_zip(segments, distances))
+            diagonal = (
+                sum(
+                    distance
+                    for segment, distance in strict_zip(segments, distances)
+                    if segment.start.x != segment.end.x
+                    and segment.start.y != segment.end.y
+                )
+                / NM_PER_MM
+            )
+            symmetry = sum(
+                distance / NM_PER_MM * _guide_distance(segment.end, self.guide)
+                for segment, distance in strict_zip(segments, distances)
+            )
             bends = sum(bool(turn) for turn in turns)
-            cost = ((self.weights.length + self.layer_penalties.get(layer, 0)) * length
-                    + self.weights.bend * bends + self.weights.diagonal * diagonal
-                    + self.weights.symmetry * symmetry)
+            cost = (
+                (self.weights.length + self.layer_penalties.get(layer, 0)) * length
+                + self.weights.bend * bends
+                + self.weights.diagonal * diagonal
+                + self.weights.symmetry * symmetry
+            )
             choices.append((cost, len(segments), path, segments, length, bends))
-        for cost, _, _, segments, length, bends in sorted(choices, key=lambda value: (value[0], value[1])):
+        for cost, _, _, segments, length, bends in sorted(
+            choices, key=lambda value: (value[0], value[1])
+        ):
             self.check_budget()
-            if any(not self.edge_clear(segment.start, segment.end, layer) for segment in segments):
+            if any(
+                not self.edge_clear(segment.start, segment.end, layer)
+                for segment in segments
+            ):
                 continue
-            result = Route(segments, (), (), length, bends, cost, 0, search_truncated=True)
+            result = Route(
+                segments, (), (), length, bends, cost, 0, search_truncated=True
+            )
             if candidate_check is None or candidate_check(result):
                 return result
         return None
 
     def _direct_one_via_route(
-        self, start: Point, start_layer: str, end: Point, end_layer: str,
+        self,
+        start: Point,
+        start_layer: str,
+        end: Point,
+        end_layer: str,
         candidate_check: Callable[[Route], bool] | None,
     ) -> Route | None:
         """Try bounded exact cross-layer paths before expanding the grid."""
@@ -828,24 +975,34 @@ class GridRouter:
             for anchor in anchors:
                 x = (anchor.x - self.lower.x) // self.step
                 y = (anchor.y - self.lower.y) // self.step
-                cells.update((x + dx, y + dy) for dx in (-1, 0, 1, 2) for dy in (-1, 0, 1, 2))
+                cells.update(
+                    (x + dx, y + dy) for dx in (-1, 0, 1, 2) for dy in (-1, 0, 1, 2)
+                )
 
         def estimate(cell):
             at = self._point(*cell)
             reusable = {start_layer, end_layer} <= self.existing_vias.get(cell, set())
-            distance = sum(max(abs(a.x - b.x), abs(a.y - b.y))
-                           + (math.sqrt(2) - 1) * min(abs(a.x - b.x), abs(a.y - b.y))
-                           for a, b in ((start, at), (at, end)))
+            distance = sum(
+                max(abs(a.x - b.x), abs(a.y - b.y))
+                + (math.sqrt(2) - 1) * min(abs(a.x - b.x), abs(a.y - b.y))
+                for a, b in ((start, at), (at, end))
+            )
             return (0 if reusable else self.weights.via, distance, cell)
 
         margin = math.ceil(self.via_size / 2) + self.clearance
         viable = []
         for cell in cells:
             x, y = cell
-            if not (0 <= x < self.nx and 0 <= y < self.ny) or not self._inside(x, y, margin):
+            if not (0 <= x < self.nx and 0 <= y < self.ny) or not self._inside(
+                x, y, margin
+            ):
                 continue
             at = self._point(x, y)
-            if at in (start, end) or cell in self.blocked[start_layer] or cell in self.blocked[end_layer]:
+            if (
+                at in (start, end)
+                or cell in self.blocked[start_layer]
+                or cell in self.blocked[end_layer]
+            ):
                 continue
             reusable = {start_layer, end_layer} <= self.existing_vias.get(cell, set())
             if not reusable and (not self.allow_new_vias or cell in self.via_blocked):
@@ -864,13 +1021,20 @@ class GridRouter:
                 second = self._direct_warm_route(at, end, end_layer, None)
                 if second is None:
                     continue
-                reusable = {start_layer, end_layer} <= self.existing_vias.get(cell, set())
+                reusable = {start_layer, end_layer} <= self.existing_vias.get(
+                    cell, set()
+                )
                 via = Via(at, start_layer, end_layer)
-                result = Route((*first.segments, *second.segments), () if reusable else (via,),
-                               (via,) if reusable else (), first.length_mm + second.length_mm,
-                               first.bends + second.bends,
-                               first.cost + second.cost + (0 if reusable else self.weights.via),
-                               0, search_truncated=True)
+                result = Route(
+                    (*first.segments, *second.segments),
+                    () if reusable else (via,),
+                    (via,) if reusable else (),
+                    first.length_mm + second.length_mm,
+                    first.bends + second.bends,
+                    first.cost + second.cost + (0 if reusable else self.weights.via),
+                    0,
+                    search_truncated=True,
+                )
                 self.initial_directions, self.final_directions = original
                 if candidate_check is None or candidate_check(result):
                     return result
@@ -879,23 +1043,36 @@ class GridRouter:
         return None
 
     def _two_via_escape_clear(
-        self, first: tuple[Segment, ...], last: tuple[Segment, ...],
-        first_via: Point, last_via: Point,
+        self,
+        first: tuple[Segment, ...],
+        last: tuple[Segment, ...],
+        first_via: Point,
+        last_via: Point,
     ) -> bool:
         """Keep independent escape legs and their opposite vias separated."""
         width = self.profile.maximum_width if self.profile else self.width
         radius = math.ceil((self.via_size + width) / 2)
-        if any(_point_near_segment(last_via, part.start, part.end, radius)
-               for part in first):
+        if any(
+            _point_near_segment(last_via, part.start, part.end, radius)
+            for part in first
+        ):
             return False
-        if any(_point_near_segment(first_via, part.start, part.end, radius)
-               for part in last):
+        if any(
+            _point_near_segment(first_via, part.start, part.end, radius)
+            for part in last
+        ):
             return False
-        return not any(_segments_intersect(a.start, a.end, b.start, b.end)
-                       for a in first for b in last)
+        return not any(
+            _segments_intersect(a.start, a.end, b.start, b.end)
+            for a in first
+            for b in last
+        )
 
     def _direct_two_via_route(
-        self, start: Point, end: Point, layer: str,
+        self,
+        start: Point,
+        end: Point,
+        layer: str,
         candidate_check: Callable[[Route], bool] | None,
     ) -> Route | None:
         """Try bounded pad escapes and a straight/chamfered inner-layer path."""
@@ -911,37 +1088,55 @@ class GridRouter:
             # the lattice to about 61 cells per axis on very fine grids.
             radius = max(1, math.ceil(mm(3) / self.step))
             stride = max(1, math.ceil(radius / 30))
-            for index, x in enumerate(range(max(0, cx - radius), min(self.nx, cx + radius + 1), stride)):
+            for index, x in enumerate(
+                range(max(0, cx - radius), min(self.nx, cx + radius + 1), stride)
+            ):
                 if index % 8 == 0:
                     self.check_budget()
-                for y in range(max(0, cy - radius), min(self.ny, cy + radius + 1), stride):
+                for y in range(
+                    max(0, cy - radius), min(self.ny, cy + radius + 1), stride
+                ):
                     cells.add((x, y))
-            for distance_mm in (.5, .8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0):
+            for distance_mm in (0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0):
                 radius = max(1, round(mm(distance_mm) / self.step))
                 for dx, dy in DIRECTIONS:
                     for ox in (0, 1):
                         for oy in (0, 1):
                             cells.add((cx + radius * dx + ox, cy + radius * dy + oy))
-            cells.update(cell for cell in self.existing_vias
-                         if max(abs(self._point(*cell).x - endpoint.x),
-                                abs(self._point(*cell).y - endpoint.y)) <= mm(3))
+            cells.update(
+                cell
+                for cell in self.existing_vias
+                if max(
+                    abs(self._point(*cell).x - endpoint.x),
+                    abs(self._point(*cell).y - endpoint.y),
+                )
+                <= mm(3)
+            )
             margin = math.ceil(self.via_size / 2) + self.clearance
             result = []
             for x, y in cells:
-                if not (0 <= x < self.nx and 0 <= y < self.ny) or not self._inside(x, y, margin):
+                if not (0 <= x < self.nx and 0 <= y < self.ny) or not self._inside(
+                    x, y, margin
+                ):
                     continue
                 at = self._point(x, y)
                 if at in (start, end) or (x, y) in self.blocked[layer]:
                     continue
                 reuse = layer in self.existing_vias.get((x, y), set())
-                if not reuse and (not self.allow_new_vias or (x, y) in self.via_blocked):
+                if not reuse and (
+                    not self.allow_new_vias or (x, y) in self.via_blocked
+                ):
                     continue
                 result.append(((x, y), reuse))
-            return sorted(result, key=lambda item: (
-                not item[1],
-                (self._point(*item[0]).x - endpoint.x) ** 2
-                + (self._point(*item[0]).y - endpoint.y) ** 2, item[0]
-            ))[:96]
+            return sorted(
+                result,
+                key=lambda item: (
+                    not item[1],
+                    (self._point(*item[0]).x - endpoint.x) ** 2
+                    + (self._point(*item[0]).y - endpoint.y) ** 2,
+                    item[0],
+                ),
+            )[:96]
 
         original = self.initial_directions, self.final_directions
         try:
@@ -953,8 +1148,11 @@ class GridRouter:
                 for cell, reuse in candidates(endpoint):
                     self.check_budget()
                     at = self._point(*cell)
-                    path = (self._direct_warm_route(endpoint, at, layer, None) if departing
-                            else self._direct_warm_route(at, endpoint, layer, None))
+                    path = (
+                        self._direct_warm_route(endpoint, at, layer, None)
+                        if departing
+                        else self._direct_warm_route(at, endpoint, layer, None)
+                    )
                     if path is not None:
                         found.append((cell, reuse, path))
                         if len(found) == 8:
@@ -970,14 +1168,29 @@ class GridRouter:
                 last_cell, last_reuse, last_path = last
                 a, b = self._point(*first_cell), self._point(*last_cell)
                 vias = (Via(a, layer, transit), Via(b, transit, layer))
-                new = tuple(v for v, reuse in strict_zip(vias, (first_reuse, last_reuse)) if not reuse)
-                reused = tuple(v for v, reuse in strict_zip(vias, (first_reuse, last_reuse)) if reuse)
-                return Route((*first_path.segments, *middle.segments, *last_path.segments),
-                             new, reused,
-                             first_path.length_mm + middle.length_mm + last_path.length_mm,
-                             first_path.bends + middle.bends + last_path.bends,
-                             first_path.cost + middle.cost + last_path.cost + len(new) * self.weights.via,
-                             middle.expanded, search_truncated=True)
+                new = tuple(
+                    v
+                    for v, reuse in strict_zip(vias, (first_reuse, last_reuse))
+                    if not reuse
+                )
+                reused = tuple(
+                    v
+                    for v, reuse in strict_zip(vias, (first_reuse, last_reuse))
+                    if reuse
+                )
+                return Route(
+                    (*first_path.segments, *middle.segments, *last_path.segments),
+                    new,
+                    reused,
+                    first_path.length_mm + middle.length_mm + last_path.length_mm,
+                    first_path.bends + middle.bends + last_path.bends,
+                    first_path.cost
+                    + middle.cost
+                    + last_path.cost
+                    + len(new) * self.weights.via,
+                    middle.expanded,
+                    search_truncated=True,
+                )
 
             def accepted(result):
                 if self.forbid_staircase and self._staircase_off_pads(result.segments):
@@ -995,13 +1208,23 @@ class GridRouter:
                 # Avoid overlapping newly drilled vias, even for the same net.
                 if math.hypot(a.x - b.x, a.y - b.y) < self.via_size + self.clearance:
                     continue
-                if not self._two_via_escape_clear(first_path.segments, last_path.segments, a, b):
+                if not self._two_via_escape_clear(
+                    first_path.segments, last_path.segments, a, b
+                ):
                     continue
                 for transit in self.layers:
-                    if transit == layer or first_cell in self.blocked[transit] or last_cell in self.blocked[transit]:
+                    if (
+                        transit == layer
+                        or first_cell in self.blocked[transit]
+                        or last_cell in self.blocked[transit]
+                    ):
                         continue
-                    if (first_reuse and transit not in self.existing_vias[first_cell]
-                            or last_reuse and transit not in self.existing_vias[last_cell]):
+                    if (
+                        first_reuse
+                        and transit not in self.existing_vias[first_cell]
+                        or last_reuse
+                        and transit not in self.existing_vias[last_cell]
+                    ):
                         continue
                     middle = self._direct_warm_route(a, b, transit, None)
                     if middle is None:
@@ -1022,8 +1245,9 @@ class GridRouter:
             # An integer subdivision must divide the original lattice exactly;
             # otherwise the off-grid retry would lose this expansion slice.
             step = self.step // 2 if self.step % 2 == 0 else self.step
-            if (((self.upper.x - self.lower.x) // step + 1)
-                    * ((self.upper.y - self.lower.y) // step + 1) > self.max_cells):
+            if ((self.upper.x - self.lower.x) // step + 1) * (
+                (self.upper.y - self.lower.y) // step + 1
+            ) > self.max_cells:
                 step = self.step
             # Congestion changes search order, never a layer's routing cost.
             # Reserve a share for each remaining layer so early busy layers
@@ -1033,28 +1257,45 @@ class GridRouter:
                 if not remaining:
                     break
                 pairs = detours[transit]
-                layer_remaining = max(1, remaining // (len(ordered_layers) - layer_index))
+                layer_remaining = max(
+                    1, remaining // (len(ordered_layers) - layer_index)
+                )
                 self.check_budget()
                 plane = GridRouter(
-                    self.lower, self.upper, step, (transit,), self.net,
-                    self.width, self.clearance, self.via_size, self.via_drill,
-                    self._obstacles, self.weights, self.guide,
-                    min(10_000, layer_remaining), self.max_cells,
-                    allow_new_vias=False, allowed_reused_vias=set(),
+                    self.lower,
+                    self.upper,
+                    step,
+                    (transit,),
+                    self.net,
+                    self.width,
+                    self.clearance,
+                    self.via_size,
+                    self.via_drill,
+                    self._obstacles,
+                    self.weights,
+                    self.guide,
+                    min(10_000, layer_remaining),
+                    self.max_cells,
+                    allow_new_vias=False,
+                    allowed_reused_vias=set(),
                     layer_penalties=self.layer_penalties,
                     forbid_staircase=self.forbid_staircase,
                     min_segment_length=self.min_segment_length,
                     gentle_turns=self.gentle_turns,
                     enforce_endpoint_spacing=self.enforce_endpoint_spacing,
                     heuristic_weight=self.heuristic_weight,
-                    check_budget=self.check_budget, profile=self.profile,
+                    check_budget=self.check_budget,
+                    profile=self.profile,
                     first_feasible=True,
                 )
                 for pair_index, (first, last) in enumerate(pairs):
                     if not remaining or not layer_remaining:
                         break
-                    allowance = (layer_remaining if pair_index + 1 == len(pairs)
-                                 else max(1, layer_remaining * 2 // 3))
+                    allowance = (
+                        layer_remaining
+                        if pair_index + 1 == len(pairs)
+                        else max(1, layer_remaining * 2 // 3)
+                    )
                     a, b = self._point(*first[0]), self._point(*last[0])
 
                     def compatible(middle):
@@ -1062,7 +1303,10 @@ class GridRouter:
 
                     try:
                         middle = plane.route(
-                            a, transit, b, transit,
+                            a,
+                            transit,
+                            b,
+                            transit,
                             _expansion_budget=min(10_000, allowance),
                             candidate_check=compatible,
                         )
@@ -1073,9 +1317,16 @@ class GridRouter:
                         expanded += error.expanded
                         continue
                     result = joined(first, last, transit, middle)
-                    return Route(result.segments, result.vias, result.reused_vias,
-                                 result.length_mm, result.bends, result.cost,
-                                 expanded + middle.expanded, search_truncated=True)
+                    return Route(
+                        result.segments,
+                        result.vias,
+                        result.reused_vias,
+                        result.length_mm,
+                        result.bends,
+                        result.cost,
+                        expanded + middle.expanded,
+                        search_truncated=True,
+                    )
         finally:
             self.initial_directions, self.final_directions = original
         return None
@@ -1100,42 +1351,69 @@ class GridRouter:
         x1, y1 = obstacle.upper.x - corner, obstacle.upper.y - corner
 
         def intersects_rectangle(left, top, right, bottom):
-            if (max(a.x, b.x) < left or min(a.x, b.x) > right
-                    or max(a.y, b.y) < top or min(a.y, b.y) > bottom):
+            if (
+                max(a.x, b.x) < left
+                or min(a.x, b.x) > right
+                or max(a.y, b.y) < top
+                or min(a.y, b.y) > bottom
+            ):
                 return False
             if any(left <= p.x <= right and top <= p.y <= bottom for p in (a, b)):
                 return True
-            corners = (Point(left, top), Point(right, top),
-                       Point(right, bottom), Point(left, bottom))
-            return any(_segments_intersect(a, b, first, last)
-                       for first, last in zip(corners, (*corners[1:], corners[0])))
+            corners = (
+                Point(left, top),
+                Point(right, top),
+                Point(right, bottom),
+                Point(left, bottom),
+            )
+            return any(
+                _segments_intersect(a, b, first, last)
+                for first, last in zip(corners, (*corners[1:], corners[0]))
+            )
 
-        if (intersects_rectangle(x0 - radius, y0, x1 + radius, y1)
-                or intersects_rectangle(x0, y0 - radius, x1, y1 + radius)):
+        if intersects_rectangle(
+            x0 - radius, y0, x1 + radius, y1
+        ) or intersects_rectangle(x0, y0 - radius, x1, y1 + radius):
             return True
-        return any(_point_near_segment(corner, a, b, radius)
-                   for corner in (Point(x0, y0), Point(x0, y1), Point(x1, y0), Point(x1, y1)))
+        return any(
+            _point_near_segment(corner, a, b, radius)
+            for corner in (Point(x0, y0), Point(x0, y1), Point(x1, y0), Point(x1, y1))
+        )
 
     def _endpoint_options(
         self, endpoint: Point, layer: str, *, reverse: bool
     ) -> list[tuple[Point, ...]]:
         return next(self._endpoint_option_groups(endpoint, layer, reverse=reverse), [])
 
-    def _endpoint_inside_minimum_foreign_clearance(self, endpoint: Point, layer: str) -> bool:
+    def _endpoint_inside_minimum_foreign_clearance(
+        self, endpoint: Point, layer: str
+    ) -> bool:
         """Prove an off-grid escape is blocked even at the smallest rule widths."""
         return self._minimum_envelope_blocked(endpoint, endpoint, layer)
 
     def _minimum_envelope_blocked(self, first: Point, last: Point, layer: str) -> bool:
         """Test a necessary, rule-independent minimum swept-copper envelope."""
-        width_bound = getattr(self.profile, "minimum_width_for", None) if self.profile else None
-        minimum_width = (width_bound(layer) if width_bound else
-                         self.profile.minimum_width if self.profile else self.width)
-        minimum_clearance = self.profile.minimum_clearance if self.profile else self.clearance
+        width_bound = (
+            getattr(self.profile, "minimum_width_for", None) if self.profile else None
+        )
+        minimum_width = (
+            width_bound(layer)
+            if width_bound
+            else self.profile.minimum_width
+            if self.profile
+            else self.width
+        )
+        minimum_clearance = (
+            self.profile.minimum_clearance if self.profile else self.clearance
+        )
         radius = math.ceil(minimum_width / 2)
-        if (not self._inside_point(first, radius + minimum_clearance)
-                or not self._inside_point(last, radius + minimum_clearance)):
+        if not self._inside_point(
+            first, radius + minimum_clearance
+        ) or not self._inside_point(last, radius + minimum_clearance):
             return True
-        maximum_clearance = self.profile.maximum_clearance if self.profile else self.clearance
+        maximum_clearance = (
+            self.profile.maximum_clearance if self.profile else self.clearance
+        )
         reach = radius + max(maximum_clearance, self.max_obstacle_track_clearance)
         seen = set()
         for cell in self._spatial_cells(first, last, reach):
@@ -1144,8 +1422,16 @@ class GridRouter:
                 if identity in seen:
                     continue
                 seen.add(identity)
-                clearance_bound = getattr(self.profile, "minimum_clearance_for", None) if self.profile else None
-                clearance = clearance_bound(layer, obstacle) if clearance_bound else minimum_clearance
+                clearance_bound = (
+                    getattr(self.profile, "minimum_clearance_for", None)
+                    if self.profile
+                    else None
+                )
+                clearance = (
+                    clearance_bound(layer, obstacle)
+                    if clearance_bound
+                    else minimum_clearance
+                )
                 margin = radius + obstacle.gap(clearance)
                 if self._intersects_box(first, last, obstacle, margin):
                     return True
@@ -1156,9 +1442,14 @@ class GridRouter:
         x = (endpoint.x - self.lower.x) % self.step
         y = (endpoint.y - self.lower.y) % self.step
         residues = (x, y, (x + y) % self.step, (x - y) % self.step)
-        return min(value for remainder in residues for value in (
-            remainder or self.step, self.step - remainder if remainder else self.step,
-        ))
+        return min(
+            value
+            for remainder in residues
+            for value in (
+                remainder or self.step,
+                self.step - remainder if remainder else self.step,
+            )
+        )
 
     def _endpoint_cannot_begin_stub(self, endpoint: Point, layer: str) -> bool:
         # Longer physical tracks can activate a more permissive local rule.
@@ -1166,7 +1457,9 @@ class GridRouter:
         length = self._minimum_stub_leg(endpoint)
         return all(
             self._minimum_envelope_blocked(
-                endpoint, Point(endpoint.x + dx * length, endpoint.y + dy * length), layer,
+                endpoint,
+                Point(endpoint.x + dx * length, endpoint.y + dy * length),
+                layer,
             )
             for dx, dy in DIRECTIONS
         )
@@ -1182,9 +1475,13 @@ class GridRouter:
         # scanning increasingly distant grid vertices cannot find an escape.
         # Keep on-grid endpoints unchanged so zero-length access and an
         # immediate layer transition remain available to the grid router.
-        if (dx % self.step or dy % self.step) and self._endpoint_inside_minimum_foreign_clearance(endpoint, layer):
+        if (
+            dx % self.step or dy % self.step
+        ) and self._endpoint_inside_minimum_foreign_clearance(endpoint, layer):
             return
-        if (dx % self.step or dy % self.step) and self._endpoint_cannot_begin_stub(endpoint, layer):
+        if (dx % self.step or dy % self.step) and self._endpoint_cannot_begin_stub(
+            endpoint, layer
+        ):
             return
         x0, y0 = dx // self.step, dy // self.step
         x1 = x0 if dx % self.step == 0 else x0 + 1
@@ -1200,7 +1497,9 @@ class GridRouter:
             left, right = x0 - radius, x1 + radius
             bottom, top = y0 - radius, y1 + radius
             if radius == 0:
-                candidates = itertools.product(range(left, right + 1), range(bottom, top + 1))
+                candidates = itertools.product(
+                    range(left, right + 1), range(bottom, top + 1)
+                )
             else:
                 candidates = itertools.chain(
                     ((x, y) for x in range(left, right + 1) for y in (bottom, top)),
@@ -1223,10 +1522,14 @@ class GridRouter:
                 if (x, y) in self.blocked[layer] or not self._inside(x, y, margin):
                     continue
                 for stub in self._stub_paths(endpoint, self._point(x, y)):
-                    if any(not self.edge_clear(a, b, layer) for a, b in zip(stub, stub[1:])):
+                    if any(
+                        not self.edge_clear(a, b, layer) for a, b in zip(stub, stub[1:])
+                    ):
                         continue
                     oriented = tuple(reversed(stub)) if reverse else stub
-                    allowed = self.final_directions if reverse else self.initial_directions
+                    allowed = (
+                        self.final_directions if reverse else self.initial_directions
+                    )
                     if len(oriented) > 1 and allowed is not None:
                         pair = oriented[-2:] if reverse else oriented[:2]
                         if self._direction(*pair) not in allowed:
@@ -1236,8 +1539,17 @@ class GridRouter:
                 yield options
 
     def _join_off_grid(
-        self, start, start_layer, end, end_layer, first, last, base,
-        initial_directions, final_directions, enforce_endpoint_spacing,
+        self,
+        start,
+        start_layer,
+        end,
+        end_layer,
+        first,
+        last,
+        base,
+        initial_directions,
+        final_directions,
+        enforce_endpoint_spacing,
     ) -> Route | None:
         """Join endpoint escapes to a grid path and reject illegal joins."""
         leading = [Segment(a, b, start_layer) for a, b in zip(first, first[1:])]
@@ -1260,7 +1572,11 @@ class GridRouter:
             return None
         # A via separates planar copper; its outgoing heading is not a bend.
         turns = [
-            (segments[i].end, segments[i].layer, (directions[i + 1] - directions[i]) % 8)
+            (
+                segments[i].end,
+                segments[i].layer,
+                (directions[i + 1] - directions[i]) % 8,
+            )
             for i in range(len(segments) - 1)
             if segments[i].layer == segments[i + 1].layer
         ]
@@ -1274,17 +1590,24 @@ class GridRouter:
         )
         diagonal_length = sum(
             math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / NM_PER_MM
-            for s in stub_segments if s.end.x != s.start.x and s.end.y != s.start.y
+            for s in stub_segments
+            if s.end.x != s.start.x and s.end.y != s.start.y
         )
         symmetry_cost = sum(
-            math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / NM_PER_MM
-            * _guide_distance(s.end, self.guide) for s in stub_segments
+            math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)
+            / NM_PER_MM
+            * _guide_distance(s.end, self.guide)
+            for s in stub_segments
         )
         cost = (
-            base.cost + self.weights.length * stub_length
-            + sum(self.layer_penalties.get(s.layer, 0)
-                  * math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / NM_PER_MM
-                  for s in stub_segments)
+            base.cost
+            + self.weights.length * stub_length
+            + sum(
+                self.layer_penalties.get(s.layer, 0)
+                * math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)
+                / NM_PER_MM
+                for s in stub_segments
+            )
             + self.weights.bend * (bends - base.bends)
             + self.weights.diagonal * diagonal_length
             + self.weights.symmetry * symmetry_cost
@@ -1293,8 +1616,10 @@ class GridRouter:
         merged: list[Segment] = []
         for segment in segments:
             if (
-                merged and merged[-1].layer == segment.layer
-                and merged[-1].end == segment.start and segment.start not in via_points
+                merged
+                and merged[-1].layer == segment.layer
+                and merged[-1].end == segment.start
+                and segment.start not in via_points
                 and self._direction(merged[-1].start, merged[-1].end)
                 == self._direction(segment.start, segment.end)
             ):
@@ -1304,25 +1629,41 @@ class GridRouter:
         if self.forbid_staircase and self._staircase_off_pads(merged):
             return None
         if enforce_endpoint_spacing and any(
-            math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) < self.min_segment_length
+            math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)
+            < self.min_segment_length
             and not self.pad_copper.covers(s)
             for s in (merged[0], merged[-1])
         ):
             return None
         if any(
-            segment.start not in via_points and segment.end not in via_points
-            and math.hypot(segment.end.x - segment.start.x,
-                           segment.end.y - segment.start.y) < self.min_segment_length
+            segment.start not in via_points
+            and segment.end not in via_points
+            and math.hypot(
+                segment.end.x - segment.start.x, segment.end.y - segment.start.y
+            )
+            < self.min_segment_length
             and not self.pad_copper.covers(segment)
             for segment in merged[1:-1]
         ):
             return None
-        return Route(tuple(merged), base.vias, base.reused_vias,
-                     base.length_mm + stub_length, bends, cost, base.expanded)
+        return Route(
+            tuple(merged),
+            base.vias,
+            base.reused_vias,
+            base.length_mm + stub_length,
+            bends,
+            cost,
+            base.expanded,
+        )
 
     def _route_off_grid(
-        self, start: Point, start_layer: str, end: Point, end_layer: str,
-        *, candidate_check: Callable[[Route], bool] | None = None,
+        self,
+        start: Point,
+        start_layer: str,
+        end: Point,
+        end_layer: str,
+        *,
+        candidate_check: Callable[[Route], bool] | None = None,
     ) -> Route:
         best = None
         context_rejected = False
@@ -1333,7 +1674,10 @@ class GridRouter:
             and self._inside_point(end, margin)
         ):
             for path in self._stub_paths(start, end):
-                if any(not self.edge_clear(a, b, start_layer) for a, b in zip(path, path[1:])):
+                if any(
+                    not self.edge_clear(a, b, start_layer)
+                    for a, b in zip(path, path[1:])
+                ):
                     continue
                 segments = tuple(
                     Segment(a, b, start_layer) for a, b in zip(path, path[1:])
@@ -1396,7 +1740,8 @@ class GridRouter:
                 )
                 if best.cost <= lower_bound + 1e-9 or (
                     not (self.weights.symmetry or self.weights.diagonal)
-                    and self.layer_penalties.get(start_layer, 0) <= minimum_layer_penalty
+                    and self.layer_penalties.get(start_layer, 0)
+                    <= minimum_layer_penalty
                 ):
                     # Costs of bends, vias and symmetry are nonnegative. If a
                     # valid candidate reaches this relaxed bound, more search
@@ -1419,7 +1764,9 @@ class GridRouter:
             if best is not None:
                 return best
             if context_rejected:
-                raise SearchLimitReached("Context-rejected paths leave the route unknown")
+                raise SearchLimitReached(
+                    "Context-rejected paths leave the route unknown"
+                )
             raise NoGridRoute(
                 "No safe nearby grid connection exists in the supplied obstacle model"
             )
@@ -1443,8 +1790,11 @@ class GridRouter:
         # often expired before any useful search.  Limit the number of shares
         # for the first trials; the hard global expansion/time limits remain.
         pilot_shares = min(len(pairs), 4) if self.first_feasible else len(pairs)
-        pilot = (self.max_expansions if len(pairs) == 1 else
-                 max(1, self.max_expansions // (4 * pilot_shares)))
+        pilot = (
+            self.max_expansions
+            if len(pairs) == 1
+            else max(1, self.max_expansions // (4 * pilot_shares))
+        )
         for first, last, retry in work:
             if first is None:
                 if best is not None or remaining <= 0:
@@ -1461,8 +1811,10 @@ class GridRouter:
                 # Interleave the three expansion types and cap each ring to
                 # avoid materializing an unbounded endpoint cross-product.
                 candidates = (
-                    pair for group in itertools.zip_longest(*alternatives)
-                    for pair in group if pair is not None
+                    pair
+                    for group in itertools.zip_longest(*alternatives)
+                    for pair in group
+                    if pair is not None
                 )
                 pair_limit = min(2048, self.max_expansions)
                 pairs = list(itertools.islice(candidates, pair_limit + 1))
@@ -1492,11 +1844,19 @@ class GridRouter:
             # Inside same-net pad copper an escape may turn any way but back.
             if len(first) > 1:
                 incoming = self._direction(first[-2], first[-1])
-                turns = pad_turns if self.pad_copper.holds(first[-1], start_layer) else allowed_turns
+                turns = (
+                    pad_turns
+                    if self.pad_copper.holds(first[-1], start_layer)
+                    else allowed_turns
+                )
                 initial = frozenset(d for d in range(8) if (d - incoming) % 8 in turns)
             if len(last) > 1:
                 outgoing = self._direction(last[0], last[1])
-                turns = pad_turns if self.pad_copper.holds(last[0], end_layer) else allowed_turns
+                turns = (
+                    pad_turns
+                    if self.pad_copper.holds(last[0], end_layer)
+                    else allowed_turns
+                )
                 final = frozenset(d for d in range(8) if (outgoing - d) % 8 in turns)
             spacing = self.enforce_endpoint_spacing and len(first) == len(last) == 1
             key = grid_start, grid_end, initial, final, spacing
@@ -1513,14 +1873,26 @@ class GridRouter:
                     if grid_start == grid_end and start_layer == end_layer:
                         base = Route((), (), (), 0.0, 0, 0.0, 0)
                     else:
-                        saved = (self.initial_directions, self.final_directions,
-                                 self.enforce_endpoint_spacing, self._goal_seeds)
+                        saved = (
+                            self.initial_directions,
+                            self.final_directions,
+                            self.enforce_endpoint_spacing,
+                            self._goal_seeds,
+                        )
                         accepted = []
 
                         def valid_join(candidate):
                             result = self._join_off_grid(
-                                start, start_layer, end, end_layer, first, last, candidate,
-                                saved[0], saved[1], saved[2],
+                                start,
+                                start_layer,
+                                end,
+                                end_layer,
+                                first,
+                                last,
+                                candidate,
+                                saved[0],
+                                saved[1],
+                                saved[2],
                             )
                             if result is None or not candidate_check(result):
                                 return False
@@ -1528,7 +1900,10 @@ class GridRouter:
                             return True
 
                         try:
-                            self.initial_directions, self.final_directions = initial, final
+                            self.initial_directions, self.final_directions = (
+                                initial,
+                                final,
+                            )
                             self.enforce_endpoint_spacing = spacing
                             # One reverse map per endpoint serves every access pair.
                             self._goal_seeds = goal_seeds()
@@ -1537,14 +1912,22 @@ class GridRouter:
                                 start_layer,
                                 grid_end,
                                 end_layer,
-                                _expansion_budget=remaining if retry else min(remaining, pilot),
-                                candidate_check=valid_join if candidate_check is not None else None,
+                                _expansion_budget=remaining
+                                if retry
+                                else min(remaining, pilot),
+                                candidate_check=valid_join
+                                if candidate_check is not None
+                                else None,
                             )
                             if accepted:
                                 joined = accepted[-1]
                         finally:
-                            (self.initial_directions, self.final_directions,
-                             self.enforce_endpoint_spacing, self._goal_seeds) = saved
+                            (
+                                self.initial_directions,
+                                self.final_directions,
+                                self.enforce_endpoint_spacing,
+                                self._goal_seeds,
+                            ) = saved
                 except SearchLimitReached as exc:
                     unresolved.add(key)
                     remaining = max(0, remaining - exc.expanded)
@@ -1576,25 +1959,48 @@ class GridRouter:
                     continue
                 base, joined = cached
             result = joined or self._join_off_grid(
-                start, start_layer, end, end_layer, first, last, base,
-                self.initial_directions, self.final_directions, self.enforce_endpoint_spacing,
+                start,
+                start_layer,
+                end,
+                end_layer,
+                first,
+                last,
+                base,
+                self.initial_directions,
+                self.final_directions,
+                self.enforce_endpoint_spacing,
             )
-            if (result is None and candidate_check is None
-                    and (grid_start != grid_end or start_layer != end_layer)):
+            if (
+                result is None
+                and candidate_check is None
+                and (grid_start != grid_end or start_layer != end_layer)
+            ):
                 # The cached cheapest grid path may form an illegal staircase
                 # with these particular endpoint escapes. Retry the same access
                 # with the completed join checked while exploring grid goals.
                 if remaining <= 0:
                     global_limit_hit = True
                     break
-                saved = (self.initial_directions, self.final_directions,
-                         self.enforce_endpoint_spacing, self._goal_seeds)
+                saved = (
+                    self.initial_directions,
+                    self.final_directions,
+                    self.enforce_endpoint_spacing,
+                    self._goal_seeds,
+                )
                 alternatives = []
 
                 def legal_join(candidate):
                     joined_candidate = self._join_off_grid(
-                        start, start_layer, end, end_layer, first, last, candidate,
-                        saved[0], saved[1], saved[2],
+                        start,
+                        start_layer,
+                        end,
+                        end_layer,
+                        first,
+                        last,
+                        candidate,
+                        saved[0],
+                        saved[1],
+                        saved[2],
                     )
                     if joined_candidate is None:
                         return False
@@ -1606,8 +2012,12 @@ class GridRouter:
                     self.enforce_endpoint_spacing = spacing
                     self._goal_seeds = goal_seeds()
                     alternative = self.route(
-                        grid_start, start_layer, grid_end, end_layer,
-                        _expansion_budget=remaining, candidate_check=legal_join,
+                        grid_start,
+                        start_layer,
+                        grid_end,
+                        end_layer,
+                        _expansion_budget=remaining,
+                        candidate_check=legal_join,
                     )
                 except SearchLimitReached as exc:
                     remaining = max(0, remaining - exc.expanded)
@@ -1622,23 +2032,37 @@ class GridRouter:
                 except SearchBudgetExceeded:
                     if best is None:
                         raise
-                    return replace(best, search_truncated=True,
-                                   expanded=self.max_expansions - remaining)
+                    return replace(
+                        best,
+                        search_truncated=True,
+                        expanded=self.max_expansions - remaining,
+                    )
                 finally:
-                    (self.initial_directions, self.final_directions,
-                     self.enforce_endpoint_spacing, self._goal_seeds) = saved
+                    (
+                        self.initial_directions,
+                        self.final_directions,
+                        self.enforce_endpoint_spacing,
+                        self._goal_seeds,
+                    ) = saved
                 remaining -= alternative.expanded
                 result = alternatives[-1] if alternatives else None
             if result is None:
                 continue
-            if joined is None and candidate_check is not None and not candidate_check(result):
+            if (
+                joined is None
+                and candidate_check is not None
+                and not candidate_check(result)
+            ):
                 context_rejected = True
                 continue
             if best is None or result.cost < best.cost:
                 best = result
             if self.first_feasible:
-                return replace(best, search_truncated=True,
-                               expanded=self.max_expansions - remaining)
+                return replace(
+                    best,
+                    search_truncated=True,
+                    expanded=self.max_expansions - remaining,
+                )
         if best is None:
             if unresolved or global_limit_hit or access_truncated or context_rejected:
                 raise SearchLimitReached(
@@ -1650,8 +2074,9 @@ class GridRouter:
                 expanded=self.max_expansions - remaining,
             )
         return replace(
-            best, search_truncated=bool(unresolved) or global_limit_hit or access_truncated,
-            expanded=self.max_expansions - remaining
+            best,
+            search_truncated=bool(unresolved) or global_limit_hit or access_truncated,
+            expanded=self.max_expansions - remaining,
         )
 
     @classmethod
@@ -1672,11 +2097,15 @@ class GridRouter:
         return merged
 
     @classmethod
-    def staircase_windows(cls, segments: list[Segment]) -> tuple[tuple[Segment, Segment, Segment], ...]:
+    def staircase_windows(
+        cls, segments: list[Segment]
+    ) -> tuple[tuple[Segment, Segment, Segment], ...]:
         """Find local staircase windows after merging collinear chain pieces."""
         merged = cls._runs(segments)
         windows = []
-        for index, (first, middle, last) in enumerate(zip(merged, merged[1:], merged[2:])):
+        for index, (first, middle, last) in enumerate(
+            zip(merged, merged[1:], merged[2:])
+        ):
             if not (
                 first.layer == middle.layer == last.layer
                 and first.end == middle.start
@@ -1685,10 +2114,15 @@ class GridRouter:
                 continue
             directions = [cls._direction(s.start, s.end) for s in (first, middle, last)]
             if is_staircase_triplet(*directions):
-                context = merged[index - 1:index + 4] if index else []
-                if (len(context) == 5 and len({s.layer for s in context}) == 1
-                        and all(a.end == b.start for a, b in zip(context, context[1:]))
-                        and is_standard_dogleg(cls._direction(s.start, s.end) for s in context)):
+                context = merged[index - 1 : index + 4] if index else []
+                if (
+                    len(context) == 5
+                    and len({s.layer for s in context}) == 1
+                    and all(a.end == b.start for a, b in zip(context, context[1:]))
+                    and is_standard_dogleg(
+                        cls._direction(s.start, s.end) for s in context
+                    )
+                ):
                     continue
                 windows.append((first, middle, last))
         return tuple(windows)
@@ -1716,8 +2150,11 @@ class GridRouter:
 
     def _illegal_turn(self, turn: int, at: Point, layer: str) -> bool:
         """Reversals are never legal; inside same-net pad copper any other turn is."""
-        return turn == 4 or not self.pad_copper.holds(at, layer) and (
-            turn in {2, 6} or (self.gentle_turns and turn in {3, 5}))
+        return (
+            turn == 4
+            or not self.pad_copper.holds(at, layer)
+            and (turn in {2, 6} or (self.gentle_turns and turn in {3, 5}))
+        )
 
     def route(
         self,
@@ -1740,11 +2177,15 @@ class GridRouter:
             if direct is not None:
                 return direct
             if _expansion_budget is None:
-                direct = self._direct_two_via_route(start, end, start_layer, candidate_check)
+                direct = self._direct_two_via_route(
+                    start, end, start_layer, candidate_check
+                )
                 if direct is not None:
                     return direct
         elif self.first_feasible and _expansion_budget is None:
-            direct = self._direct_one_via_route(start, start_layer, end, end_layer, candidate_check)
+            direct = self._direct_one_via_route(
+                start, start_layer, end, end_layer, candidate_check
+            )
             if direct is not None:
                 return direct
         if any(
@@ -1756,8 +2197,9 @@ class GridRouter:
                 (end.y, self.lower.y),
             )
         ):
-            return self._route_off_grid(start, start_layer, end, end_layer,
-                                        candidate_check=candidate_check)
+            return self._route_off_grid(
+                start, start_layer, end, end_layer, candidate_check=candidate_check
+            )
         sx, sy = self._index(start)
         ex, ey = self._index(end)
         if (sx, sy, start_layer) == (ex, ey, end_layer):
@@ -1770,21 +2212,39 @@ class GridRouter:
                 )
         # A clear, same-layer cardinal line on a least-cost layer reaches the
         # global length lower bound when no symmetry guide is charged.
-        if (start_layer == end_layer and (sx == ex or sy == ey)
-                and not self.weights.symmetry
-                and self.layer_penalties.get(start_layer, 0)
-                == min(self.layer_penalties.get(layer, 0) for layer in self.layers)):
+        if (
+            start_layer == end_layer
+            and (sx == ex or sy == ey)
+            and not self.weights.symmetry
+            and self.layer_penalties.get(start_layer, 0)
+            == min(self.layer_penalties.get(layer, 0) for layer in self.layers)
+        ):
             direction = self._direction(start, end)
-            allowed = ((self.initial_directions is None or direction in self.initial_directions)
-                       and (self.final_directions is None or direction in self.final_directions))
-            long_enough = (not self.enforce_endpoint_spacing
-                           or math.hypot(end.x - start.x, end.y - start.y) >= self.min_segment_length)
+            allowed = (
+                self.initial_directions is None or direction in self.initial_directions
+            ) and (self.final_directions is None or direction in self.final_directions)
+            long_enough = (
+                not self.enforce_endpoint_spacing
+                or math.hypot(end.x - start.x, end.y - start.y)
+                >= self.min_segment_length
+            )
             if allowed and long_enough:
                 self.check_budget()
                 if self.edge_clear(start, end, start_layer):
                     length = math.hypot(end.x - start.x, end.y - start.y) / NM_PER_MM
-                    direct = Route((Segment(start, end, start_layer),), (), (), length, 0,
-                                   length * (self.weights.length + self.layer_penalties.get(start_layer, 0)), 0)
+                    direct = Route(
+                        (Segment(start, end, start_layer),),
+                        (),
+                        (),
+                        length,
+                        0,
+                        length
+                        * (
+                            self.weights.length
+                            + self.layer_penalties.get(start_layer, 0)
+                        ),
+                        0,
+                    )
                     if candidate_check is None or candidate_check(direct):
                         return direct
         start_state = (sx, sy, self.layers.index(start_layer), -1, -1, 0)
@@ -1810,7 +2270,9 @@ class GridRouter:
             seeds = self._goal_seeds if goal in self._goal_seeds else frozenset({goal})
             if seeds not in self._topology_cache:
                 self._topology_cache[seeds] = relaxed_costs(
-                    self, goal, stop_at=(sx, sy, start_state[2]),
+                    self,
+                    goal,
+                    stop_at=(sx, sy, start_state[2]),
                     max_expansions=min(50_000, max(1, self.max_expansions // 4)),
                     more_goals=tuple(sorted(seeds - {goal})),
                 )
@@ -1866,9 +2328,14 @@ class GridRouter:
             ):
                 if candidate_check is not None or self.forbid_staircase:
                     self.check_budget()
-                    candidate = self._materialize_grid_route(state, start_state, previous, distances, expanded)
-                    if (candidate_check(candidate) if candidate_check is not None
-                            else not self._staircase_off_pads(candidate.segments)):
+                    candidate = self._materialize_grid_route(
+                        state, start_state, previous, distances, expanded
+                    )
+                    if (
+                        candidate_check(candidate)
+                        if candidate_check is not None
+                        else not self._staircase_off_pads(candidate.segments)
+                    ):
                         return candidate
                     rejected_context = True
                     continue
@@ -1895,10 +2362,16 @@ class GridRouter:
                 turn = 0 if old_direction == -1 else (direction - old_direction) % 8
                 if turn in {2, 4, 6} or (self.gentle_turns and turn in {3, 5}):
                     continue
-                next_previous = (_advance_staircase_history(
-                    previous_direction, old_direction, direction,
-                    (layer_index, x, y) in self._pad_cells,
-                ) if self.forbid_staircase else -1)
+                next_previous = (
+                    _advance_staircase_history(
+                        previous_direction,
+                        old_direction,
+                        direction,
+                        (layer_index, x, y) in self._pad_cells,
+                    )
+                    if self.forbid_staircase
+                    else -1
+                )
                 if next_previous is None:
                     continue
                 if turn and not long_enough(old_direction, run_steps):
@@ -1986,9 +2459,13 @@ class GridRouter:
                 "No route found in the supplied grid and obstacle model",
                 expanded=expanded,
             )
-        return self._materialize_grid_route(final, start_state, previous, distances, expanded)
+        return self._materialize_grid_route(
+            final, start_state, previous, distances, expanded
+        )
 
-    def _materialize_grid_route(self, final, start_state, previous, distances, expanded) -> Route:
+    def _materialize_grid_route(
+        self, final, start_state, previous, distances, expanded
+    ) -> Route:
         """Reconstruct one goal path for cost and context checks."""
         step_mm = to_mm(self.step)
         states = [final]

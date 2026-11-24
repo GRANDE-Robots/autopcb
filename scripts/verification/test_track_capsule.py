@@ -42,13 +42,28 @@ def capsule():
 
 class TrackCapsuleTests(unittest.TestCase):
     def test_long_diagonal_rasterization_avoids_the_empty_bounding_rectangle(self):
-        model = GridRouter(point(-1, -1), point(61, 61), mm(.1), ("B.Cu",),
-                           "SIGNAL", mm(.2), mm(.2), mm(.6), mm(.3),
-                           max_cells=500_000)
-        first, last, radius = point(0, 0), point(60, 60), mm(.2)
-        obstacle = Obstacle(point(-.2, -.2), point(60.2, 60.2), ("B.Cu",),
-                            "OTHER", "copper", centerline=(first, last),
-                            copper_radius=radius)
+        model = GridRouter(
+            point(-1, -1),
+            point(61, 61),
+            mm(0.1),
+            ("B.Cu",),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.2),
+            mm(0.6),
+            mm(0.3),
+            max_cells=500_000,
+        )
+        first, last, radius = point(0, 0), point(60, 60), mm(0.2)
+        obstacle = Obstacle(
+            point(-0.2, -0.2),
+            point(60.2, 60.2),
+            ("B.Cu",),
+            "OTHER",
+            "copper",
+            centerline=(first, last),
+            copper_radius=radius,
+        )
         calls = 0
 
         def counted(*args):
@@ -57,55 +72,102 @@ class TrackCapsuleTests(unittest.TestCase):
             return _point_near_segment(*args)
 
         with mock.patch("pcb.route_optimizer._point_near_segment", new=counted):
-            actual = model._covered(obstacle, mm(.2))
+            actual = model._covered(obstacle, mm(0.2))
         self.assertLess(calls, 30_000)
         expected = {
-            (x, y) for x in range(model.nx) for y in range(model.ny)
-            if _point_near_segment(model._point(x, y), first, last,
-                                   radius + mm(.2) + 1)
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if _point_near_segment(
+                model._point(x, y), first, last, radius + mm(0.2) + 1
+            )
         }
         self.assertEqual(actual, expected)
 
     def test_capsule_scanline_matches_brute_force_for_arbitrary_directions(self):
-        model = GridRouter(point(-3, -3), point(3, 3), mm(.25), ("B.Cu",),
-                           "SIGNAL", mm(.2), mm(.2), mm(.6), mm(.3))
+        model = GridRouter(
+            point(-3, -3),
+            point(3, 3),
+            mm(0.25),
+            ("B.Cu",),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.2),
+            mm(0.6),
+            mm(0.3),
+        )
         rng = random.Random(894)
-        cases = [(Point(0, 0), Point(0, 0)), (point(0, -2), point(0, 2)),
-                 (point(-2, 0), point(2, 0)), (point(2, -2), point(-2, 2))]
-        cases.extend((Point(rng.randrange(-2_000_000, 2_000_001),
-                            rng.randrange(-2_000_000, 2_000_001)),
-                      Point(rng.randrange(-2_000_000, 2_000_001),
-                            rng.randrange(-2_000_000, 2_000_001)))
-                     for _ in range(80))
+        cases = [
+            (Point(0, 0), Point(0, 0)),
+            (point(0, -2), point(0, 2)),
+            (point(-2, 0), point(2, 0)),
+            (point(2, -2), point(-2, 2)),
+        ]
+        cases.extend(
+            (
+                Point(
+                    rng.randrange(-2_000_000, 2_000_001),
+                    rng.randrange(-2_000_000, 2_000_001),
+                ),
+                Point(
+                    rng.randrange(-2_000_000, 2_000_001),
+                    rng.randrange(-2_000_000, 2_000_001),
+                ),
+            )
+            for _ in range(80)
+        )
         for first, last in cases:
             radius, margin = rng.randrange(1, 400_000), rng.randrange(0, 400_000)
             obstacle = Obstacle(
                 Point(min(first.x, last.x) - radius, min(first.y, last.y) - radius),
                 Point(max(first.x, last.x) + radius, max(first.y, last.y) + radius),
-                ("B.Cu",), "OTHER", "copper", centerline=(first, last),
+                ("B.Cu",),
+                "OTHER",
+                "copper",
+                centerline=(first, last),
                 copper_radius=radius,
             )
             with self.subTest(first=first, last=last, radius=radius, margin=margin):
                 actual = model._covered(obstacle, margin)
                 expected = {
-                    (x, y) for x in range(model.nx) for y in range(model.ny)
-                    if _point_near_segment(model._point(x, y), first, last,
-                                           radius + margin + 1)
+                    (x, y)
+                    for x in range(model.nx)
+                    for y in range(model.ny)
+                    if _point_near_segment(
+                        model._point(x, y), first, last, radius + margin + 1
+                    )
                 }
                 self.assertEqual(actual, expected)
 
     def test_large_capsule_rasterization_obeys_the_search_deadline(self):
-        model = GridRouter(point(-2, -1), point(2, 61), mm(.05), ("B.Cu",),
-                           "SIGNAL", mm(.2), mm(.2), mm(.6), mm(.3),
-                           max_cells=200_000)
-        obstacle = Obstacle(point(-1, -1), point(1, 61), ("B.Cu",),
-                            "OTHER", "copper", centerline=(point(0, 0), point(0, 60)),
-                            copper_radius=mm(1))
+        model = GridRouter(
+            point(-2, -1),
+            point(2, 61),
+            mm(0.05),
+            ("B.Cu",),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.2),
+            mm(0.6),
+            mm(0.3),
+            max_cells=200_000,
+        )
+        obstacle = Obstacle(
+            point(-1, -1),
+            point(1, 61),
+            ("B.Cu",),
+            "OTHER",
+            "copper",
+            centerline=(point(0, 0), point(0, 60)),
+            copper_radius=mm(1),
+        )
+
         def stop():
             raise RuntimeError("budget expired")
+
         model.check_budget = stop
         with self.assertRaisesRegex(RuntimeError, "budget expired"):
-            model._covered(obstacle, mm(.2))
+            model._covered(obstacle, mm(0.2))
 
     def test_lower_bound_accounts_for_the_diagonal_penalty(self):
         self.assertAlmostEqual(
@@ -189,15 +251,16 @@ class TrackCapsuleTests(unittest.TestCase):
         backend = object.__new__(NativeBackend)
         current = types.SimpleNamespace(clearance=mm(0.2))
         backend.settings = {"OTHER": types.SimpleNamespace(clearance=mm(0.4))}
-        pad = Obstacle(point(0, 0), point(2, 1), ("F.Cu",), "OTHER", "pad",
-                       corner_radius=mm(.25))
+        pad = Obstacle(
+            point(0, 0), point(2, 1), ("F.Cu",), "OTHER", "pad", corner_radius=mm(0.25)
+        )
         enlarged = backend._clearance_envelope(pad, current)
         for x in range(-6, 28):
             for y in range(-6, 18):
                 at = point(x / 10, y / 10)
                 self.assertEqual(
-                    GridRouter._intersects_box(at, at, pad, mm(.4)),
-                    GridRouter._intersects_box(at, at, enlarged, mm(.2)),
+                    GridRouter._intersects_box(at, at, pad, mm(0.4)),
+                    GridRouter._intersects_box(at, at, enlarged, mm(0.2)),
                 )
 
     def test_native_straight_track_is_covered_by_split_capsules(self):
@@ -225,24 +288,37 @@ class TrackCapsuleTests(unittest.TestCase):
             Type=lambda: pcbnew.PCB_TRACE_T,
             GetStart=lambda: types.SimpleNamespace(x=first.x, y=first.y),
             GetEnd=lambda: types.SimpleNamespace(x=last.x, y=last.y),
-            GetWidth=lambda: mm(.2),
+            GetWidth=lambda: mm(0.2),
         )
         pieces = _track_boxes(item, ("B.Cu",), "OTHER")
         self.assertEqual(len(pieces), 4)
-        radius = mm(.1)
+        radius = mm(0.1)
         original = Obstacle(
             Point(min(first.x, last.x) - radius, min(first.y, last.y) - radius),
             Point(max(first.x, last.x) + radius, max(first.y, last.y) + radius),
-            ("B.Cu",), "OTHER", "copper", centerline=(first, last),
+            ("B.Cu",),
+            "OTHER",
+            "copper",
+            centerline=(first, last),
             copper_radius=radius,
         )
         rng = random.Random(91)
         for _ in range(5000):
-            a = Point(rng.randrange(-1_000_000, 8_000_000), rng.randrange(-5_000_000, 1_000_000))
-            b = Point(a.x + rng.randrange(-600_000, 600_001), a.y + rng.randrange(-600_000, 600_001))
-            if GridRouter._intersects_box(a, b, original, mm(.2)):
-                self.assertTrue(any(GridRouter._intersects_box(a, b, part, mm(.2))
-                                    for part in pieces))
+            a = Point(
+                rng.randrange(-1_000_000, 8_000_000),
+                rng.randrange(-5_000_000, 1_000_000),
+            )
+            b = Point(
+                a.x + rng.randrange(-600_000, 600_001),
+                a.y + rng.randrange(-600_000, 600_001),
+            )
+            if GridRouter._intersects_box(a, b, original, mm(0.2)):
+                self.assertTrue(
+                    any(
+                        GridRouter._intersects_box(a, b, part, mm(0.2))
+                        for part in pieces
+                    )
+                )
 
     def test_track_envelope_rejects_a_via_without_calling_its_width(self):
         import pcbnew

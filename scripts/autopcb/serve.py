@@ -38,14 +38,26 @@ class Job:
     report: dict | None = None
 
     def as_dict(self) -> dict:
-        return {"id": self.id, "action": self.action, "project": self.project, "status": self.status,
-                "started": self.started, "finished": self.finished, "report": self.report}
+        return {
+            "id": self.id,
+            "action": self.action,
+            "project": self.project,
+            "status": self.status,
+            "started": self.started,
+            "finished": self.finished,
+            "report": self.report,
+        }
 
 
 class JobRunner:
     """Run CLI actions in subprocesses, one at a time per project."""
 
-    ACTIONS = {"verify": (), "route": ("--rounds", "10", "--seconds", "30"), "apply": (), "export": ("--draft",)}
+    ACTIONS = {
+        "verify": (),
+        "route": ("--rounds", "10", "--seconds", "30"),
+        "apply": (),
+        "export": ("--draft",),
+    }
 
     def __init__(self, workspace: Workspace, extra: tuple[str, ...] = ()):
         self.workspace, self.extra = workspace, extra
@@ -53,16 +65,43 @@ class JobRunner:
         self.lock = threading.Lock()
 
     def command(self, job: Job, run_id: str | None) -> list[str]:
-        arguments = [*self.ACTIONS[job.action], *((run_id,) if job.action == "apply" else ())]
+        arguments = [
+            *self.ACTIONS[job.action],
+            *((run_id,) if job.action == "apply" else ()),
+        ]
         invocation = [] if getattr(sys, "frozen", False) else ["-B", "-m", "autopcb"]
-        return [sys.executable, *invocation, "--workspace", str(self.workspace.root), *self.extra,
-                "--project", job.project, job.action, *arguments]
+        return [
+            sys.executable,
+            *invocation,
+            "--workspace",
+            str(self.workspace.root),
+            *self.extra,
+            "--project",
+            job.project,
+            job.action,
+            *arguments,
+        ]
 
     def _run(self, job: Job, run_id: str | None) -> None:
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (str(engine_path()), os.environ.get("PYTHONPATH"))))}
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                filter(None, (str(engine_path()), os.environ.get("PYTHONPATH")))
+            ),
+        }
         try:
-            done = subprocess.run(self.command(job, run_id), capture_output=True, text=True, env=env, check=False)
-            job.report = json.loads(done.stdout) if done.stdout.strip() else {"error": done.stderr[-2000:]}
+            done = subprocess.run(
+                self.command(job, run_id),
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            job.report = (
+                json.loads(done.stdout)
+                if done.stdout.strip()
+                else {"error": done.stderr[-2000:]}
+            )
             job.status = job.report.get("status", "failed")
         except (OSError, ValueError) as error:
             job.report, job.status = {"error": str(error)}, "failed"
@@ -74,7 +113,10 @@ class JobRunner:
         if action == "apply" and not run_id:
             raise ValueError("Apply needs the run ID of a routing preview")
         with self.lock:
-            if any(job.project == project and job.finished is None for job in self.jobs.values()):
+            if any(
+                job.project == project and job.finished is None
+                for job in self.jobs.values()
+            ):
                 raise RuntimeError("A job is already running for this project")
             job = Job(action, project)
             self.jobs[job.id] = job
@@ -85,15 +127,32 @@ class JobRunner:
 class ServeApp:
     """Answer the phone page's requests; transport-free so it is easy to test."""
 
-    def __init__(self, workspace: Workspace, token: str, runner: JobRunner, cli: Path | None = None):
-        self.workspace, self.token, self.runner, self.cli = workspace, token, runner, cli
+    def __init__(
+        self,
+        workspace: Workspace,
+        token: str,
+        runner: JobRunner,
+        cli: Path | None = None,
+    ):
+        self.workspace, self.token, self.runner, self.cli = (
+            workspace,
+            token,
+            runner,
+            cli,
+        )
 
     def authorized(self, headers, query: dict) -> bool:
-        supplied = (headers.get("Authorization", "").removeprefix("Bearer ") or query.get("token", [""])[0])
+        supplied = (
+            headers.get("Authorization", "").removeprefix("Bearer ")
+            or query.get("token", [""])[0]
+        )
         return secrets.compare_digest(supplied, self.token)
 
     def projects(self) -> list[dict]:
-        return [{"name": entry.stem, "path": str(entry)} for entry in self.workspace.entries()]
+        return [
+            {"name": entry.stem, "path": str(entry)}
+            for entry in self.workspace.entries()
+        ]
 
     def project(self, path: str) -> Path:
         entry = Path(path).resolve()
@@ -106,13 +165,31 @@ class ServeApp:
 
         with tempfile.TemporaryDirectory(prefix="autopcb-serve-") as folder:
             target = Path(folder) / "board.svg"
-            subprocess.run([str(self.cli or kicad_cli()), "pcb", "export", "svg", "--mode-single",
-                            "--layers", "F.Cu,B.Cu,F.Silkscreen,Edge.Cuts", "--page-size-mode", "2",
-                            "--exclude-drawing-sheet", "--output", str(target), str(entry.with_suffix(".kicad_pcb"))],
-                           capture_output=True, check=True, timeout=120)
+            subprocess.run(
+                [
+                    str(self.cli or kicad_cli()),
+                    "pcb",
+                    "export",
+                    "svg",
+                    "--mode-single",
+                    "--layers",
+                    "F.Cu,B.Cu,F.Silkscreen,Edge.Cuts",
+                    "--page-size-mode",
+                    "2",
+                    "--exclude-drawing-sheet",
+                    "--output",
+                    str(target),
+                    str(entry.with_suffix(".kicad_pcb")),
+                ],
+                capture_output=True,
+                check=True,
+                timeout=120,
+            )
             return target.read_bytes()
 
-    def handle(self, method: str, url: str, headers, body: bytes) -> tuple[int, str, bytes]:
+    def handle(
+        self, method: str, url: str, headers, body: bytes
+    ) -> tuple[int, str, bytes]:
         parts = urlsplit(url)
         query = parse_qs(parts.query)
         if method == "GET" and parts.path == "/":
@@ -123,13 +200,27 @@ class ServeApp:
             if method == "GET" and parts.path == "/api/projects":
                 return self.json(200, {"projects": self.projects()})
             if method == "GET" and parts.path == "/api/jobs":
-                return self.json(200, {"jobs": [job.as_dict() for job in reversed(self.runner.jobs.values())]})
+                return self.json(
+                    200,
+                    {
+                        "jobs": [
+                            job.as_dict() for job in reversed(self.runner.jobs.values())
+                        ]
+                    },
+                )
             if method == "GET" and parts.path == "/api/board.svg":
-                return 200, "image/svg+xml", self.board_svg(self.project(query.get("project", [""])[0]))
+                return (
+                    200,
+                    "image/svg+xml",
+                    self.board_svg(self.project(query.get("project", [""])[0])),
+                )
             if method == "POST" and parts.path == "/api/jobs":
                 request = json.loads(body or b"{}")
-                job = self.runner.start(request.get("action", ""), str(self.project(request.get("project", ""))),
-                                        request.get("run_id"))
+                job = self.runner.start(
+                    request.get("action", ""),
+                    str(self.project(request.get("project", ""))),
+                    request.get("run_id"),
+                )
                 return self.json(202, job.as_dict())
         except LookupError as error:
             return self.json(404, {"error": str(error)})
@@ -153,7 +244,9 @@ class Server:
         class Handler(BaseHTTPRequestHandler):
             def _reply(self, method: str) -> None:
                 length = int(self.headers.get("Content-Length") or 0)
-                status, kind, payload = app_ref.handle(method, self.path, self.headers, self.rfile.read(length))
+                status, kind, payload = app_ref.handle(
+                    method, self.path, self.headers, self.rfile.read(length)
+                )
                 self.send_response(status)
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(payload)))

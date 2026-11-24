@@ -45,12 +45,20 @@ class ProjectStorage:
         if not workspace.is_dir():
             raise ValueError(f"AutoPCB workspace does not exist: {workspace}")
         family = entry.with_suffix(".kicad_pro")
-        identity = family.relative_to(workspace) if family.is_relative_to(workspace) else family
+        identity = (
+            family.relative_to(workspace)
+            if family.is_relative_to(workspace)
+            else family
+        )
         if identity.parts == ("results", "projects", entry.stem, family.name):
             key = entry.stem
         else:
-            label = re.sub(r"[^A-Za-z0-9_-]", "-", entry.stem).strip("-")[:32] or "board"
-            token = hashlib.sha256(os.path.normcase(identity.as_posix()).encode()).hexdigest()[:16]
+            label = (
+                re.sub(r"[^A-Za-z0-9_-]", "-", entry.stem).strip("-")[:32] or "board"
+            )
+            token = hashlib.sha256(
+                os.path.normcase(identity.as_posix()).encode()
+            ).hexdigest()[:16]
             key = f"{label}-{token}"
         return cls(entry.parent, workspace, key)
 
@@ -66,19 +74,35 @@ class ProjectStorage:
 
     @property
     def config(self) -> Path:
-        return self._owned("config", "projects", self.key) if self.workspace else self.legacy / "config"
+        return (
+            self._owned("config", "projects", self.key)
+            if self.workspace
+            else self.legacy / "config"
+        )
 
     @property
     def campaigns(self) -> Path:
-        return self._owned("config", "campaigns", self.key) if self.workspace else self.config / "campaigns"
+        return (
+            self._owned("config", "campaigns", self.key)
+            if self.workspace
+            else self.config / "campaigns"
+        )
 
     @property
     def data(self) -> Path:
-        return self._owned("data", "projects", self.key) if self.workspace else self.legacy / "data"
+        return (
+            self._owned("data", "projects", self.key)
+            if self.workspace
+            else self.legacy / "data"
+        )
 
     @property
     def results(self) -> Path:
-        return self._owned("results", "jobs", self.key) if self.workspace else self.legacy / "results"
+        return (
+            self._owned("results", "jobs", self.key)
+            if self.workspace
+            else self.legacy / "results"
+        )
 
     def config_file(self, name: str) -> Path:
         selected = self.config / name
@@ -88,11 +112,17 @@ class ProjectStorage:
     def data_file(self, *relative: str) -> Path:
         roots = (self.data, self.legacy / "data", self.legacy / "design")
         # The first owner of an input folder supplies the entire collection.
-        owner = next((root for root in roots if root.joinpath(*relative[:1]).exists()), roots[0])
+        owner = next(
+            (root for root in roots if root.joinpath(*relative[:1]).exists()), roots[0]
+        )
         return owner.joinpath(*relative)
 
     def environment(self, entry: Path) -> dict[str, str]:
-        return {ENTRY_ENV: str(entry.resolve()), WORKSPACE_ENV: str(self.workspace)} if self.workspace else {}
+        return (
+            {ENTRY_ENV: str(entry.resolve()), WORKSPACE_ENV: str(self.workspace)}
+            if self.workspace
+            else {}
+        )
 
 
 def project_storage(project: Path) -> ProjectStorage:

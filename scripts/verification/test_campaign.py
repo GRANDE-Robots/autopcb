@@ -66,17 +66,25 @@ class CampaignTests(unittest.TestCase):
 
         source = (
             "\ufeff(root (setup (a 1)) (ignore "
-            + quote('text with "(setup)" and \\ and newline\n') +
-            ' (setup nested)) ("setup" (b 2)) (setup (c 3)))'
+            + quote('text with "(setup)" and \\ and newline\n')
+            + ' (setup nested)) ("setup" (b 2)) (setup (c 3)))'
         )
-        for text in (source, PCB, '(root (unrelated 1))'):
+        for text in (source, PCB, "(root (unrelated 1))"):
             with self.subTest(text=text[:40]):
-                expected = [text[child.start:child.end]
-                            for child in parse(text).children("setup")]
+                expected = [
+                    text[child.start : child.end]
+                    for child in parse(text).children("setup")
+                ]
                 self.assertEqual(list(select_direct_children(text, "setup")), expected)
         bad = (
-            "", "root", "((bad))", "(root ())", "(root (a)) trailing",
-            "(root) (second)", '(root (a "unterminated))', "(root (a)",
+            "",
+            "root",
+            "((bad))",
+            "(root ())",
+            "(root (a)) trailing",
+            "(root) (second)",
+            '(root (a "unterminated))',
+            "(root (a)",
         )
         for text in bad:
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -95,24 +103,33 @@ class CampaignTests(unittest.TestCase):
             token = name if all(c.isalnum() or c in "_-" for c in name) else quote(name)
             parts = [token]
             for _ in range(rng.randrange(4)):
-                parts.append(form(depth + 1) if depth < 4 and rng.random() < .6
-                             else quote(rng.choice(values)))
+                parts.append(
+                    form(depth + 1)
+                    if depth < 4 and rng.random() < 0.6
+                    else quote(rng.choice(values))
+                )
             return "(" + " ".join(parts) + ")"
 
         for index in range(1000):
             source = ("\ufeff" if index % 7 == 0 else "") + form()
             if index % 3 == 0:
                 position = rng.randrange(len(source) + 1)
-                source = source[:position] + rng.choice(('"', ")", "(", "x")) + source[position:]
+                source = (
+                    source[:position]
+                    + rng.choice(('"', ")", "(", "x"))
+                    + source[position:]
+                )
             if index % 7 == 1 and source:
-                source = source[:rng.randrange(len(source))]
+                source = source[: rng.randrange(len(source))]
             try:
                 root = parse(source)
             except ValueError:
                 with self.assertRaises(ValueError):
                     select_direct_children(source, "setup")
             else:
-                expected = tuple(source[child.start:child.end] for child in root.children("setup"))
+                expected = tuple(
+                    source[child.start : child.end] for child in root.children("setup")
+                )
                 self.assertEqual(select_direct_children(source, "setup"), expected)
 
     def test_grid_preserves_unrelated_bytes_and_crlf(self):

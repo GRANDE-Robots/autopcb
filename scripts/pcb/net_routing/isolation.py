@@ -17,7 +17,11 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from core.native_command import NativeCommandError, NativeResourceError, exit_description
+from core.native_command import (
+    NativeCommandError,
+    NativeResourceError,
+    exit_description,
+)
 
 
 _SPAWN_LOCK = threading.RLock()
@@ -26,19 +30,22 @@ _SPAWN_LOCK = threading.RLock()
 def _start(process, function) -> None:
     """Pin project imports and avoid replaying an unrelated parent CLI."""
     root = str(Path(__file__).resolve().parents[2])
-    main = sys.modules['__main__']
+    main = sys.modules["__main__"]
     missing = object()
     with _SPAWN_LOCK:
-        spec, filename = getattr(main, '__spec__', missing), getattr(main, '__file__', missing)
+        spec, filename = (
+            getattr(main, "__spec__", missing),
+            getattr(main, "__file__", missing),
+        )
         sys.path.insert(0, root)
         try:
-            if getattr(function, '__module__', '') != '__main__':
+            if getattr(function, "__module__", "") != "__main__":
                 main.__spec__ = None
-                main.__dict__.pop('__file__', None)
+                main.__dict__.pop("__file__", None)
             process.start()
         finally:
             sys.path.remove(root)
-            for name, value in (('__spec__', spec), ('__file__', filename)):
+            for name, value in (("__spec__", spec), ("__file__", filename)):
                 if value is missing:
                     main.__dict__.pop(name, None)
                 else:
@@ -52,7 +59,7 @@ def _execute(channel, forward_progress: bool) -> None:
         # Send no board payload in Process.start(): a child which cannot import
         # its bootstrap can die before draining that pipe and deadlock its
         # parent. recv() drains the framed operation before unpickling it.
-        channel.send(('ready', None))
+        channel.send(("ready", None))
         function, args, kwargs = channel.recv()
         if forward_progress:
             kwargs["progress"] = lambda value: channel.send(("progress", value))
@@ -71,7 +78,9 @@ def _stop(process) -> None:
         if os.name == "nt":
             subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                capture_output=True, check=False, timeout=15,
+                capture_output=True,
+                check=False,
+                timeout=15,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
         if process.is_alive():
@@ -82,23 +91,33 @@ def _stop(process) -> None:
             process.join(timeout=5)
 
 
-def run_native(function: Callable, *args, progress=None,
-               forward_progress: bool = False, heartbeat=None,
-               heartbeat_interval: float = 50.0, **kwargs):
+def run_native(
+    function: Callable,
+    *args,
+    progress=None,
+    forward_progress: bool = False,
+    heartbeat=None,
+    heartbeat_interval: float = 50.0,
+    **kwargs,
+):
     """Return plain records only after a fresh native worker exits successfully.
 
-The Windows routing job limit is inherited by the worker and its children.
-Errors and interruption cannot publish a board or be mistaken for completion.
-"""
-    if heartbeat is not None and (not callable(heartbeat) or isinstance(heartbeat_interval, bool)
-                                  or not isinstance(heartbeat_interval, (int, float))
-                                  or not math.isfinite(heartbeat_interval) or heartbeat_interval <= 0):
+    The Windows routing job limit is inherited by the worker and its children.
+    Errors and interruption cannot publish a board or be mistaken for completion.
+    """
+    if heartbeat is not None and (
+        not callable(heartbeat)
+        or isinstance(heartbeat_interval, bool)
+        or not isinstance(heartbeat_interval, (int, float))
+        or not math.isfinite(heartbeat_interval)
+        or heartbeat_interval <= 0
+    ):
         raise ValueError("A heartbeat needs a callable and positive interval")
     context = multiprocessing.get_context("spawn")
     incoming, outgoing = context.Pipe(duplex=True)
-    process = context.Process(target=_execute,
-                              args=(outgoing, forward_progress),
-                              name="autopcb-native-check")
+    process = context.Process(
+        target=_execute, args=(outgoing, forward_progress), name="autopcb-native-check"
+    )
     started = False
     try:
         _start(process, function)
@@ -116,7 +135,7 @@ Errors and interruption cannot publish a board or be mistaken for completion.
                     kind, value = incoming.recv()
                 except EOFError:
                     break
-                if kind == 'ready' and not sent:
+                if kind == "ready" and not sent:
                     incoming.send((function, args, kwargs))
                     sent = True
                     last_update = time.monotonic()
@@ -135,26 +154,40 @@ Errors and interruption cannot publish a board or be mistaken for completion.
             elif not process.is_alive():
                 break
             if not sent and time.monotonic() - boot_started > 30:
-                raise RuntimeError('Native worker did not become ready; no operation was sent')
+                raise RuntimeError(
+                    "Native worker did not become ready; no operation was sent"
+                )
             if heartbeat and time.monotonic() - last_update >= heartbeat_interval:
                 heartbeat()
                 last_update = time.monotonic()
         process.join(timeout=10)
         if process.is_alive() or process.exitcode != 0:
-            detail = "did not exit" if process.is_alive() else exit_description(process.exitcode)
-            raise RuntimeError(f"Native worker stopped unexpectedly ({detail}); the saved PCB was not changed")
+            detail = (
+                "did not exit"
+                if process.is_alive()
+                else exit_description(process.exitcode)
+            )
+            raise RuntimeError(
+                f"Native worker stopped unexpectedly ({detail}); the saved PCB was not changed"
+            )
         if failure:
             name, message = failure
             from pcb.net_routing.checkpoint import UnsupportedRoutingRequest
 
-            error_type = {"ValueError": ValueError, "OSError": OSError,
-                          "RuntimeError": RuntimeError, "MemoryError": MemoryError,
-                          "UnsupportedRoutingRequest": UnsupportedRoutingRequest,
-                          "NativeCommandError": NativeCommandError,
-                          "NativeResourceError": NativeResourceError}.get(name, RuntimeError)
+            error_type = {
+                "ValueError": ValueError,
+                "OSError": OSError,
+                "RuntimeError": RuntimeError,
+                "MemoryError": MemoryError,
+                "UnsupportedRoutingRequest": UnsupportedRoutingRequest,
+                "NativeCommandError": NativeCommandError,
+                "NativeResourceError": NativeResourceError,
+            }.get(name, RuntimeError)
             raise error_type(message or name)
         if not received_result:
-            raise RuntimeError("Native worker returned no result; the saved PCB was not changed")
+            raise RuntimeError(
+                "Native worker returned no result; the saved PCB was not changed"
+            )
         return result
     finally:
         incoming.close()

@@ -17,7 +17,9 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class ReferenceCorridorTests(unittest.TestCase):
-    def test_local_launch_proof_rejects_a_new_slot_and_allows_only_existing_antipad(self):
+    def test_local_launch_proof_rejects_a_new_slot_and_allows_only_existing_antipad(
+        self,
+    ):
         api = self.api()
         before, after = self.board(), self.board()
         bounds = [[(-1, -1), (5, -1), (5, 1), (-1, 1)]]
@@ -25,13 +27,13 @@ class ReferenceCorridorTests(unittest.TestCase):
         zone = self.fill(after, pcbnew.In1_Cu, bounds)
         zone.SetUuid(old_zone.m_Uuid)
         for item in (old_zone, zone):
-            item.SetLocalClearance(mm(.25))
+            item.SetLocalClearance(mm(0.25))
         via = pcbnew.PCB_VIA(before)
-        via.SetNetCode(before.FindNet('HS').GetNetCode())
+        via.SetNetCode(before.FindNet("HS").GetNetCode())
         via.SetPosition(pcbnew.VECTOR2I(0, 0))
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetWidth(mm(.6))
-        via.SetDrill(mm(.3))
+        via.SetWidth(mm(0.6))
+        via.SetDrill(mm(0.3))
         before.Add(via)
 
         def cut(item, polygon):
@@ -43,29 +45,50 @@ class ReferenceCorridorTests(unittest.TestCase):
             copper.BooleanSubtract(void)
             item.SetFilledPolysList(pcbnew.In1_Cu, copper)
 
-        track = self.track(after, 'HS', pcbnew.F_Cu, (0, 0), (4, 0))
+        track = self.track(after, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
         for item in (old_zone, zone):
-            cut(item, ((-.35, -.35), (.35, -.35), (.35, .35), (-.35, .35)))
-        self.assertEqual(api.launch_reference_layer(before, after, (track,), (via,)), 'In1.Cu')
+            cut(item, ((-0.35, -0.35), (0.35, -0.35), (0.35, 0.35), (-0.35, 0.35)))
+        self.assertEqual(
+            api.launch_reference_layer(before, after, (track,), (via,)), "In1.Cu"
+        )
         self.assertIsNone(api.launch_reference_layer(before, after, (track,), ()))
-        cut(zone, ((1.5, -.03), (1.7, -.03), (1.7, .03), (1.5, .03)))
+        cut(zone, ((1.5, -0.03), (1.7, -0.03), (1.7, 0.03), (1.5, 0.03)))
         self.assertIsNone(api.launch_reference_layer(before, after, (track,), (via,)))
 
-    def test_ground_routes_may_fill_reference_reservations_but_not_physical_keepouts(self):
+    def test_ground_routes_may_fill_reference_reservations_but_not_physical_keepouts(
+        self,
+    ):
         from pcb.route_optimizer import Obstacle
+
         api = self.api()
         board = self.board()
-        self.track(board, 'HS', pcbnew.F_Cu, (0, 0), (2, 0))
-        guards = api.reference_corridors(board, {'HS'}).obstacles
-        values = dict(lower=Point.from_mm([-3, -3]), upper=Point.from_mm([5, 3]), step=mm(.1),
-                      layers=('In1.Cu',), net='GND', width=mm(.2), clearance=mm(.2),
-                      via_size=mm(.6), via_drill=mm(.3), gentle_turns=True)
+        self.track(board, "HS", pcbnew.F_Cu, (0, 0), (2, 0))
+        guards = api.reference_corridors(board, {"HS"}).obstacles
+        values = dict(
+            lower=Point.from_mm([-3, -3]),
+            upper=Point.from_mm([5, 3]),
+            step=mm(0.1),
+            layers=("In1.Cu",),
+            net="GND",
+            width=mm(0.2),
+            clearance=mm(0.2),
+            via_size=mm(0.6),
+            via_drill=mm(0.3),
+            gentle_turns=True,
+        )
         a, b = Point.from_mm([-2, 0]), Point.from_mm([4, 0])
-        route = GridRouter(**values, obstacles=guards).route(a, 'In1.Cu', b, 'In1.Cu')
+        route = GridRouter(**values, obstacles=guards).route(a, "In1.Cu", b, "In1.Cu")
         self.assertAlmostEqual(route.length_mm, 6)
-        physical = Obstacle(Point.from_mm([.9, -.3]), Point.from_mm([1.1, .3]),
-                            ('In1.Cu',), 'GND', 'keepout')
-        route = GridRouter(**values, obstacles=(*guards, physical)).route(a, 'In1.Cu', b, 'In1.Cu')
+        physical = Obstacle(
+            Point.from_mm([0.9, -0.3]),
+            Point.from_mm([1.1, 0.3]),
+            ("In1.Cu",),
+            "GND",
+            "keepout",
+        )
+        route = GridRouter(**values, obstacles=(*guards, physical)).route(
+            a, "In1.Cu", b, "In1.Cu"
+        )
         self.assertGreater(route.length_mm, 6)
 
     def test_refill_comparison_uses_identical_project_rules_for_a_renamed_prior(self):
@@ -90,10 +113,18 @@ class ReferenceCorridorTests(unittest.TestCase):
                 return path.read_bytes()
 
             result = reference.ReferenceComparison("unchanged_sampled", (), ())
-            with (patch.object(native, "load_board", side_effect=load),
-                  patch.object(reference, "sample_reference", side_effect=lambda board, _: board),
-                  patch.object(reference, "compare_reference", return_value=result) as compare):
-                checked = runner._verify_cumulative_reference_native(prior, candidate, ("USB_DP",))
+            with (
+                patch.object(native, "load_board", side_effect=load),
+                patch.object(
+                    reference, "sample_reference", side_effect=lambda board, _: board
+                ),
+                patch.object(
+                    reference, "compare_reference", return_value=result
+                ) as compare,
+            ):
+                checked = runner._verify_cumulative_reference_native(
+                    prior, candidate, ("USB_DP",)
+                )
             self.assertEqual(checked["status"], "unchanged_sampled")
             compare.assert_called_once_with(b"before copper", b"after copper")
             self.assertEqual(len(used), 2)
@@ -106,9 +137,13 @@ class ReferenceCorridorTests(unittest.TestCase):
                 load(path, refill_zones=refill_zones)
                 raise RuntimeError("refill failed")
 
-            with (patch.object(native, "load_board", side_effect=fail),
-                  self.assertRaisesRegex(RuntimeError, "refill failed")):
-                runner._verify_cumulative_reference_native(prior, candidate, ("USB_DP",))
+            with (
+                patch.object(native, "load_board", side_effect=fail),
+                self.assertRaisesRegex(RuntimeError, "refill failed"),
+            ):
+                runner._verify_cumulative_reference_native(
+                    prior, candidate, ("USB_DP",)
+                )
             self.assertTrue(all(not path.parent.exists() for path in used))
 
     def api(self):
@@ -142,7 +177,9 @@ class ReferenceCorridorTests(unittest.TestCase):
         self.track(board, "OTHER", pcbnew.F_Cu, (0, 8), (2, 8))
         corridors = api.reference_corridors(board, {"HS"}, margin_mm=0.5)
         self.assertEqual(len(corridors.obstacles), 2)
-        self.assertEqual({item.layers for item in corridors.obstacles}, {("In1.Cu",), ("In2.Cu",)})
+        self.assertEqual(
+            {item.layers for item in corridors.obstacles}, {("In1.Cu",), ("In2.Cu",)}
+        )
         self.assertTrue(all(item.centerline for item in corridors.obstacles))
         self.assertEqual(corridors.unsupported_items, ())
 
@@ -151,10 +188,26 @@ class ReferenceCorridorTests(unittest.TestCase):
         board = self.board()
         self.track(board, "HS", pcbnew.F_Cu, (0, 0), (2, 0))
         corridors = api.reference_corridors(board, {"HS"}, margin_mm=0.5)
-        model = GridRouter(Point.from_mm([-3, -3]), Point.from_mm([5, 3]), mm(0.25), ("In1.Cu",), "OTHER", mm(0.2), mm(0.2), mm(0.6), mm(0.3), obstacles=corridors.obstacles, gentle_turns=True)
-        result = model.route(Point.from_mm([-2, 0]), "In1.Cu", Point.from_mm([4, 0]), "In1.Cu")
+        model = GridRouter(
+            Point.from_mm([-3, -3]),
+            Point.from_mm([5, 3]),
+            mm(0.25),
+            ("In1.Cu",),
+            "OTHER",
+            mm(0.2),
+            mm(0.2),
+            mm(0.6),
+            mm(0.3),
+            obstacles=corridors.obstacles,
+            gentle_turns=True,
+        )
+        result = model.route(
+            Point.from_mm([-2, 0]), "In1.Cu", Point.from_mm([4, 0]), "In1.Cu"
+        )
         self.assertGreater(result.length_mm, 6)
-        direct = model.route(Point.from_mm([-2, 2]), "In1.Cu", Point.from_mm([4, 2]), "In1.Cu")
+        direct = model.route(
+            Point.from_mm([-2, 2]), "In1.Cu", Point.from_mm([4, 2]), "In1.Cu"
+        )
         self.assertAlmostEqual(direct.length_mm, 6)
 
     def test_inner_layer_high_speed_tracks_reserve_both_adjacent_layers_locally(self):
@@ -162,7 +215,9 @@ class ReferenceCorridorTests(unittest.TestCase):
         board = self.board()
         self.track(board, "HS", pcbnew.In1_Cu, (0, 0), (2, 0))
         result = api.reference_corridors(board, {"HS"})
-        self.assertEqual({item.layers for item in result.obstacles}, {("F.Cu",), ("In2.Cu",)})
+        self.assertEqual(
+            {item.layers for item in result.obstacles}, {("F.Cu",), ("In2.Cu",)}
+        )
         self.assertEqual(result.unsupported_items, ())
         sampled = api.sample_reference(board, {"HS"})
         self.assertFalse(sampled.sampled_coverage_complete)
@@ -185,9 +240,24 @@ class ReferenceCorridorTests(unittest.TestCase):
             self.track(board, "SIGNAL", pcbnew.F_Cu, (2, 3), (4, 3))
             self.track(board, "OTHER", pcbnew.F_Cu, (2, 6), (4, 6))
             pcbnew.SaveBoard(str(source), board)
-            source.with_suffix(".kicad_pro").write_text(json.dumps({"net_settings": {"netclass_patterns": [{"pattern": "SIGNAL", "netclass": "ETH_DATA"}]}}), encoding="utf-8")
+            source.with_suffix(".kicad_pro").write_text(
+                json.dumps(
+                    {
+                        "net_settings": {
+                            "netclass_patterns": [
+                                {"pattern": "SIGNAL", "netclass": "ETH_DATA"}
+                            ]
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = read_native_obstacles(source, "OTHER", assume_refill=True)
-            guards = [item for item in result.obstacles if item.layers == ("In1.Cu",) and item.net == "GND" and item.centerline]
+            guards = [
+                item
+                for item in result.obstacles
+                if item.layers == ("In1.Cu",) and item.net == "GND" and item.centerline
+            ]
             self.assertTrue(guards)
 
     def test_missing_project_rules_are_not_claimed_as_verified(self):
@@ -227,10 +297,98 @@ class ReferenceCorridorTests(unittest.TestCase):
         before = api.sample_reference(board, {"HS"})
         self.assertEqual(before.tracks[0].missing_samples, 0)
         board.Remove(zone)
-        self.fill(board, pcbnew.In1_Cu, [[(-1, -1), (1.5, -1), (1.5, 1), (-1, 1)], [(2.5, -1), (5, -1), (5, 1), (2.5, 1)]])
+        self.fill(
+            board,
+            pcbnew.In1_Cu,
+            [
+                [(-1, -1), (1.5, -1), (1.5, 1), (-1, 1)],
+                [(2.5, -1), (5, -1), (5, 1), (2.5, 1)],
+            ],
+        )
         after = api.sample_reference(board, {"HS"})
         self.assertGreater(after.tracks[0].missing_samples, 0)
         self.assertEqual(api.compare_reference(before, after).status, "degraded")
+
+    def test_trace_over_its_own_pad_is_not_counted_as_unreferenced(self):
+        api = self.api()
+        for plane_start, missing in ((1.2, 6), (0.9, 0)):
+            with self.subTest(plane_start=plane_start):
+                board = self.board()
+                self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+                self.fill(
+                    board,
+                    pcbnew.In1_Cu,
+                    [[(plane_start, -1), (5, -1), (5, 1), (plane_start, 1)]],
+                )
+                exposed = api.sample_reference(board, {"HS"}).tracks[0].missing_samples
+                footprint = pcbnew.FOOTPRINT(board)
+                pad = pcbnew.PAD(footprint)
+                pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+                pad.SetSize(pcbnew.VECTOR2I(mm(2), mm(2)))
+                pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+                pad.SetLayerSet(pcbnew.LSET.FrontMask())
+                pad.SetNetCode(board.FindNet("HS").GetNetCode())
+                footprint.Add(pad)
+                board.Add(footprint)
+                launch = api.sample_reference(board, {"HS"}).tracks[0]
+                # Only trace between the pad edge and the plane is exposed.
+                self.assertEqual(launch.missing_samples, missing)
+                self.assertGreater(exposed, missing)
+                self.assertEqual(launch.continuous_polygon, not missing)
+                self.assertTrue(
+                    all(sample[3] for sample in launch.samples if sample[0] < mm(0.89))
+                )
+
+    def test_two_reference_voids_return_distinct_uncovered_locations_including_edge_only_gap(
+        self,
+    ):
+        from autopcb.native_worker import ReferenceScreen
+
+        board = self.board()
+        self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+        # A shallow notch exposes only the upper edge. A second gap spans the full trace.
+        self.fill(
+            board,
+            pcbnew.In1_Cu,
+            [
+                [
+                    (-1, -1),
+                    (2.6, -1),
+                    (2.6, 1),
+                    (1.4, 1),
+                    (1.4, 0.045),
+                    (0.6, 0.045),
+                    (0.6, 1),
+                    (-1, 1),
+                ],
+                [(3.4, -1), (5, -1), (5, 1), (3.4, 1)],
+            ],
+        )
+        (track,) = self.api().sample_reference(board, {"HS"}).tracks
+        spans = ReferenceScreen.gap_spans(track, [], pcbnew.F_Cu, pcbnew.In1_Cu)
+        self.assertEqual(len(spans), 2)
+        self.assertEqual(
+            sum(s["missing_samples"] for s in spans), track.missing_samples
+        )
+        self.assertLess(spans[0]["last_sample_mm"], spans[1]["first_sample_mm"])
+        self.assertAlmostEqual(spans[0]["position_mm"]["y"], 0.1)
+        self.assertAlmostEqual(spans[1]["position_mm"]["y"], 0)
+        for span in spans:
+            point = span["position_mm"]
+            self.assertIn((mm(point["x"]), mm(point["y"]), False, False), track.samples)
+            self.assertEqual(span["endpoint_pads"], [])
+
+    def test_separate_overlapping_reference_polygons_have_no_fabricated_gap_location(
+        self,
+    ):
+        board = self.board()
+        self.track(board, "HS", pcbnew.F_Cu, (0, 0), (4, 0))
+        self.fill(board, pcbnew.In1_Cu, [[(-1, -1), (2.1, -1), (2.1, 1), (-1, 1)]])
+        self.fill(board, pcbnew.In1_Cu, [[(1.9, -1), (5, -1), (5, 1), (1.9, 1)]])
+        (track,) = self.api().sample_reference(board, {"HS"}).tracks
+        self.assertEqual(track.missing_samples, 0)
+        self.assertFalse(track.continuous_polygon)
+        self.assertEqual(track.missing_runs(), ())
 
     def test_inner_reference_switch_is_detected_even_if_other_plane_covers_it(self):
         api = self.api()
@@ -304,26 +462,59 @@ class ReferenceCorridorTests(unittest.TestCase):
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
             board = pcbnew.LoadBoard(str(source))
             board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
-            net_fixtures.NativeNetRoutingTests.add_pad(board, "J3", (3, 4), net_name="OTHER")
+            net_fixtures.NativeNetRoutingTests.add_pad(
+                board, "J3", (3, 4), net_name="OTHER"
+            )
             hs = self.track(board, "SIGNAL", pcbnew.F_Cu, (2, 3), (6, 3))
             blocker = self.track(board, "OTHER", pcbnew.In1_Cu, (4, 2), (4, 4))
-            reference = {"high_speed_nets": ["SIGNAL"],
-                         "sampled_tracks": [{"item_id": hs.m_Uuid.AsString(), "missing_samples": 2, "continuous_polygon": False}],
-                         "conservative_conflicts": [{"high_speed_item_id": hs.m_Uuid.AsString(),
-                             "blocking_item_id": blocker.m_Uuid.AsString(), "blocking_net": "OTHER", "blocking_kind": "track"}]}
-            policy = {"route": {"layers": ["B.Cu", "In2.Cu", "In1.Cu", "F.Cu"], "step_mm": .1}, "search": {}}
-            with patch("pcb.net_routing.reference_repair.unqualified_working_nets", return_value=set()):
+            reference = {
+                "high_speed_nets": ["SIGNAL"],
+                "sampled_tracks": [
+                    {
+                        "item_id": hs.m_Uuid.AsString(),
+                        "missing_samples": 2,
+                        "continuous_polygon": False,
+                    }
+                ],
+                "conservative_conflicts": [
+                    {
+                        "high_speed_item_id": hs.m_Uuid.AsString(),
+                        "blocking_item_id": blocker.m_Uuid.AsString(),
+                        "blocking_net": "OTHER",
+                        "blocking_kind": "track",
+                    }
+                ],
+            }
+            policy = {
+                "route": {
+                    "layers": ["B.Cu", "In2.Cu", "In1.Cu", "F.Cu"],
+                    "step_mm": 0.1,
+                },
+                "search": {},
+            }
+            with patch(
+                "pcb.net_routing.reference_repair.unqualified_working_nets",
+                return_value=set(),
+            ):
                 plan = compile_reference_repairs(board, reference, policy, workers=1)
                 request = plan["rounds"][0][0]
-                self.assertEqual(request["rip_up"], {"OTHER": [{"kind": "segment", "uuid": blocker.m_Uuid.AsString()}]})
+                self.assertEqual(
+                    request["rip_up"],
+                    {"OTHER": [{"kind": "segment", "uuid": blocker.m_Uuid.AsString()}]},
+                )
                 self.assertEqual(request["max_islands"], 3)
                 blocker.SetLocked(True)
                 locked = compile_reference_repairs(board, reference, policy, workers=1)
             self.assertEqual(locked["rounds"], [])
             self.assertTrue(locked["blockers"])
             blocker.SetLocked(False)
-            with patch("pcb.net_routing.reference_repair.unqualified_working_nets", return_value={"OTHER"}):
-                protected = compile_reference_repairs(board, reference, policy, workers=1)
+            with patch(
+                "pcb.net_routing.reference_repair.unqualified_working_nets",
+                return_value={"OTHER"},
+            ):
+                protected = compile_reference_repairs(
+                    board, reference, policy, workers=1
+                )
             self.assertEqual(protected["rounds"], [])
             self.assertTrue(protected["blockers"])
 
@@ -346,7 +537,12 @@ class ReferenceCorridorTests(unittest.TestCase):
             source = project / "v4.1.kicad_pcb"
             board = self.board()
             board.Add(pcbnew.NETINFO_ITEM(board, "GND"))
-            for a, b in (((0, 0), (20, 0)), ((20, 0), (20, 20)), ((20, 20), (0, 20)), ((0, 20), (0, 0))):
+            for a, b in (
+                ((0, 0), (20, 0)),
+                ((20, 0), (20, 20)),
+                ((20, 20), (0, 20)),
+                ((0, 20), (0, 0)),
+            ):
                 edge = pcbnew.PCB_SHAPE(board)
                 edge.SetShape(pcbnew.SHAPE_T_SEGMENT)
                 edge.SetLayer(pcbnew.Edge_Cuts)
@@ -380,12 +576,29 @@ class ReferenceCorridorTests(unittest.TestCase):
                 outline.Append(mm(x), mm(y))
             board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
-            source.with_suffix(".kicad_pro").write_text(json.dumps({"net_settings": {"netclass_patterns": [{"pattern": "HS", "netclass": "ETH_DATA"}]}}), encoding="utf-8")
+            source.with_suffix(".kicad_pro").write_text(
+                json.dumps(
+                    {
+                        "net_settings": {
+                            "netclass_patterns": [
+                                {"pattern": "HS", "netclass": "ETH_DATA"}
+                            ]
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             a, b = Point.from_mm([5, 8]), Point.from_mm([5, 12])
             route = Route((Segment(a, b, "In1.Cu"),), (), (), 0, 0, 0, 0)
             changes = campaign_changes(route, "OTHER", mm(0.25), mm(0.6), mm(0.3))
             contract = RouteContract("OTHER", a, "In1.Cu", b, "In1.Cu")
-            result = validate_routes(source, hashlib.sha256(source.read_bytes()).hexdigest(), changes, [contract], require_full_nets=True)
+            result = validate_routes(
+                source,
+                hashlib.sha256(source.read_bytes()).hexdigest(),
+                changes,
+                [contract],
+                require_full_nets=True,
+            )
             self.assertEqual(result["status"], "rejected", result)
             self.assertEqual(result["reference_comparison"]["status"], "degraded")
 

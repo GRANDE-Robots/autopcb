@@ -3,7 +3,12 @@
 import unittest
 from unittest import mock
 
-from pcb.net_routing.resources import AvailableMemory, GIB, limit_resources, plan_resources
+from pcb.net_routing.resources import (
+    AvailableMemory,
+    GIB,
+    limit_resources,
+    plan_resources,
+)
 
 
 class ResourcePlanTests(unittest.TestCase):
@@ -11,8 +16,12 @@ class ResourcePlanTests(unittest.TestCase):
         plan = plan_resources(AvailableMemory(5 * GIB, 20 * GIB))
         self.assertEqual(plan["job_commit_limit_bytes"], int(2.5 * GIB))
         self.assertEqual(plan["budget_mode"], "automatic")
-        self.assertEqual(plan_resources(AvailableMemory(20 * GIB, 20 * GIB))[
-            "job_commit_limit_bytes"], 6 * GIB)
+        self.assertEqual(
+            plan_resources(AvailableMemory(20 * GIB, 20 * GIB))[
+                "job_commit_limit_bytes"
+            ],
+            6 * GIB,
+        )
 
     def test_low_automatic_budget_does_not_launch_or_silently_increase(self):
         with self.assertRaisesRegex(MemoryError, "1.00 GiB.*below"):
@@ -36,12 +45,22 @@ class ResourcePlanTests(unittest.TestCase):
 
     def test_memory_wait_is_bounded_and_never_starts_an_undersized_job(self):
         events = []
-        with mock.patch("pcb.net_routing.resources.available_memory", return_value=AvailableMemory(2 * GIB, 10 * GIB)):
-            with self.assertRaises(MemoryError), limit_resources(wait_seconds=0.01, progress=events.append):
+        with mock.patch(
+            "pcb.net_routing.resources.available_memory",
+            return_value=AvailableMemory(2 * GIB, 10 * GIB),
+        ):
+            with (
+                self.assertRaises(MemoryError),
+                limit_resources(wait_seconds=0.01, progress=events.append),
+            ):
                 self.fail("An undersized job was started")
         self.assertTrue(events)
 
     def test_invalid_wait_cannot_be_an_infinite_loop(self):
         for value in (True, -1, float("inf"), float("nan")):
-            with self.subTest(value=value), self.assertRaises(ValueError), limit_resources(wait_seconds=value):
+            with (
+                self.subTest(value=value),
+                self.assertRaises(ValueError),
+                limit_resources(wait_seconds=value),
+            ):
                 self.fail("An invalid wait started a job")

@@ -10,7 +10,11 @@ Keep requirements and reviewed engineering evidence in `data/`. Use `data/projec
 | Controlled release inputs | `release_inputs/` with its `INPUT_MANIFEST.json` and all files it lists |
 | Assembly decisions and qualifications | `ASSEMBLY_POLICY.json`, `ASSEMBLY_ROTATION_OFFSETS.json`, and the evidence named by those policies |
 
+For paired signals, use the [layer-specific geometry review](../docs/impedance-geometry.md).
+
 Record the operating conditions and evidence behind each requirement. Tie reviewed limits and release inputs to the exact native project. Keep generated BOMs, placement files, and fabrication packages in `results/`.
+
+A catalog design can enable area minimization by adding `compact_outline` with a positive `margin_mm` and a list of `movable_groups`. Each group lists parts that may translate together. All other parts retain their catalog poses. An empty list permits trimming around fixed placement. `minimum_mm` and `size_mm` give the lower and upper dimensions for each axis. A user-specified maximum can lower that ceiling. An exact size takes precedence.
 
 ## Schematic and silkscreen
 

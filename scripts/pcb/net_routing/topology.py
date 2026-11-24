@@ -63,8 +63,12 @@ def _remaining_estimate(net: Net, tree: Tree, budget: Budget) -> float:
 
 
 def whole_net(
-    net: Net, prior: tuple[NetPlan, ...], backend: RoutingBackend, budget: Budget,
-    *, rework_cost: Callable[[Route], float] | None = None,
+    net: Net,
+    prior: tuple[NetPlan, ...],
+    backend: RoutingBackend,
+    budget: Budget,
+    *,
+    rework_cost: Callable[[Route], float] | None = None,
 ) -> tuple[NetPlan, ...]:
     """Return diverse complete candidates; beam pruning does not prove optimality."""
     if any(not island.sites for island in net.islands):
@@ -73,7 +77,13 @@ def whole_net(
         )
     if len(net.islands) <= 1:
         return (
-            (NetPlan(net.name, EMPTY_ROUTE, rework_cost(EMPTY_ROUTE) if rework_cost else 0.0),)
+            (
+                NetPlan(
+                    net.name,
+                    EMPTY_ROUTE,
+                    rework_cost(EMPTY_ROUTE) if rework_cost else 0.0,
+                ),
+            )
             if backend.accept(net, EMPTY_ROUTE)
             else ()
         )
@@ -96,21 +106,40 @@ def whole_net(
                             limits.path_calls - budget.calls,
                         )
                         trees_left = len(frontier) - tree_index
-                        tree_call_limit = max(1, math.ceil(remaining_calls / trees_left))
+                        tree_call_limit = max(
+                            1, math.ceil(remaining_calls / trees_left)
+                        )
                         sites = _sites(net, tree, budget)
-                        virtual = {s for island in net.islands for s, _ in island.zone_anchors}
+                        virtual = {
+                            s for island in net.islands for s, _ in island.zone_anchors
+                        }
                         plane_check = getattr(backend, "clear_plane_sites", None)
-                        clear_plane = plane_check(net, prior, tree.route) if virtual and plane_check else None
+                        clear_plane = (
+                            plane_check(net, prior, tree.route)
+                            if virtual and plane_check
+                            else None
+                        )
                         endpoint_check = getattr(backend, "endpoint_in_bounds", None)
                         pairs = (
                             (
-                                int(endpoint_check is not None and (
-                                    not endpoint_check(net, a) or not endpoint_check(net, b)
-                                )) + int(clear_plane is not None and a.layer != b.layer and (
-                                    (a in virtual and a not in clear_plane)
-                                    or (b in virtual and b not in clear_plane)
-                                )),
-                                math.hypot(a.point.x - b.point.x, a.point.y - b.point.y),
+                                int(
+                                    endpoint_check is not None
+                                    and (
+                                        not endpoint_check(net, a)
+                                        or not endpoint_check(net, b)
+                                    )
+                                )
+                                + int(
+                                    clear_plane is not None
+                                    and a.layer != b.layer
+                                    and (
+                                        (a in virtual and a not in clear_plane)
+                                        or (b in virtual and b not in clear_plane)
+                                    )
+                                ),
+                                math.hypot(
+                                    a.point.x - b.point.x, a.point.y - b.point.y
+                                ),
                                 a.key,
                                 b.key,
                                 i,
@@ -127,13 +156,18 @@ def whole_net(
                         # produces a useful tree, try farther retained sites rather
                         # than treating a sampling boundary as a routing failure.
                         sample_count = min(
-                            max(limits.connections_per_step, limits.fallback_connections_per_step),
+                            max(
+                                limits.connections_per_step,
+                                limits.fallback_connections_per_step,
+                            ),
                             limits.net_path_calls,
                             limits.path_calls,
                         )
                         tree_progress = False
                         sampled = heapq.nsmallest(sample_count, pairs)
-                        for attempt, (_, _, _, _, index, start, end) in enumerate(sampled):
+                        for attempt, (_, _, _, _, index, start, end) in enumerate(
+                            sampled
+                        ):
                             if budget.calls - tree_start_calls >= tree_call_limit:
                                 if tree_index + 1 < len(frontier):
                                     budget.hit_limit("tree_path_calls")
@@ -142,10 +176,14 @@ def whole_net(
                                 break
                             if budget.calls - initial_calls >= limits.net_path_calls:
                                 budget.hit_limit("net_path_calls")
-                                raise BudgetExhausted("Per-net path-call budget exhausted")
+                                raise BudgetExhausted(
+                                    "Per-net path-call budget exhausted"
+                                )
                             try:
                                 with budget.endpoint_slice(len(sampled) - attempt):
-                                    paths = backend.paths(net, prior, tree.route, start, end)
+                                    paths = backend.paths(
+                                        net, prior, tree.route, start, end
+                                    )
                             except BudgetExhausted:
                                 # Restore the parent deadline first. A local
                                 # timeout must not skip all other access sites;
@@ -156,7 +194,9 @@ def whole_net(
                                 try:
                                     combined = backend.combine(net, (tree.route, route))
                                 except RouteGeometryError as error:
-                                    budget.failure("combined_geometry", f"{net.name}: {error}")
+                                    budget.failure(
+                                        "combined_geometry", f"{net.name}: {error}"
+                                    )
                                     continue
                                 connected = tree.connected | {index}
                                 connected |= {
@@ -164,7 +204,11 @@ def whole_net(
                                     for i, island in enumerate(net.islands)
                                     if any(touches(s, combined) for s in island.sites)
                                 }
-                                plan = NetPlan(net.name, combined, rework_cost(combined) if rework_cost else 0.0)
+                                plan = NetPlan(
+                                    net.name,
+                                    combined,
+                                    rework_cost(combined) if rework_cost else 0.0,
+                                )
                                 if len(connected) == len(net.islands):
                                     if backend.accept(net, combined):
                                         completed[plan.signature] = plan

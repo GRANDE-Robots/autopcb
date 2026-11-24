@@ -121,9 +121,13 @@ class JointOptimizerTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "exact native pose"):
                 verify_native_pose_change(source, altered)
-            self.assertEqual(native_pose_change(source, "J1", 2, 2, 90)["target"]["reference"], "J1")
+            self.assertEqual(
+                native_pose_change(source, "J1", 2, 2, 90)["target"]["reference"], "J1"
+            )
             with self.assertRaisesRegex(ValueError, "top side"):
-                native_pose_change(source, "J1", 2, 2, 90, MoveScope.from_config({"sides": ["bottom"]}))
+                native_pose_change(
+                    source, "J1", 2, 2, 90, MoveScope.from_config({"sides": ["bottom"]})
+                )
             route = route_tests.RouteOptimizerTests.config()
             route.update(
                 {

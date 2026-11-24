@@ -22,15 +22,21 @@ class ReviewPublicationTests(unittest.TestCase):
         dependency = project / "library.kicad_mod"
         dependency.write_bytes(b"library")
         hashes = {source.name: refresh_gallery.digest(source)}
-        manifest = {"sha256": hashes, "dependency_sha256": {dependency.name: refresh_gallery.digest(dependency)}}
+        manifest = {
+            "sha256": hashes,
+            "dependency_sha256": {dependency.name: refresh_gallery.digest(dependency)},
+        }
         (review / "source.json").write_text(json.dumps(manifest), encoding="utf8")
         for name in refresh_gallery.PDFS:
             (review / name).write_bytes(b"%PDF-" + b"x" * 1024)
         for name in refresh_gallery.PNGS:
             (review / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 1024)
-        (review / "index.html").write_text("<section id=\"x\">" * len(refresh_gallery.PNGS), encoding="utf8")
-        (review / "index_standalone.html").write_text("data:image/png;base64," * len(refresh_gallery.PNGS),
-                                                       encoding="utf8")
+        (review / "index.html").write_text(
+            '<section id="x">' * len(refresh_gallery.PNGS), encoding="utf8"
+        )
+        (review / "index_standalone.html").write_text(
+            "data:image/png;base64," * len(refresh_gallery.PNGS), encoding="utf8"
+        )
         return project, review, hashes, dependency
 
     def test_current_gallery_requires_all_views_and_matching_dependencies(self):
@@ -38,10 +44,14 @@ class ReviewPublicationTests(unittest.TestCase):
             project, review, hashes, dependency = self.current_gallery(Path(directory))
             self.assertTrue(refresh_gallery.gallery_is_current(project, review, hashes))
             dependency.write_bytes(b"changed")
-            self.assertFalse(refresh_gallery.gallery_is_current(project, review, hashes))
+            self.assertFalse(
+                refresh_gallery.gallery_is_current(project, review, hashes)
+            )
             dependency.write_bytes(b"library")
             (review / "PCB_top.png").unlink()
-            self.assertFalse(refresh_gallery.gallery_is_current(project, review, hashes))
+            self.assertFalse(
+                refresh_gallery.gallery_is_current(project, review, hashes)
+            )
 
     def test_current_gallery_tracks_long_footprint_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -51,13 +61,19 @@ class ReviewPublicationTests(unittest.TestCase):
             footprint = long_path(library) / ("y" * 120 + ".kicad_mod")
             footprint.write_bytes(b"footprint library")
             try:
-                self.assertFalse(refresh_gallery.gallery_is_current(project, review, hashes))
+                self.assertFalse(
+                    refresh_gallery.gallery_is_current(project, review, hashes)
+                )
                 manifest_path = review / "source.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 relative = footprint.relative_to(long_path(project)).as_posix()
-                manifest["dependency_sha256"][relative] = refresh_gallery.digest(footprint)
+                manifest["dependency_sha256"][relative] = refresh_gallery.digest(
+                    footprint
+                )
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-                self.assertTrue(refresh_gallery.gallery_is_current(project, review, hashes))
+                self.assertTrue(
+                    refresh_gallery.gallery_is_current(project, review, hashes)
+                )
             finally:
                 footprint.unlink()
 
@@ -74,8 +90,10 @@ class ReviewPublicationTests(unittest.TestCase):
                     return original(path) if calls == 1 else "changed-during-check"
                 return original(path)
 
-            with (mock.patch.object(refresh_gallery, "digest", side_effect=changing),
-                  self.assertRaisesRegex(RuntimeError, "changed during")):
+            with (
+                mock.patch.object(refresh_gallery, "digest", side_effect=changing),
+                self.assertRaisesRegex(RuntimeError, "changed during"),
+            ):
                 refresh_gallery.gallery_is_current(project, review, hashes)
 
     def folders(self, root: Path) -> tuple[Path, Path]:

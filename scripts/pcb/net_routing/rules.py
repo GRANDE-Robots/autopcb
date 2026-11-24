@@ -18,7 +18,13 @@ from pathlib import Path
 from core.kicad_sexpr import parse
 from core.pcb_io import net_classes
 from pcb.route_optimizer import (
-    COPPER_LAYERS, Obstacle, Point, Segment, _point_near_segment, _segments_intersect, mm,
+    COPPER_LAYERS,
+    Obstacle,
+    Point,
+    Segment,
+    _point_near_segment,
+    _segments_intersect,
+    mm,
 )
 
 
@@ -160,31 +166,50 @@ def read_rules(path: Path) -> tuple[DimensionRule, ...]:
         attributes = {
             node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
         }
+
         def requires_named_net(node):
             if isinstance(node, ast.Expression):
                 return requires_named_net(node.body)
             if isinstance(node, ast.BoolOp):
                 values = [requires_named_net(part) for part in node.values]
                 return any(values) if isinstance(node.op, ast.And) else all(values)
-            if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
+            if (
+                isinstance(node, ast.Compare)
+                and len(node.ops) == 1
+                and isinstance(node.ops[0], ast.Eq)
+            ):
                 sides = (node.left, node.comparators[0])
-                return any(isinstance(a, ast.Attribute) and a.attr == 'NetName'
-                           and isinstance(b, ast.Constant) and isinstance(b.value, str)
-                           for a, b in (sides, sides[::-1]))
+                return any(
+                    isinstance(a, ast.Attribute)
+                    and a.attr == "NetName"
+                    and isinstance(b, ast.Constant)
+                    and isinstance(b.value, str)
+                    for a, b in (sides, sides[::-1])
+                )
             return False
+
         def courtyard_calls(node):
-            return [part for part in ast.walk(node) if isinstance(part, ast.Call)
-                    and isinstance(part.func, ast.Attribute)
-                    and part.func.attr == "intersectsCourtyard"]
+            return [
+                part
+                for part in ast.walk(node)
+                if isinstance(part, ast.Call)
+                and isinstance(part.func, ast.Attribute)
+                and part.func.attr == "intersectsCourtyard"
+            ]
 
         references = frozenset(call.args[0].value for call in courtyard_calls(tree))
-        if any(re.match(r"^\$\{class:", value, flags=re.IGNORECASE) for value in references):
+        if any(
+            re.match(r"^\$\{class:", value, flags=re.IGNORECASE) for value in references
+        ):
             raise ValueError(
                 f"Saved rule {name!r}: component-class courtyard selectors are not supported"
             )
         nonmonotonic = any(
-            ((isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not))
-             or isinstance(node, ast.Compare)) and bool(courtyard_calls(node))
+            (
+                (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not))
+                or isinstance(node, ast.Compare)
+            )
+            and bool(courtyard_calls(node))
             for node in ast.walk(tree)
         )
         if attributes & _COORDINATE_FIELDS:
@@ -300,17 +325,23 @@ class Courtyard:
         """Check the complete straight track capsule against this courtyard."""
         x0, y0, x1, y1 = self.bounds
         a, b = segment.start, segment.end
-        if (max(a.x, b.x) + radius < x0 or min(a.x, b.x) - radius > x1
-                or max(a.y, b.y) + radius < y0 or min(a.y, b.y) - radius > y1):
+        if (
+            max(a.x, b.x) + radius < x0
+            or min(a.x, b.x) - radius > x1
+            or max(a.y, b.y) + radius < y0
+            or min(a.y, b.y) - radius > y1
+        ):
             return False
         if self.contains(a) or self.contains(b):
             return True
         for c, d in zip(self.polygon, (*self.polygon[1:], self.polygon[0])):
-            if (_segments_intersect(a, b, c, d)
-                    or _point_near_segment(a, c, d, radius)
-                    or _point_near_segment(b, c, d, radius)
-                    or _point_near_segment(c, a, b, radius)
-                    or _point_near_segment(d, a, b, radius)):
+            if (
+                _segments_intersect(a, b, c, d)
+                or _point_near_segment(a, c, d, radius)
+                or _point_near_segment(b, c, d, radius)
+                or _point_near_segment(c, a, b, radius)
+                or _point_near_segment(d, a, b, radius)
+            ):
                 return True
         return False
 
@@ -319,15 +350,25 @@ class RoutingRules:
     """Native net-class defaults plus supported saved custom dimensions."""
 
     def __init__(
-        self, rules, courtyards, classes, assignments, minimum_width, minimum_clearance,
+        self,
+        rules,
+        courtyards,
+        classes,
+        assignments,
+        minimum_width,
+        minimum_clearance,
         uncertain_courtyards=None,
     ):
         self.rules, self.courtyards = tuple(rules), tuple(courtyards)
-        self.rule_courtyards = frozenset(ref for rule in self.rules for ref in rule.courtyard_refs)
+        self.rule_courtyards = frozenset(
+            ref for rule in self.rules for ref in rule.courtyard_refs
+        )
         self._selector_patterns = {
             selector: re.compile(
-                "".join(".*" if char == "*" else "." if char == "?" else re.escape(char)
-                        for char in selector)
+                "".join(
+                    ".*" if char == "*" else "." if char == "?" else re.escape(char)
+                    for char in selector
+                )
             )
             for selector in self.rule_courtyards
         }
@@ -398,7 +439,8 @@ class RoutingRules:
             design.m_MinClearance,
         )
         uncertain_selectors = frozenset(
-            selector for reference, library_id in uncertain_shapes
+            selector
+            for reference, library_id in uncertain_shapes
             for selector in result.courtyard_selectors(reference, library_id)
         )
         # intersectsCourtyard() considers both sides for copper on every layer.
@@ -522,13 +564,19 @@ class RoutingProfile:
         definite_refs = self.references(segment)
         possible_refs = (
             definite_refs
-            | self.intersecting_references(segment, self.maximum_width, radius_adjustment_nm=2)
+            | self.intersecting_references(
+                segment, self.maximum_width, radius_adjustment_nm=2
+            )
             | self.source.uncertain_courtyards.get(segment.layer, frozenset())
         )
         key = segment.layer, definite_refs, possible_refs
         if key not in self._widths:
-            low = RuleItem("Track", segment.layer, self.net, self.net_class, definite_refs)
-            high = RuleItem("Track", segment.layer, self.net, self.net_class, possible_refs)
+            low = RuleItem(
+                "Track", segment.layer, self.net, self.net_class, definite_refs
+            )
+            high = RuleItem(
+                "Track", segment.layer, self.net, self.net_class, possible_refs
+            )
             default = max(
                 self.width,
                 self.source.classes[self.net_class][0],
@@ -548,8 +596,11 @@ class RoutingProfile:
                     # independently supplied electrical floor stays absolute.
                     # Uncertain stricter rules must still be respected.
                     candidate = max(
-                        self.width_floor, rule.minimum or default,
-                        0 if rule.net_specific or (possible_refs and rule.local) else default,
+                        self.width_floor,
+                        rule.minimum or default,
+                        0
+                        if rule.net_specific or (possible_refs and rule.local)
+                        else default,
                     )
                     if rule.maximum is not None and candidate > rule.maximum:
                         raise ValueError(
@@ -565,31 +616,49 @@ class RoutingProfile:
         return self._widths[key]
 
     @staticmethod
-    def _match_bounds(rule, first_low, first_high, second_low, second_high, *, unknown_group):
+    def _match_bounds(
+        rule, first_low, first_high, second_low, second_high, *, unknown_group
+    ):
         if rule.nonmonotonic_local or (unknown_group and rule.uncertain_group):
             return True, False
         low = rule.matches(first_low, second_low) or rule.matches(second_low, first_low)
-        high = rule.matches(first_high, second_high) or rule.matches(second_high, first_high)
+        high = rule.matches(first_high, second_high) or rule.matches(
+            second_high, first_high
+        )
         return (True, False) if low and not high else (high, low)
 
     def _maximum_width_bound(self) -> int:
         """Bound this net's width across all layers and possible courtyards."""
-        default = max(self.width, self.width_floor, self.source.minimum_width,
-                      self.source.classes[self.net_class][0])
+        default = max(
+            self.width,
+            self.width_floor,
+            self.source.minimum_width,
+            self.source.classes[self.net_class][0],
+        )
         maximum = self.width_floor
         for layer in COPPER_LAYERS:
             low = RuleItem("Track", layer, self.net, self.net_class)
-            high = RuleItem("Track", layer, self.net, self.net_class,
-                            self.source.rule_courtyards)
+            high = RuleItem(
+                "Track", layer, self.net, self.net_class, self.source.rule_courtyards
+            )
             determined = False
             for rule in self.source.rules:
-                if rule.kind != "track_width" or rule.minimum is None or layer not in rule.layers:
+                if (
+                    rule.kind != "track_width"
+                    or rule.minimum is None
+                    or layer not in rule.layers
+                ):
                     continue
-                possible, definite = self._match_bounds(rule, low, high, low, high,
-                                                  unknown_group=False)
+                possible, definite = self._match_bounds(
+                    rule, low, high, low, high, unknown_group=False
+                )
                 if possible:
-                    maximum = max(maximum, self.width_floor, rule.minimum,
-                                  0 if rule.net_specific else default)
+                    maximum = max(
+                        maximum,
+                        self.width_floor,
+                        rule.minimum,
+                        0 if rule.net_specific else default,
+                    )
                 if definite:
                     determined = True
                     break
@@ -600,18 +669,31 @@ class RoutingProfile:
     def minimum_width_for(self, layer: str) -> int:
         """Lower-bound any permitted width for this net and copper layer."""
         if layer not in self._minimum_widths:
-            default = max(self.width, self.source.classes[self.net_class][0],
-                          self.width_floor, self.source.minimum_width)
+            default = max(
+                self.width,
+                self.source.classes[self.net_class][0],
+                self.width_floor,
+                self.source.minimum_width,
+            )
             low = RuleItem("Track", layer, self.net, self.net_class)
-            high = RuleItem("Track", layer, self.net, self.net_class, self.source.rule_courtyards)
+            high = RuleItem(
+                "Track", layer, self.net, self.net_class, self.source.rule_courtyards
+            )
             possible, determined = [], False
             for rule in self.source.rules:
                 if rule.kind != "track_width" or layer not in rule.layers:
                     continue
-                maybe, definite = self._match_bounds(rule, low, high, low, high, unknown_group=False)
+                maybe, definite = self._match_bounds(
+                    rule, low, high, low, high, unknown_group=False
+                )
                 if maybe:
-                    possible.append(max(self.width_floor, rule.minimum or default,
-                                        0 if rule.local or rule.net_specific else default))
+                    possible.append(
+                        max(
+                            self.width_floor,
+                            rule.minimum or default,
+                            0 if rule.local or rule.net_specific else default,
+                        )
+                    )
                 if definite:
                     determined = True
                     break
@@ -625,21 +707,39 @@ class RoutingProfile:
         other_class = self.source.assignments.get(obstacle.net, "Default")
         key = layer, obstacle.net, obstacle.kind
         if key not in self._minimum_clearances:
-            default = max(self.clearance, self.source.classes[self.net_class][1],
-                          self.source.classes.get(other_class, (0, 0))[1],
-                          self.clearance_floor, self.source.minimum_clearance)
+            default = max(
+                self.clearance,
+                self.source.classes[self.net_class][1],
+                self.source.classes.get(other_class, (0, 0))[1],
+                self.clearance_floor,
+                self.source.minimum_clearance,
+            )
             track_low = RuleItem("Track", layer, self.net, self.net_class)
-            track_high = RuleItem("Track", layer, self.net, self.net_class, self.source.rule_courtyards)
-            fields = ({"pad": "Pad", "via": "Via", "copper": "Track"}.get(obstacle.kind, "Keepout"),
-                      layer, obstacle.net, other_class)
+            track_high = RuleItem(
+                "Track", layer, self.net, self.net_class, self.source.rule_courtyards
+            )
+            fields = (
+                {"pad": "Pad", "via": "Via", "copper": "Track"}.get(
+                    obstacle.kind, "Keepout"
+                ),
+                layer,
+                obstacle.net,
+                other_class,
+            )
             other_low = RuleItem(*fields)
             other_high = RuleItem(*fields, self.source.rule_courtyards)
             possible, determined = [], False
             for rule in self.source.rules:
                 if rule.kind != "clearance" or layer not in rule.layers:
                     continue
-                maybe, definite = self._match_bounds(rule, track_low, track_high, other_low, other_high,
-                                                      unknown_group=True)
+                maybe, definite = self._match_bounds(
+                    rule,
+                    track_low,
+                    track_high,
+                    other_low,
+                    other_high,
+                    unknown_group=True,
+                )
                 if maybe:
                     possible.append(max(self.clearance_floor, rule.minimum or default))
                 if definite:
@@ -660,18 +760,26 @@ class RoutingProfile:
         step = self._region_step
         nearby = {
             c
-            for x in range((min(segment.start.x, segment.end.x) - radius) // step,
-                           (max(segment.start.x, segment.end.x) + radius) // step + 1)
-            for y in range((min(segment.start.y, segment.end.y) - radius) // step,
-                           (max(segment.start.y, segment.end.y) + radius) // step + 1)
+            for x in range(
+                (min(segment.start.x, segment.end.x) - radius) // step,
+                (max(segment.start.x, segment.end.x) + radius) // step + 1,
+            )
+            for y in range(
+                (min(segment.start.y, segment.end.y) - radius) // step,
+                (max(segment.start.y, segment.end.y) + radius) // step + 1,
+            )
             for c in self._regions[segment.layer].get((x, y), ())
         }
         return frozenset(
-            selector for c in nearby if c.intersects_track(segment, radius)
+            selector
+            for c in nearby
+            if c.intersects_track(segment, radius)
             for selector in self._courtyard_selectors[c]
         )
 
-    def clearance_at(self, segment: Segment, obstacle: Obstacle, *, width: int | None = None) -> int:
+    def clearance_at(
+        self, segment: Segment, obstacle: Obstacle, *, width: int | None = None
+    ) -> int:
         actual_width = self.width_at(segment) if width is None else width
         geometry_key = segment, actual_width
         cached = self._last_clearance_geometry
@@ -682,7 +790,11 @@ class RoutingProfile:
             possible_geometry = self.intersecting_references(
                 segment, actual_width, radius_adjustment_nm=2
             )
-            self._last_clearance_geometry = geometry_key, definite_refs, possible_geometry
+            self._last_clearance_geometry = (
+                geometry_key,
+                definite_refs,
+                possible_geometry,
+            )
         else:
             _, definite_refs, possible_geometry = cached
         # Uncertain courtyards may change independently of track geometry.
@@ -692,8 +804,12 @@ class RoutingProfile:
         other_class = self.source.assignments.get(obstacle.net, "Default")
         key = segment.layer, definite_refs, possible_refs, obstacle.net, obstacle.kind
         if key not in self._clearances:
-            item_low = RuleItem("Track", segment.layer, self.net, self.net_class, definite_refs)
-            item_high = RuleItem("Track", segment.layer, self.net, self.net_class, possible_refs)
+            item_low = RuleItem(
+                "Track", segment.layer, self.net, self.net_class, definite_refs
+            )
+            item_high = RuleItem(
+                "Track", segment.layer, self.net, self.net_class, possible_refs
+            )
             fields = (
                 {"pad": "Pad", "via": "Via", "copper": "Track"}.get(
                     obstacle.kind, "Keepout"
@@ -717,7 +833,12 @@ class RoutingProfile:
                 if rule.kind != "clearance" or segment.layer not in rule.layers:
                     continue
                 maybe, definite = self._match_bounds(
-                    rule, item_low, item_high, other_empty, other_all, unknown_group=True
+                    rule,
+                    item_low,
+                    item_high,
+                    other_empty,
+                    other_all,
+                    unknown_group=True,
                 )
                 if maybe:
                     possible.append(max(self.clearance_floor, rule.minimum or default))
@@ -729,7 +850,9 @@ class RoutingProfile:
             self._clearances[key] = max(possible)
         return self._clearances[key]
 
-    def clearance_for_track(self, segment: Segment, obstacle: Obstacle, width: int) -> int:
+    def clearance_for_track(
+        self, segment: Segment, obstacle: Obstacle, width: int
+    ) -> int:
         return self.clearance_at(segment, obstacle, width=width)
 
     def pieces(self, segment: Segment) -> tuple[tuple[Segment, int], ...]:

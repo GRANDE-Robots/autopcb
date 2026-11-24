@@ -37,8 +37,13 @@ class ToolchainTests(unittest.TestCase):
             "print(a.CLI); print(b.CLI)"
         )
         result = subprocess.run(
-            [sys.executable, "-B", "-c", code], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", env=environment, timeout=30,
+            [sys.executable, "-B", "-c", code],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [str(cli), str(cli)])
@@ -134,13 +139,20 @@ class ToolchainTests(unittest.TestCase):
         self.assertEqual(before, after)
 
 
-
 class RouterCacheTests(unittest.TestCase):
     def test_external_router_binaries_are_named_for_the_host(self):
         name = "fastroute.exe" if os.name == "nt" else "fastroute"
-        with tempfile.TemporaryDirectory() as home, mock.patch.object(toolchain.Path, "home", return_value=Path(home)):
-            self.assertEqual(toolchain.RouterCache.fastroute(), Path(home) / ".kicad-mcp" / "fastroute-0.1.14" / name)
-            self.assertEqual(toolchain.RouterCache.freerouting().name, "freerouting-2.5.0.jar")
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.object(toolchain.Path, "home", return_value=Path(home)),
+        ):
+            self.assertEqual(
+                toolchain.RouterCache.fastroute(),
+                Path(home) / ".kicad-mcp" / "fastroute-0.1.14" / name,
+            )
+            self.assertEqual(
+                toolchain.RouterCache.freerouting().name, "freerouting-2.5.0.jar"
+            )
 
 
 if __name__ == "__main__":

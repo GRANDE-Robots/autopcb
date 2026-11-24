@@ -23,6 +23,8 @@ from review.refresh_gallery import ACTIVE as REVIEW_FILES
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = default_project(__file__)
+
+
 def default_kicad_python() -> Path:
     values = native_python_candidates(_executable(None))
     return values[0] if values else Path(sys.executable)
@@ -32,10 +34,18 @@ def _has_document_dependency(python: Path) -> bool:
     """Check the actual interpreter used for the document tests."""
     try:
         result = subprocess.run(
-            [str(python), "-B", "-c",
-             "import importlib.util, sys; sys.exit(importlib.util.find_spec('markdown_it') is None)"],
-            cwd=SCRIPTS, env=subprocess_env(), stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=10, check=False,
+            [
+                str(python),
+                "-B",
+                "-c",
+                "import importlib.util, sys; sys.exit(importlib.util.find_spec('markdown_it') is None)",
+            ],
+            cwd=SCRIPTS,
+            env=subprocess_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
             creationflags=0x08000000 if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError):
@@ -156,18 +166,12 @@ ACTIONS = {
         "package": ActionSpec("review.package_review", "python", "project"),
     },
     "schematic": {
-        "style": ActionSpec(
-            "sch.normalize_presentation", "python", "schematic_check"
-        ),
+        "style": ActionSpec("sch.normalize_presentation", "python", "schematic_check"),
         "blocks": ActionSpec(
             "sch.standardize_block_symbols", "python", "schematic_check"
         ),
-        "names": ActionSpec(
-            "sch.normalize_pin_names", "python", "schematic_check"
-        ),
-        "sections": ActionSpec(
-            "sch.layout_sections", "python", "schematic_check"
-        ),
+        "names": ActionSpec("sch.normalize_pin_names", "python", "schematic_check"),
+        "sections": ActionSpec("sch.layout_sections", "python", "schematic_check"),
         "labels-deduplicate": ActionSpec(
             "sch.deduplicate_labels", "python", "schematic_check"
         ),
@@ -184,9 +188,7 @@ ACTIONS = {
         "collisions": ActionSpec(
             "sch.resolve_label_collisions", "python", "schematic_check"
         ),
-        "format": ActionSpec(
-            "sch.normalize_indentation", "python", "schematic_check"
-        ),
+        "format": ActionSpec("sch.normalize_indentation", "python", "schematic_check"),
         "sync-libraries": ActionSpec(
             "sch.sync_symbol_libraries", "python", "schematic_check"
         ),
@@ -194,6 +196,7 @@ ACTIONS = {
     },
     "pcb": {
         "branch-widths": ActionSpec("pcb.branch_widths", "kicad", "project"),
+        "impedance": ActionSpec("pcb.impedance", "kicad", "project"),
         "repair-widths": ActionSpec("pcb.width_repair", "kicad", "project"),
         "clean-silkscreen": ActionSpec("pcb.silkscreen", "kicad", "project"),
         "repair-drc": ActionSpec("pcb.drc_cleanup", "kicad", "project"),
@@ -212,9 +215,15 @@ ACTIONS = {
         "freeroute-preview": ActionSpec("pcb.freeroute_preview", "kicad", "project"),
         "freeroute-retain": ActionSpec("pcb.net_routing.external", "kicad", "project"),
         "freeroute-fast": ActionSpec("pcb.net_routing.fast", "kicad", "project"),
-        "freeroute-rework": ActionSpec("pcb.net_routing.fast_rework", "kicad", "project"),
-        "sync-net-aliases": ActionSpec("pcb.net_routing.alias_reconcile", "kicad", "project"),
-        "save-working-preview": ActionSpec("pcb.net_routing.working_save", "kicad", "project"),
+        "freeroute-rework": ActionSpec(
+            "pcb.net_routing.fast_rework", "kicad", "project"
+        ),
+        "sync-net-aliases": ActionSpec(
+            "pcb.net_routing.alias_reconcile", "kicad", "project"
+        ),
+        "save-working-preview": ActionSpec(
+            "pcb.net_routing.working_save", "kicad", "project"
+        ),
         "zone-stitch": ActionSpec("pcb.net_routing.zone_stitch", "kicad", "project"),
         "via-prune": ActionSpec("pcb.net_routing.via_prune", "kicad", "project"),
         "copper-prune": ActionSpec("pcb.net_routing.via_prune", "kicad", "project"),
@@ -250,7 +259,9 @@ def matching_hashes(root: Path, values: object) -> bool:
     return True
 
 
-def show_status(project: Path, *, json_mode: bool = False, verbose: bool = False) -> int:
+def show_status(
+    project: Path, *, json_mode: bool = False, verbose: bool = False
+) -> int:
     paths = ProjectPaths(project)
     project = paths.root
     sources = paths.sources
@@ -316,14 +327,22 @@ def show_status(project: Path, *, json_mode: bool = False, verbose: bool = False
             )
         except (OSError, ValueError, TypeError):
             view_status = "unreadable"
+
     def display(console: Console, record: dict) -> None:
         console.heading("AutoPCB | Project status")
-        console.rows([
-            ("Saved KiCad files", "Present"),
-            ("Review files", "Current" if record["review_views"] == "current source hashes" else record["review_views"]),
-            ("Manufacturing manifest", record["release_manifest_status"]),
-            ("Release input mismatches", len(record["release_input_mismatches"])),
-        ])
+        console.rows(
+            [
+                ("Saved KiCad files", "Present"),
+                (
+                    "Review files",
+                    "Current"
+                    if record["review_views"] == "current source hashes"
+                    else record["review_views"],
+                ),
+                ("Manufacturing manifest", record["release_manifest_status"]),
+                ("Release input mismatches", len(record["release_input_mismatches"])),
+            ]
+        )
         if console.verbose:
             console.line("Project: " + record["project"])
             for name in record["release_input_mismatches"]:
@@ -331,17 +350,17 @@ def show_status(project: Path, *, json_mode: bool = False, verbose: bool = False
         console.line(record["note"])
 
     Console(json_mode=json_mode, verbose=verbose).result(
-            {
-                "project": str(project),
-                "source_sha256": hashes,
-                "review_views": view_status,
-                "release_manifest_status": manifest_status,
-                "release_input_mismatches": mismatches,
-                "note": (
-                    "Source and file status only; electrical, physical, and "
-                    "factory readiness are not established."
-                ),
-            },
+        {
+            "project": str(project),
+            "source_sha256": hashes,
+            "review_views": view_status,
+            "release_manifest_status": manifest_status,
+            "release_input_mismatches": mismatches,
+            "note": (
+                "Source and file status only; electrical, physical, and "
+                "factory readiness are not established."
+            ),
+        },
         display,
     )
     return 0
@@ -397,7 +416,9 @@ on hold until reviewed; a status check or image is not a fabrication approval.
         help="KiCad bundled Python, used for PCB-dependent operations",
     )
     groups = parser.add_subparsers(dest="group", required=True)
-    status = groups.add_parser("status", help="show saved-source and release-input status")
+    status = groups.add_parser(
+        "status", help="show saved-source and release-input status"
+    )
     add_output_arguments(status)
     test = groups.add_parser("test", help="run the isolated script regression tests")
     test.add_argument("-v", "--verbose", action="store_true", help="list each test")
@@ -428,7 +449,9 @@ on hold until reviewed; a status check or image is not a fabrication approval.
             )
         else:
             aliases = ["sch"] if group == "schematic" else []
-            group_parser = groups.add_parser(group, aliases=aliases, help=f"{group} actions")
+            group_parser = groups.add_parser(
+                group, aliases=aliases, help=f"{group} actions"
+            )
         actions = group_parser.add_subparsers(dest="action", required=True)
         for name in entries:
             actions.add_parser(name, add_help=False)
@@ -450,7 +473,9 @@ def _caller_relative_configs(arguments: list[str], caller: Path) -> list[str]:
     return result
 
 
-def command_for(args: argparse.Namespace, forwarded: list[str], *, env: dict | None = None) -> list[str]:
+def command_for(
+    args: argparse.Namespace, forwarded: list[str], *, env: dict | None = None
+) -> list[str]:
     group = "schematic" if args.group == "sch" else args.group
     action = ACTIONS[group][args.action]
     module, runtime, mode = action.module, action.runtime, action.mode
@@ -462,8 +487,11 @@ def command_for(args: argparse.Namespace, forwarded: list[str], *, env: dict | N
         index = 0
         while index < len(forwarded):
             item = forwarded[index]
-            if (item == "--project" and index + 1 < len(forwarded)
-                    and not forwarded[index + 1].startswith("-")):
+            if (
+                item == "--project"
+                and index + 1 < len(forwarded)
+                and not forwarded[index + 1].startswith("-")
+            ):
                 selected_project = Path(forwarded[index + 1])
                 index += 2
                 continue
@@ -583,7 +611,9 @@ def main(argv: list[str] | None = None) -> int:
         if rest:
             parser.error("status takes no additional arguments")
         try:
-            return show_status(args.project.resolve(), json_mode=args.json, verbose=args.verbose)
+            return show_status(
+                args.project.resolve(), json_mode=args.json, verbose=args.verbose
+            )
         except (ValueError, OSError) as error:
             print(str(error), file=sys.stderr)
             return 2

@@ -32,8 +32,10 @@ class SixLayerRoutingTests(unittest.TestCase):
             with patch.object(route_cli, "GridRouter") as router:
                 router.return_value.route.return_value = Route((), (), (), 0, 0, 0, 0)
                 route_cli.plan(config, root)
-            self.assertEqual(router.call_args.args[3],
-                             ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"))
+            self.assertEqual(
+                router.call_args.args[3],
+                ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"),
+            )
 
     def test_all_six_layers_reach_the_native_obstacle_model(self):
         board = pcbnew.BOARD()
@@ -50,8 +52,10 @@ class SixLayerRoutingTests(unittest.TestCase):
             source = Path(directory) / "board.kicad_pcb"
             pcbnew.SaveBoard(str(source), board)
             model = read_native_obstacles(source, "SIGNAL")
-        self.assertEqual(model.enabled_layers,
-                         ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"))
+        self.assertEqual(
+            model.enabled_layers,
+            ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"),
+        )
 
     def test_bottom_reference_is_in4_and_middle_references_are_adjacent(self):
         board = pcbnew.BOARD()
@@ -67,8 +71,10 @@ class SixLayerRoutingTests(unittest.TestCase):
             board.Add(track)
         guards = reference.reference_corridors(board, {"HS"})
         self.assertEqual(guards.unsupported_items, ())
-        self.assertEqual({guard.layers for guard in guards.obstacles},
-                         {("In4.Cu",), ("In1.Cu",), ("In3.Cu",)})
+        self.assertEqual(
+            {guard.layers for guard in guards.obstacles},
+            {("In4.Cu",), ("In1.Cu",), ("In3.Cu",)},
+        )
         sampled = reference.sample_reference(board, {"HS"})
         self.assertEqual(sampled.unsupported_items, ())
         self.assertEqual(len(sampled.tracks), 2)
@@ -76,12 +82,18 @@ class SixLayerRoutingTests(unittest.TestCase):
     def test_known_layers_and_external_adapter_accept_the_six_layer_stack(self):
         layers = ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu")
         self.assertTrue(set(layers) <= set(COPPER_LAYERS))
-        command = krt_adapter.build_command(Path("python"), Path("router"),
-                                            Path("in"), Path("out"), ("A",), layers=layers)
+        command = krt_adapter.build_command(
+            Path("python"),
+            Path("router"),
+            Path("in"),
+            Path("out"),
+            ("A",),
+            layers=layers,
+        )
         start = command.index("--layers") + 1
-        self.assertEqual(command[start:start + 6], list(layers))
+        self.assertEqual(command[start : start + 6], list(layers))
         start = command.index("--layer-costs") + 1
-        self.assertEqual(command[start:start + 6], ["1"] * 6)
+        self.assertEqual(command[start : start + 6], ["1"] * 6)
 
     def test_strict_placement_guard_rejects_bottom_moves(self):
         state = ProtectedState.capture(BOARD.encode(), b"sch")

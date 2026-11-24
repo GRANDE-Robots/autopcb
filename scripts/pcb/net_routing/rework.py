@@ -26,17 +26,31 @@ class ReworkWeights:
     def from_config(cls, raw: object = None) -> ReworkWeights:
         if raw is None:
             return cls()
-        if not isinstance(raw, dict) or set(raw) - {field.name for field in fields(cls)}:
+        if not isinstance(raw, dict) or set(raw) - {
+            field.name for field in fields(cls)
+        }:
             raise ValueError("Unknown rework weights")
         result = cls(**raw)
-        if any(isinstance(value, bool) or not isinstance(value, (int, float))
-               or not math.isfinite(value) or value < 0
-               for value in (result.track, result.length_mm, result.via, result.placement_mm, result.quarter_turn)):
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+            for value in (
+                result.track,
+                result.length_mm,
+                result.via,
+                result.placement_mm,
+                result.quarter_turn,
+            )
+        ):
             raise ValueError("Rework weights must be finite and nonnegative")
         return result
 
 
-def junction_tail_cost(pruned_tails: list[tuple[str, Segment]], weights: ReworkWeights) -> float:
+def junction_tail_cost(
+    pruned_tails: list[tuple[str, Segment]], weights: ReworkWeights
+) -> float:
     """Price removed dangling copper; a pure split without removal is free."""
     tracks = len({identifier for identifier, _ in pruned_tails})
     length = sum(
@@ -81,29 +95,59 @@ class RemovedCopper:
     arc_lengths_mm: tuple[float, ...] = ()
     off_angle_tracks: tuple[tuple[Segment, int], ...] = ()
 
-    def score(self, route: Route, *, width: int, size: int, drill: int,
-              weights: ReworkWeights, segment_dimensions=None) -> ReworkScore:
+    def score(
+        self,
+        route: Route,
+        *,
+        width: int,
+        size: int,
+        drill: int,
+        weights: ReworkWeights,
+        segment_dimensions=None,
+    ) -> ReworkScore:
         changed = len(self.arc_lengths_mm) + len(self.off_angle_tracks)
         length = sum(self.arc_lengths_mm) + sum(
-            math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y) / 1e6
+            math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y)
+            / 1e6
             for segment, _ in self.off_angle_tracks
         )
-        proposed = tuple(pair for segment in route.segments for pair in
-                         (segment_dimensions(segment) if segment_dimensions else ((segment, width),)))
+        proposed = tuple(
+            pair
+            for segment in route.segments
+            for pair in (
+                segment_dimensions(segment)
+                if segment_dimensions
+                else ((segment, width),)
+            )
+        )
         for segment, old_width in self.tracks:
             # A changed width/layer counts as rework even on the same centreline.
-            remaining = unique_segments((segment,), tuple(s for s, w in proposed if w == old_width))
-            missing = sum(math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / 1e6
-                          for s in remaining)
+            remaining = unique_segments(
+                (segment,), tuple(s for s, w in proposed if w == old_width)
+            )
+            missing = sum(
+                math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / 1e6
+                for s in remaining
+            )
             if missing > 0:
                 changed += 1
                 length += missing
         restored = {via.at for via in (*route.vias, *route.reused_vias)}
-        vias = sum(not (via.point in restored and via.through and via.drill == drill
-                        and via_sizes_meet(via.sizes, (), exact_size=size))
-                   for via in self.vias)
-        return ReworkScore(changed, length, vias,
-                           changed * weights.track + length * weights.length_mm + vias * weights.via)
+        vias = sum(
+            not (
+                via.point in restored
+                and via.through
+                and via.drill == drill
+                and via_sizes_meet(via.sizes, (), exact_size=size)
+            )
+            for via in self.vias
+        )
+        return ReworkScore(
+            changed,
+            length,
+            vias,
+            changed * weights.track + length * weights.length_mm + vias * weights.via,
+        )
 
 
 def restored_connects_islands(net, route: Route) -> bool:
@@ -128,7 +172,9 @@ def restored_connects_islands(net, route: Route) -> bool:
             for j, second in enumerate(segments[:i]):
                 if first.layer == second.layer and (
                     any(on_segment(point, second) for point in (first.start, first.end))
-                    or any(on_segment(point, first) for point in (second.start, second.end))
+                    or any(
+                        on_segment(point, first) for point in (second.start, second.end)
+                    )
                     or intersection(first, second) is not None
                 ):
                     join(i, j)
@@ -150,25 +196,37 @@ def restored_connects_islands(net, route: Route) -> bool:
     return all(root(index) == first for index in range(count))
 
 
-def octilinear_projections(segment: Segment, *, tolerance: int = mm(.05)) -> tuple[Segment, ...]:
+def octilinear_projections(
+    segment: Segment, *, tolerance: int = mm(0.05)
+) -> tuple[Segment, ...]:
     """Try exact-angle versions by moving one endpoint a bounded distance."""
     a, b = segment.start, segment.end
     dx, dy = b.x - a.x, b.y - a.y
     choices = set()
     if abs(dy) <= tolerance and dx:
-        choices.update((Segment(a, Point(b.x, a.y), segment.layer),
-                        Segment(Point(a.x, b.y), b, segment.layer)))
+        choices.update(
+            (
+                Segment(a, Point(b.x, a.y), segment.layer),
+                Segment(Point(a.x, b.y), b, segment.layer),
+            )
+        )
     if abs(dx) <= tolerance and dy:
-        choices.update((Segment(a, Point(a.x, b.y), segment.layer),
-                        Segment(Point(b.x, a.y), b, segment.layer)))
+        choices.update(
+            (
+                Segment(a, Point(a.x, b.y), segment.layer),
+                Segment(Point(b.x, a.y), b, segment.layer),
+            )
+        )
     if dx and dy and abs(abs(dx) - abs(dy)) <= tolerance:
         sx, sy = (1 if dx > 0 else -1), (1 if dy > 0 else -1)
-        choices.update((
-            Segment(a, Point(b.x, a.y + sy * abs(dx)), segment.layer),
-            Segment(a, Point(a.x + sx * abs(dy), b.y), segment.layer),
-            Segment(Point(b.x - sx * abs(dy), a.y), b, segment.layer),
-            Segment(Point(a.x, b.y - sy * abs(dx)), b, segment.layer),
-        ))
+        choices.update(
+            (
+                Segment(a, Point(b.x, a.y + sy * abs(dx)), segment.layer),
+                Segment(a, Point(a.x + sx * abs(dy), b.y), segment.layer),
+                Segment(Point(b.x - sx * abs(dy), a.y), b, segment.layer),
+                Segment(Point(a.x, b.y - sy * abs(dx)), b, segment.layer),
+            )
+        )
     valid = []
     for choice in choices:
         try:
@@ -176,9 +234,17 @@ def octilinear_projections(segment: Segment, *, tolerance: int = mm(.05)) -> tup
         except ValueError:
             continue
         valid.append(choice)
-    return tuple(sorted(valid, key=lambda item: (
-        item.start.x, item.start.y, item.end.x, item.end.y,
-    )))
+    return tuple(
+        sorted(
+            valid,
+            key=lambda item: (
+                item.start.x,
+                item.start.y,
+                item.end.x,
+                item.end.y,
+            ),
+        )
+    )
 
 
 def closest_route_point(segment: Segment, point: Point) -> Point | None:
@@ -205,7 +271,8 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
 
     segments = [segment for segment, _ in removed.tracks]
     segments.extend(
-        projected for segment, _ in removed.off_angle_tracks
+        projected
+        for segment, _ in removed.off_angle_tracks
         for projected in octilinear_projections(segment)
     )
     candidates = {
@@ -224,8 +291,11 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
     )
     if not candidates:
         return net
-    items = {item.m_Uuid.AsString(): item for item in (*board.GetPads(), *board.GetTracks())
-             if item.GetNetname() == net.name}
+    items = {
+        item.m_Uuid.AsString(): item
+        for item in (*board.GetPads(), *board.GetTracks())
+        if item.GetNetname() == net.name
+    }
     connectivity = board.GetConnectivity()
     pad_sites = set(net.pad_sites)
     islands = []
@@ -234,9 +304,11 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
         if original is None:
             islands.append(island)
             continue
-        linked = {item.m_Uuid.AsString(): item
-                  for item in connectivity.GetConnectedItems(original)
-                  if item.GetNetname() == net.name}
+        linked = {
+            item.m_Uuid.AsString(): item
+            for item in connectivity.GetConnectedItems(original)
+            if item.GetNetname() == net.name
+        }
         linked[island.identifier] = original
         local_candidates = set(candidates)
         for item in linked.values():
@@ -257,8 +329,11 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
                     item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)
                 ):
                     start, end = item.GetStart(), item.GetEnd()
-                    other = Segment(Point(start.x, start.y), Point(end.x, end.y),
-                                    board.GetLayerName(item.GetLayer()))
+                    other = Segment(
+                        Point(start.x, start.y),
+                        Point(end.x, end.y),
+                        board.GetLayerName(item.GetLayer()),
+                    )
                     try:
                         crossing = intersection(segment, other)
                     except ValueError:
@@ -275,8 +350,9 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
                 if isinstance(item, pcbnew.PCB_VIA):
                     position = item.GetPosition()
                     radius = copper_width(item, layer=layer) / 2
-                    touches = ((position.x - point.x) ** 2 + (position.y - point.y) ** 2
-                               <= radius ** 2)
+                    touches = (position.x - point.x) ** 2 + (
+                        position.y - point.y
+                    ) ** 2 <= radius**2
                 else:
                     touches = item.HitTest(point)
                 if touches:
@@ -288,10 +364,22 @@ def include_repair_contacts(board, net, removed: RemovedCopper, *, budget=None):
         islands.append(replace(island, sites=sites))
     result = replace(net, islands=tuple(islands), pad_sites=frozenset(pad_sites))
     from pcb.net_routing.native import _zone_access_sites
-    layers = tuple(layer for layer in COPPER_LAYERS if any(site.layer == layer for site in candidates))
+
+    layers = tuple(
+        layer
+        for layer in COPPER_LAYERS
+        if any(site.layer == layer for site in candidates)
+    )
     filled = _zone_access_sites(
-        board, net.name, layers, result.islands, result.pad_sites, budget, 0,
-        contacts=tuple(sorted(candidates, key=lambda site: site.key)), sample=False,
+        board,
+        net.name,
+        layers,
+        result.islands,
+        result.pad_sites,
+        budget,
+        0,
+        contacts=tuple(sorted(candidates, key=lambda site: site.key)),
+        sample=False,
     )
     return replace(result, islands=filled)
 
@@ -305,22 +393,40 @@ def capture_removals(board, selected_ids: set[str]) -> dict[str, RemovedCopper]:
     for item in board.GetTracks():
         if item.m_Uuid.AsString() not in selected_ids:
             continue
-        values = grouped.setdefault(item.GetNetname(), {
-            "tracks": [], "vias": [], "arc_lengths_mm": [], "off_angle_tracks": [],
-        })
+        values = grouped.setdefault(
+            item.GetNetname(),
+            {
+                "tracks": [],
+                "vias": [],
+                "arc_lengths_mm": [],
+                "off_angle_tracks": [],
+            },
+        )
         if isinstance(item, pcbnew.PCB_VIA):
-            sizes = tuple((layer, copper_width(item, layer=board.GetLayerID(layer)))
-                          for layer in (board.GetLayerName(identifier)
-                                        for identifier in board.GetEnabledLayers().CuStack())
-                          if item.IsOnLayer(board.GetLayerID(layer)))
-            values["vias"].append(RemovedVia(
-                Point(item.GetPosition().x, item.GetPosition().y), item.GetDrillValue(),
-                sizes, item.GetViaType() == pcbnew.VIATYPE_THROUGH))
+            sizes = tuple(
+                (layer, copper_width(item, layer=board.GetLayerID(layer)))
+                for layer in (
+                    board.GetLayerName(identifier)
+                    for identifier in board.GetEnabledLayers().CuStack()
+                )
+                if item.IsOnLayer(board.GetLayerID(layer))
+            )
+            values["vias"].append(
+                RemovedVia(
+                    Point(item.GetPosition().x, item.GetPosition().y),
+                    item.GetDrillValue(),
+                    sizes,
+                    item.GetViaType() == pcbnew.VIATYPE_THROUGH,
+                )
+            )
         elif isinstance(item, pcbnew.PCB_ARC):
             values["arc_lengths_mm"].append(item.GetLength() / 1e6)
         else:
-            segment = Segment(Point(item.GetStart().x, item.GetStart().y),
-                              Point(item.GetEnd().x, item.GetEnd().y), board.GetLayerName(item.GetLayer()))
+            segment = Segment(
+                Point(item.GetStart().x, item.GetStart().y),
+                Point(item.GetEnd().x, item.GetEnd().y),
+                board.GetLayerName(item.GetLayer()),
+            )
             # Legacy non-octilinear tracks cannot be reproduced by this router.
             try:
                 unique_segments((segment,))
@@ -329,6 +435,10 @@ def capture_removals(board, selected_ids: set[str]) -> dict[str, RemovedCopper]:
                     (segment, copper_width(item, layer=item.GetLayer()))
                 )
             else:
-                values["tracks"].append((segment, copper_width(item, layer=item.GetLayer())))
-    return {name: RemovedCopper(**{key: tuple(items) for key, items in values.items()})
-            for name, values in grouped.items()}
+                values["tracks"].append(
+                    (segment, copper_width(item, layer=item.GetLayer()))
+                )
+    return {
+        name: RemovedCopper(**{key: tuple(items) for key, items in values.items()})
+        for name, values in grouped.items()
+    }

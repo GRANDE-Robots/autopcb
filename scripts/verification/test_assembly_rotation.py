@@ -128,8 +128,15 @@ class RotationTests(unittest.TestCase):
                 apply_offsets(cpl, parts, g, p)
 
     def test_actual_qualification_file_must_match_its_controlled_hash(self):
-        for folder, reference in (("design", "design"), ("data", "design"), ("data", "data")):
-            with self.subTest(folder=folder, reference=reference), tempfile.TemporaryDirectory() as td:
+        for folder, reference in (
+            ("design", "design"),
+            ("data", "design"),
+            ("data", "data"),
+        ):
+            with (
+                self.subTest(folder=folder, reference=reference),
+                tempfile.TemporaryDirectory() as td,
+            ):
                 _, _, _, policy = fixture()
                 root = Path(td)
                 inputs = root / "autopcb" / folder
@@ -143,7 +150,9 @@ class RotationTests(unittest.TestCase):
                 (inputs / POLICY_FILE).write_text(json.dumps(policy))
                 self.assertEqual(load_policy(root), policy)
                 evidence.write_text("different preview")
-                with self.assertRaisesRegex(RuntimeError, "qualification evidence changed"):
+                with self.assertRaisesRegex(
+                    RuntimeError, "qualification evidence changed"
+                ):
                     load_policy(root)
 
     def test_empty_policy_preserves_every_original_factory_row(self):

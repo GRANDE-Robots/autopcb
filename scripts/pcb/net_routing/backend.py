@@ -9,7 +9,11 @@ from itertools import islice, product
 
 from pcb.route_batch import SHARED_FIELDS, _previous_obstacles
 from pcb.route_cli import _bounds, _fields, _guide, _obstacle, _weights
-from pcb.route_constraints import ElectricalConstraints, ElectricalConstraintViolation, via_sizes_meet
+from pcb.route_constraints import (
+    ElectricalConstraints,
+    ElectricalConstraintViolation,
+    via_sizes_meet,
+)
 from pcb.route_optimizer import (
     COPPER_LAYERS,
     GridRouter,
@@ -24,15 +28,26 @@ from pcb.route_optimizer import (
     to_mm,
 )
 from pcb.net_routing.geometry import (
-    OffAngleContactGeometryError, RouteGeometryError, StaircaseGeometryError,
-    _supported_line, aggregate, on_segment, unique_segments,
+    OffAngleContactGeometryError,
+    RouteGeometryError,
+    StaircaseGeometryError,
+    _supported_line,
+    aggregate,
+    on_segment,
+    unique_segments,
 )
 from pcb.net_routing.model import Budget, BudgetExhausted, Net, NetPlan, Site
 from pcb.net_routing.native import NativeNet
 from pcb.net_routing.rework import (
-    RemovedCopper, octilinear_projections, restored_connects_islands,
+    RemovedCopper,
+    octilinear_projections,
+    restored_connects_islands,
 )
-from pcb.net_routing.smoothing import chain_endpoints, simplify_route, simplify_terminal_branches
+from pcb.net_routing.smoothing import (
+    chain_endpoints,
+    simplify_route,
+    simplify_terminal_branches,
+)
 from core.compat import strict_zip
 
 
@@ -47,8 +62,15 @@ class _ContextAlternativesRequested(Exception):
     """Give alternative endpoint headings a turn before the full retry."""
 
 
-def route_payload(route: Route, net: str, width: int, size: int, drill: int,
-                  profile=None, segment_dimensions=None) -> dict:
+def route_payload(
+    route: Route,
+    net: str,
+    width: int,
+    size: int,
+    drill: int,
+    profile=None,
+    segment_dimensions=None,
+) -> dict:
     dimensions = segment_dimensions or (profile.pieces if profile else None)
     return {
         "net": net,
@@ -64,7 +86,9 @@ def route_payload(route: Route, net: str, width: int, size: int, drill: int,
                 "width_mm": to_mm(segment_width),
             }
             for segment in route.segments
-            for s, segment_width in (dimensions(segment) if dimensions else ((segment, width),))
+            for s, segment_width in (
+                dimensions(segment) if dimensions else ((segment, width),)
+            )
         ],
         "vias": [
             {"at_mm": v.at.as_mm(), "size_mm": to_mm(size), "drill_mm": to_mm(drill)}
@@ -80,7 +104,8 @@ def plan_dimensions(plan: NetPlan, settings):
 
     def dimensions(segment):
         widths = {
-            width for original, width in plan.restored_widths
+            width
+            for original, width in plan.restored_widths
             if original.layer == segment.layer
             and on_segment(segment.start, original)
             and on_segment(segment.end, original)
@@ -114,9 +139,11 @@ class Settings:
             mm(via.get("size_mm", 0.6)),
             mm(via.get("drill_mm", 0.3)),
         )
-        layers = self.raw.get("layers", [
-            layer for layer in COPPER_LAYERS if layer in self.copper
-        ] or ["F.Cu", "B.Cu"])
+        layers = self.raw.get(
+            "layers",
+            [layer for layer in COPPER_LAYERS if layer in self.copper]
+            or ["F.Cu", "B.Cu"],
+        )
         if (
             not isinstance(layers, list)
             or not layers
@@ -154,15 +181,26 @@ class Settings:
         self.forbid_staircase = self.raw.get("forbid_staircase", True)
         self.minimum_segment = mm(self.raw.get("min_segment_length_mm", 0))
         self.extra = tuple(_obstacle(x) for x in self.raw.get("obstacles", []))
-        self.profile = (self.saved_rules.profile(self.native.net.name, self.width, self.clearance,
-                        width_floor=self.width if self.constraints else 0,
-                        clearance_floor=self.clearance if self.constraints else 0)
-                        if self.saved_rules else None)
+        self.profile = (
+            self.saved_rules.profile(
+                self.native.net.name,
+                self.width,
+                self.clearance,
+                width_floor=self.width if self.constraints else 0,
+                clearance_floor=self.clearance if self.constraints else 0,
+            )
+            if self.saved_rules
+            else None
+        )
         if self.board_bounds is not None and self.step > 0:
             # Local pad escapes may use less clearance than the net default.
             # Account for that smaller value when clipping the grid to the
             # board edge; exact nonrectangular edges remain a native DRC gate.
-            minimum = min(self.clearance, self.profile.minimum_clearance) if self.profile else self.clearance
+            minimum = (
+                min(self.clearance, self.profile.minimum_clearance)
+                if self.profile
+                else self.clearance
+            )
             first, last = self.board_bounds
             inset = max(0, self.edge_clearance - minimum)
             origin = self.lower
@@ -326,10 +364,18 @@ class NativeBackend:
         self.routers: OrderedDict[tuple, GridRouter] = OrderedDict()
 
     def combine(self, net: Net, routes: tuple[Route, ...]) -> Route:
-        return self._combine(net, routes, forbid_staircase=self.settings[net.name].forbid_staircase)
+        return self._combine(
+            net, routes, forbid_staircase=self.settings[net.name].forbid_staircase
+        )
 
-    def _combine(self, net: Net, routes: tuple[Route, ...], *, forbid_staircase: bool,
-                 legacy_contacts: frozenset[Site] = frozenset()) -> Route:
+    def _combine(
+        self,
+        net: Net,
+        routes: tuple[Route, ...],
+        *,
+        forbid_staircase: bool,
+        legacy_contacts: frozenset[Site] = frozenset(),
+    ) -> Route:
         s = self.settings[net.name]
         return aggregate(
             routes,
@@ -337,7 +383,9 @@ class NativeBackend:
             weights=s.weights,
             layer_penalties=s.penalties,
             guide=s.guide,
-            pad_sites=net.pad_sites | legacy_contacts | frozenset(
+            pad_sites=net.pad_sites
+            | legacy_contacts
+            | frozenset(
                 Site(v.at, layer) for v in s.native.vias for layer, _ in v.sizes
             ),
             pad_copper=net.pad_copper,
@@ -345,37 +393,65 @@ class NativeBackend:
             minimum_segment=s.minimum_segment,
         )
 
-    def local_repair(self, net: Net, prior: tuple[NetPlan, ...], route: Route) -> Route | None:
+    def local_repair(
+        self, net: Net, prior: tuple[NetPlan, ...], route: Route
+    ) -> Route | None:
         """Search a bounded window around an unbranched removed copper chain."""
         ends = chain_endpoints(route)
         if ends is None or not route.segments:
             return None
         setting = self.settings[net.name]
-        points = [point for segment in route.segments for point in (segment.start, segment.end)]
+        points = [
+            point
+            for segment in route.segments
+            for point in (segment.start, segment.end)
+        ]
         points.extend(via.at for via in route.vias)
         margin = max(mm(1.5), 2 * (setting.width + setting.clearance), setting.size)
-        lower = Point(max(setting.lower.x, min(p.x for p in points) - margin),
-                      max(setting.lower.y, min(p.y for p in points) - margin))
-        upper = Point(min(setting.upper.x, max(p.x for p in points) + margin),
-                      min(setting.upper.y, max(p.y for p in points) + margin))
+        lower = Point(
+            max(setting.lower.x, min(p.x for p in points) - margin),
+            max(setting.lower.y, min(p.y for p in points) - margin),
+        )
+        upper = Point(
+            min(setting.upper.x, max(p.x for p in points) + margin),
+            min(setting.upper.y, max(p.y for p in points) + margin),
+        )
         if lower.x >= upper.x or lower.y >= upper.y:
             return None
-        raw = {**setting.raw, "bounds_mm": [
-            to_mm(lower.x), to_mm(lower.y), to_mm(upper.x), to_mm(upper.y),
-        ]}
+        raw = {
+            **setting.raw,
+            "bounds_mm": [
+                to_mm(lower.x),
+                to_mm(lower.y),
+                to_mm(upper.x),
+                to_mm(upper.y),
+            ],
+        }
         obstacles = (
-            *(self._clearance_envelope(obstacle, setting) for obstacle in self.obstacles),
+            *(
+                self._clearance_envelope(obstacle, setting)
+                for obstacle in self.obstacles
+            ),
             *self.envelopes(prior, setting),
         )
         try:
-            local = Settings(raw, setting.native, setting.copper, setting.board_bounds,
-                             setting.edge_clearance, setting.saved_rules)
+            local = Settings(
+                raw,
+                setting.native,
+                setting.copper,
+                setting.board_bounds,
+                setting.edge_clearance,
+                setting.saved_rules,
+            )
             router = local.router(obstacles, frozenset(), self.budget)
             empty = Route((), (), (), 0.0, 0, 0.0, 0)
             initial, final = router.initial_directions, router.final_directions
             alternatives = [(initial, final)]
             for start_directions, end_directions in alternatives:
-                router.initial_directions, router.final_directions = start_directions, end_directions
+                router.initial_directions, router.final_directions = (
+                    start_directions,
+                    end_directions,
+                )
                 candidate = None
                 try:
                     self.budget.call()
@@ -393,7 +469,9 @@ class NativeBackend:
                     continue
                 # A valid grid path can form a staircase with older copper at
                 # its endpoint. Try a different arrival or departure heading.
-                for alternative in self.alternative_headings(candidate, ends, initial, final):
+                for alternative in self.alternative_headings(
+                    candidate, ends, initial, final
+                ):
                     if alternative not in alternatives:
                         alternatives.append(alternative)
         except (BudgetExhausted, RouteGeometryError):
@@ -406,30 +484,43 @@ class NativeBackend:
         alternatives = []
         for index, site in enumerate(ends):
             for segment in route.segments:
-                if segment.layer != site.layer or site.point not in (segment.start, segment.end):
+                if segment.layer != site.layer or site.point not in (
+                    segment.start,
+                    segment.end,
+                ):
                     continue
                 other = segment.end if site.point == segment.start else segment.start
                 heading = GridRouter._direction(site.point, other)
                 if index == 1:
                     heading = (heading + 4) % 8
-                allowed = set(initial if index == 0 and initial is not None
-                              else final if index == 1 and final is not None
-                              else range(8)) - {heading}
+                allowed = set(
+                    initial
+                    if index == 0 and initial is not None
+                    else final
+                    if index == 1 and final is not None
+                    else range(8)
+                ) - {heading}
                 if allowed:
-                    alternatives.append((frozenset(allowed), final) if index == 0 else (
-                        initial, frozenset(allowed)
-                    ))
+                    alternatives.append(
+                        (frozenset(allowed), final)
+                        if index == 0
+                        else (initial, frozenset(allowed))
+                    )
                 break
         return tuple(alternatives)
 
     @staticmethod
-    def context_detour_points(routes: tuple[Route, ...]) -> tuple[tuple[str, Point], ...]:
+    def context_detour_points(
+        routes: tuple[Route, ...],
+    ) -> tuple[tuple[str, Point], ...]:
         """Sample a few interior points to diversify context-rejected paths."""
         result = []
         for route in routes:
             segments = sorted(
                 route.segments,
-                key=lambda item: max(abs(item.end.x - item.start.x), abs(item.end.y - item.start.y)),
+                key=lambda item: max(
+                    abs(item.end.x - item.start.x), abs(item.end.y - item.start.y)
+                ),
                 reverse=True,
             )
             for item in segments[:2]:
@@ -438,8 +529,10 @@ class NativeBackend:
                 if distance < 2 or (dx and dy and abs(dx) != abs(dy)):
                     continue
                 half = distance // 2
-                point = Point(item.start.x + (half if dx > 0 else -half if dx < 0 else 0),
-                              item.start.y + (half if dy > 0 else -half if dy < 0 else 0))
+                point = Point(
+                    item.start.x + (half if dx > 0 else -half if dx < 0 else 0),
+                    item.start.y + (half if dy > 0 else -half if dy < 0 else 0),
+                )
                 witness = item.layer, point
                 if witness not in result:
                     result.append(witness)
@@ -447,11 +540,22 @@ class NativeBackend:
                     return tuple(result)
         return tuple(result)
 
-    def restored_plan(self, net: Net, prior: tuple[NetPlan, ...], removed,
-                      *, source_unchanged: bool = False, _quiet: bool = False) -> NetPlan | None:
+    def restored_plan(
+        self,
+        net: Net,
+        prior: tuple[NetPlan, ...],
+        removed,
+        *,
+        source_unchanged: bool = False,
+        _quiet: bool = False,
+    ) -> NetPlan | None:
         """Offer unchanged removed copper as a conservative, checked warm start."""
-        if removed is None or not (removed.tracks or removed.vias or removed.arc_lengths_mm
-                                   or removed.off_angle_tracks):
+        if removed is None or not (
+            removed.tracks
+            or removed.vias
+            or removed.arc_lengths_mm
+            or removed.off_angle_tracks
+        ):
             return None
 
         def reject(reason):
@@ -463,7 +567,9 @@ class NativeBackend:
             return reject("curved removed copper is not supported")
         if removed.off_angle_tracks:
             choices = [
-                tuple((projected, width) for projected in octilinear_projections(segment))
+                tuple(
+                    (projected, width) for projected in octilinear_projections(segment)
+                )
                 for segment, width in removed.off_angle_tracks
             ]
             if any(not options for options in choices):
@@ -471,23 +577,37 @@ class NativeBackend:
             for combination in islice(product(*choices), 32):
                 self.budget.check()
                 proposed = RemovedCopper(
-                    tracks=(*removed.tracks, *combination), vias=removed.vias,
+                    tracks=(*removed.tracks, *combination),
+                    vias=removed.vias,
                 )
                 plan = self.restored_plan(
                     net, prior, proposed, source_unchanged=False, _quiet=True
                 )
                 if plan is not None:
                     return replace(plan, source_modified=True)
-            return reject("nearby exact-angle projections do not pass contact or clearance checks")
+            return reject(
+                "nearby exact-angle projections do not pass contact or clearance checks"
+            )
         setting = self.settings[net.name]
-        if any(not via.through or via.drill != setting.drill
-               or not via_sizes_meet(via.sizes, setting.copper or setting.layers, exact_size=setting.size)
-               for via in removed.vias):
-            return reject("a removed via does not match the permitted through-via dimensions")
+        if any(
+            not via.through
+            or via.drill != setting.drill
+            or not via_sizes_meet(
+                via.sizes, setting.copper or setting.layers, exact_size=setting.size
+            )
+            for via in removed.vias
+        ):
+            return reject(
+                "a removed via does not match the permitted through-via dimensions"
+            )
         # The whole-net electrical screen uses the configured width. It must
         # never evaluate a restored segment narrower than that assumption.
-        if setting.constraints and any(width < setting.width for _, width in removed.tracks):
-            return reject("an original track is narrower than the configured electrical floor")
+        if setting.constraints and any(
+            width < setting.width for _, width in removed.tracks
+        ):
+            return reject(
+                "an original track is narrower than the configured electrical floor"
+            )
         segments = tuple(segment for segment, _ in removed.tracks)
         vias = tuple(Via(via.point, "F.Cu", "B.Cu") for via in removed.vias)
         reused_vias = ()
@@ -504,8 +624,13 @@ class NativeBackend:
                 # unambiguous track width; mixed widths need a wider solver.
                 candidate = None
                 if all(width == setting.width for _, width in removed.tracks):
-                    candidate = self.refine_complete(net, prior, raw, repair_invalid=True)
-                    if candidate.segments == raw.segments or not restored_connects_islands(net, candidate):
+                    candidate = self.refine_complete(
+                        net, prior, raw, repair_invalid=True
+                    )
+                    if (
+                        candidate.segments == raw.segments
+                        or not restored_connects_islands(net, candidate)
+                    ):
                         candidate = self.local_repair(net, prior, raw)
                 if candidate is not None and restored_connects_islands(net, candidate):
                     measured = self.combine(net, (candidate,))
@@ -514,7 +639,8 @@ class NativeBackend:
                     reused_vias = candidate.reused_vias
                     repaired = True
                 elif source_unchanged and isinstance(
-                    original_error, (StaircaseGeometryError, OffAngleContactGeometryError)
+                    original_error,
+                    (StaircaseGeometryError, OffAngleContactGeometryError),
                 ):
                     # This is only the identical removed copper, with its
                     # original widths and no footprint moves. The independent
@@ -524,12 +650,17 @@ class NativeBackend:
                         self.budget.check()
                         try:
                             measured = self._combine(
-                                net, (raw,), forbid_staircase=False,
+                                net,
+                                (raw,),
+                                forbid_staircase=False,
                                 legacy_contacts=frozenset(legacy_contacts),
                             )
                             break
                         except OffAngleContactGeometryError as contact_error:
-                            if contact_error.site in legacy_contacts or len(legacy_contacts) >= 128:
+                            if (
+                                contact_error.site in legacy_contacts
+                                or len(legacy_contacts) >= 128
+                            ):
                                 raise
                             legacy_contacts.add(contact_error.site)
                     # The regular combiner exempts these original contacts
@@ -539,10 +670,15 @@ class NativeBackend:
                     for site in legacy_contacts:
                         rays = set()
                         for old in (*segments, *net.existing):
-                            if old.layer != site.layer or not on_segment(site.point, old):
+                            if old.layer != site.layer or not on_segment(
+                                site.point, old
+                            ):
                                 continue
                             for endpoint in (old.start, old.end):
-                                dx, dy = endpoint.x - site.point.x, endpoint.y - site.point.y
+                                dx, dy = (
+                                    endpoint.x - site.point.x,
+                                    endpoint.y - site.point.y,
+                                )
                                 if dx or dy:
                                     divisor = math.gcd(abs(dx), abs(dy))
                                     rays.add((dx // divisor, dy // divisor))
@@ -550,27 +686,38 @@ class NativeBackend:
                             first, second = tuple(rays)
                             legacy_bends += first != (-second[0], -second[1])
                     measured = replace(
-                        measured, bends=measured.bends + legacy_bends,
+                        measured,
+                        bends=measured.bends + legacy_bends,
                         cost=measured.cost + setting.weights.bend * legacy_bends,
                     )
                 else:
                     raise
-            length = sum(math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / 1e6 for s in segments)
+            length = sum(
+                math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / 1e6
+                for s in segments
+            )
             # Do not silently duplicate or subtract source copper.
             if abs(measured.length_mm - length) > 1e-9:
                 return reject("removed copper overlaps retained copper")
             if not self.accept(net, measured):
                 return reject("the original copper failed electrical screening")
             obstacles = (
-                *((self._clearance_envelope(obstacle, setting), True) for obstacle in self.obstacles
-                  if not source_unchanged or repaired),
+                *(
+                    (self._clearance_envelope(obstacle, setting), True)
+                    for obstacle in self.obstacles
+                    if not source_unchanged or repaired
+                ),
                 *((obstacle, False) for obstacle in self.envelopes(prior, setting)),
             )
             if repaired:
                 pieces = tuple(
-                    item for segment in segments
-                    for item in (setting.profile.pieces(segment) if setting.profile
-                                 else ((segment, setting.width),))
+                    item
+                    for segment in segments
+                    for item in (
+                        setting.profile.pieces(segment)
+                        if setting.profile
+                        else ((segment, setting.width),)
+                    )
                 )
             else:
                 pieces = tuple(removed.tracks)
@@ -585,24 +732,42 @@ class NativeBackend:
 
             for obstacle, original_obstacle in obstacles:
                 clearance = setting.clearance
-                same_net = bool(obstacle.net) and obstacle.net == net.name and obstacle.kind != "keepout"
+                same_net = (
+                    bool(obstacle.net)
+                    and obstacle.net == net.name
+                    and obstacle.kind != "keepout"
+                )
                 for piece, width in pieces:
                     if same_net or piece.layer not in obstacle.layers:
                         continue
-                    retained = tuple(segment for segment, old_width in removed.tracks
-                                     if old_width == width)
-                    checked = unique_segments((piece,), retained) if (
-                        original_obstacle and source_unchanged and repaired
-                    ) else (piece,)
+                    retained = tuple(
+                        segment
+                        for segment, old_width in removed.tracks
+                        if old_width == width
+                    )
+                    checked = (
+                        unique_segments((piece,), retained)
+                        if (original_obstacle and source_unchanged and repaired)
+                        else (piece,)
+                    )
                     for part in checked:
                         maximum = max(
                             obstacle.min_track_clearance,
-                            setting.profile.maximum_clearance if setting.profile else clearance,
+                            setting.profile.maximum_clearance
+                            if setting.profile
+                            else clearance,
                         )
-                        if not nearby(part.start, part.end, obstacle, math.ceil(width / 2) + maximum):
+                        if not nearby(
+                            part.start,
+                            part.end,
+                            obstacle,
+                            math.ceil(width / 2) + maximum,
+                        ):
                             continue
                         gap = obstacle.gap(
-                            setting.profile.clearance_at(piece, obstacle, width=width) if setting.profile else clearance,
+                            setting.profile.clearance_at(piece, obstacle, width=width)
+                            if setting.profile
+                            else clearance,
                         )
                         if GridRouter._intersects_box(
                             part.start, part.end, obstacle, math.ceil(width / 2) + gap
@@ -614,34 +779,61 @@ class NativeBackend:
                 for via in vias:
                     if same_net and obstacle.kind not in {"pad", "via"}:
                         continue
-                    if original_obstacle and source_unchanged and repaired and any(
-                        old.point == via.at for old in removed.vias
+                    if (
+                        original_obstacle
+                        and source_unchanged
+                        and repaired
+                        and any(old.point == via.at for old in removed.vias)
                     ):
                         continue
                     via_clearance = obstacle.gap(clearance, via=True)
-                    if not nearby(via.at, via.at, obstacle, math.ceil(setting.size / 2) + via_clearance):
+                    if not nearby(
+                        via.at,
+                        via.at,
+                        obstacle,
+                        math.ceil(setting.size / 2) + via_clearance,
+                    ):
                         continue
                     if GridRouter._intersects_box(
-                        via.at, via.at, obstacle, math.ceil(setting.size / 2) + via_clearance
+                        via.at,
+                        via.at,
+                        obstacle,
+                        math.ceil(setting.size / 2) + via_clearance,
                     ):
                         return reject(
                             f"original via clearance conflicts with {obstacle.net or 'keepout'} "
                             f"{obstacle.kind} on {', '.join(obstacle.layers)}"
                         )
-            restored = Route(segments, vias, reused_vias, measured.length_mm, measured.bends, measured.cost, 0)
-            return NetPlan(net.name, restored, 0.0, () if repaired else removed.tracks,
-                           source_modified=repaired)
+            restored = Route(
+                segments,
+                vias,
+                reused_vias,
+                measured.length_mm,
+                measured.bends,
+                measured.cost,
+                0,
+            )
+            return NetPlan(
+                net.name,
+                restored,
+                0.0,
+                () if repaired else removed.tracks,
+                source_modified=repaired,
+            )
         except RouteGeometryError as error:
             return reject(f"original geometry is not eligible: {error}")
 
-    def endpoint_headings(self, net: Net, tree: Route, site: Site,
-                          *, arriving: bool) -> frozenset[int] | None:
+    def endpoint_headings(
+        self, net: Net, tree: Route, site: Site, *, arriving: bool
+    ) -> frozenset[int] | None:
         """Constrain a true end-to-end bend while permitting pads and branches."""
         if site in net.pad_sites:
             return None
         setting = self.settings[net.name]
-        if any(v.at == site.point and site.layer in dict(v.sizes)
-               for v in setting.native.vias):
+        if any(
+            v.at == site.point and site.layer in dict(v.sizes)
+            for v in setting.native.vias
+        ):
             return None
         if any(v.at == site.point for v in (*tree.vias, *tree.reused_vias)):
             return None
@@ -655,48 +847,89 @@ class NativeBackend:
                         "Endpoint touches off-angle existing copper; "
                         "try another access point or reroute that copper"
                     )
-                directions.update(GridRouter._direction(site.point, p)
-                                  for p in (segment.start, segment.end) if p != site.point)
+                directions.update(
+                    GridRouter._direction(site.point, p)
+                    for p in (segment.start, segment.end)
+                    if p != site.point
+                )
         if len(directions) != 1:
             return None
         existing = next(iter(directions))
-        return frozenset(heading for heading in range(8)
-                         if ((heading + (4 if arriving else 0)) - existing) % 8 not in {2, 6})
+        return frozenset(
+            heading
+            for heading in range(8)
+            if ((heading + (4 if arriving else 0)) - existing) % 8 not in {2, 6}
+        )
 
-    def _path(self, router: GridRouter, net: Net, tree: Route,
-              start: Site, end: Site, *, context_check=None) -> tuple[Route, bool]:
+    def _path(
+        self,
+        router: GridRouter,
+        net: Net,
+        tree: Route,
+        start: Site,
+        end: Site,
+        *,
+        context_check=None,
+    ) -> tuple[Route, bool]:
         """Apply endpoint headings for this call without contaminating cached routers."""
         original = router.initial_directions, router.final_directions
-        dynamic = (self.endpoint_headings(net, tree, start, arriving=False),
-                   self.endpoint_headings(net, tree, end, arriving=True))
-        allowed = tuple(fixed if extra is None else extra if fixed is None else fixed & extra
-                        for fixed, extra in strict_zip(original, dynamic))
+        dynamic = (
+            self.endpoint_headings(net, tree, start, arriving=False),
+            self.endpoint_headings(net, tree, end, arriving=True),
+        )
+        allowed = tuple(
+            fixed if extra is None else extra if fixed is None else fixed & extra
+            for fixed, extra in strict_zip(original, dynamic)
+        )
         if any(value is not None and not value for value in allowed):
-            raise NoGridRoute("Configured endpoint directions conflict with an existing copper end")
+            raise NoGridRoute(
+                "Configured endpoint directions conflict with an existing copper end"
+            )
         try:
             router.initial_directions, router.final_directions = allowed
             if context_check is not None:
-                route = router.route(start.point, start.layer, end.point, end.layer,
-                                     candidate_check=context_check)
+                route = router.route(
+                    start.point,
+                    start.layer,
+                    end.point,
+                    end.layer,
+                    candidate_check=context_check,
+                )
             else:
                 route = router.route(start.point, start.layer, end.point, end.layer)
             limited = False
-            if self.budget.limits.smoothing_trials and "seconds" not in self.budget.limits_hit:
+            if (
+                self.budget.limits.smoothing_trials
+                and "seconds" not in self.budget.limits_hit
+            ):
                 try:
                     initial_route = route
-                    candidate = simplify_route(route, router, net, start, end, self.budget,
-                                               max_trials=self.budget.limits.smoothing_trials)
+                    candidate = simplify_route(
+                        route,
+                        router,
+                        net,
+                        start,
+                        end,
+                        self.budget,
+                        max_trials=self.budget.limits.smoothing_trials,
+                    )
                     # Refinement must not spoil a previously valid join.
-                    route = (initial_route if context_check is not None and not context_check(candidate)
-                             and context_check(initial_route) else candidate)
+                    route = (
+                        initial_route
+                        if context_check is not None
+                        and not context_check(candidate)
+                        and context_check(initial_route)
+                        else candidate
+                    )
                 except BudgetExhausted:
                     limited = True
             return route, limited
         finally:
             router.initial_directions, router.final_directions = original
 
-    def _path_with_context(self, router: GridRouter, net: Net, tree: Route,
-                           start: Site, end: Site) -> tuple[Route, bool]:
+    def _path_with_context(
+        self, router: GridRouter, net: Net, tree: Route, start: Site, end: Site
+    ) -> tuple[Route, bool]:
         """Retry headings when an otherwise valid path conflicts with its tree."""
         initial, final = router.initial_directions, router.final_directions
         alternatives = [(initial, final)]
@@ -718,19 +951,30 @@ class NativeBackend:
                 self.budget.failure("combined_geometry", f"{net.name}: {error}")
                 if len(rejected_routes) < 3 and candidate not in rejected_routes:
                     rejected_routes.append(candidate)
-                if (len(detour_routes) < 3
-                        and all((candidate.segments, candidate.vias, candidate.reused_vias)
-                                != (old.segments, old.vias, old.reused_vias) for old in detour_routes)):
+                if len(detour_routes) < 3 and all(
+                    (candidate.segments, candidate.vias, candidate.reused_vias)
+                    != (old.segments, old.vias, old.reused_vias)
+                    for old in detour_routes
+                ):
                     detour_routes.append(candidate)
                 if isinstance(error, StaircaseGeometryError):
                     for layer, point in error.witnesses:
                         witness = (layer, point)
-                        if (len(conflict_witnesses) < 3 and witness not in conflict_witnesses
-                                and point not in (start.point, end.point)
-                                and any(part.layer == layer and on_segment(point, part)
-                                        for part in candidate.segments)):
+                        if (
+                            len(conflict_witnesses) < 3
+                            and witness not in conflict_witnesses
+                            and point not in (start.point, end.point)
+                            and any(
+                                part.layer == layer and on_segment(point, part)
+                                for part in candidate.segments
+                            )
+                        ):
                             conflict_witnesses.append(witness)
-                if len(detour_routes) >= 3 and not detours_tried and not accepted_context:
+                if (
+                    len(detour_routes) >= 3
+                    and not detours_tried
+                    and not accepted_context
+                ):
                     raise _ContextDiversionRequested(candidate.expanded)
                 return False
             accepted_context = True
@@ -742,7 +986,9 @@ class NativeBackend:
             # endpoint headings; the same geometry checks still apply.
             while rejected_routes and len(alternatives) < 7:
                 candidate = rejected_routes.pop(0)
-                for alternative in self.alternative_headings(candidate, (start, end), initial, final):
+                for alternative in self.alternative_headings(
+                    candidate, (start, end), initial, final
+                ):
                     if alternative not in alternatives and len(alternatives) < 7:
                         alternatives.append(alternative)
 
@@ -752,21 +998,35 @@ class NativeBackend:
             original_clearance = router.edge_clear
             had_instance_clearance = "edge_clear" in vars(router)
             try:
-                points = tuple(dict.fromkeys((
-                    *conflict_witnesses, *self.context_detour_points(tuple(detour_routes)),
-                )))[:3]
+                points = tuple(
+                    dict.fromkeys(
+                        (
+                            *conflict_witnesses,
+                            *self.context_detour_points(tuple(detour_routes)),
+                        )
+                    )
+                )[:3]
                 for layer, point in points:
                     self.budget.call()
 
-                    def clear_without_point(first, last, check_layer, *, blocked_layer=layer, blocked=point):
-                        if check_layer == blocked_layer and on_segment(blocked, Segment(first, last, check_layer)):
+                    def clear_without_point(
+                        first, last, check_layer, *, blocked_layer=layer, blocked=point
+                    ):
+                        if check_layer == blocked_layer and on_segment(
+                            blocked, Segment(first, last, check_layer)
+                        ):
                             return False
                         return original_clearance(first, last, check_layer)
 
                     router.edge_clear = clear_without_point
                     try:
                         candidate, path_limited = self._path(
-                            router, net, tree, start, end, context_check=compatible,
+                            router,
+                            net,
+                            tree,
+                            start,
+                            end,
+                            context_check=compatible,
                         )
                     except NoGridRoute as error:
                         expanded += error.expanded
@@ -792,12 +1052,16 @@ class NativeBackend:
             for index, (start_directions, end_directions) in enumerate(alternatives):
                 if index:
                     self.budget.call()
-                router.initial_directions, router.final_directions = start_directions, end_directions
+                router.initial_directions, router.final_directions = (
+                    start_directions,
+                    end_directions,
+                )
                 try:
                     while True:
                         try:
-                            route, path_limited = self._path(router, net, tree, start, end,
-                                                             context_check=compatible)
+                            route, path_limited = self._path(
+                                router, net, tree, start, end, context_check=compatible
+                            )
                             break
                         except _ContextDiversionRequested as signal:
                             expanded += signal.expanded
@@ -812,7 +1076,7 @@ class NativeBackend:
                                 # failures consume the whole slice before
                                 # testing already-known alternative headings.
                                 current = (start_directions, end_directions)
-                                if current not in alternatives[index + 1:]:
+                                if current not in alternatives[index + 1 :]:
                                     alternatives.append(current)
                                 raise _ContextAlternativesRequested()
                             # Preserve the original search as a fallback if the
@@ -847,11 +1111,14 @@ class NativeBackend:
             if detour is not None:
                 return detour
         if limited:
-            raise SearchLimitReached("Context-aware path search reached a limit", expanded=expanded)
+            raise SearchLimitReached(
+                "Context-aware path search reached a limit", expanded=expanded
+            )
         if not rejected_context and last_no_route:
             raise NoGridRoute(last_no_route, expanded=expanded)
-        raise NoGridRoute("No sampled endpoint heading joins the existing copper",
-                          expanded=expanded)
+        raise NoGridRoute(
+            "No sampled endpoint heading joins the existing copper", expanded=expanded
+        )
 
     def accept(self, net: Net, route: Route) -> bool:
         try:
@@ -862,8 +1129,12 @@ class NativeBackend:
             return False
 
     def refine_complete(
-        self, net: Net, prior: tuple[NetPlan, ...], route: Route,
-        *, repair_invalid: bool = False,
+        self,
+        net: Net,
+        prior: tuple[NetPlan, ...],
+        route: Route,
+        *,
+        repair_invalid: bool = False,
     ) -> Route:
         """Improve a complete warm route while preserving its terminals."""
         trials = self.budget.limits.smoothing_trials
@@ -878,8 +1149,13 @@ class NativeBackend:
             *self.envelopes(prior, settings),
         )
         try:
-            router = settings.router(obstacles, frozenset(v.at for v in route.vias), self.budget)
-            if router.initial_directions is not None or router.final_directions is not None:
+            router = settings.router(
+                obstacles, frozenset(v.at for v in route.vias), self.budget
+            )
+            if (
+                router.initial_directions is not None
+                or router.final_directions is not None
+            ):
                 return route
             if ends is None:
                 if repair_invalid:
@@ -888,7 +1164,12 @@ class NativeBackend:
                     route, router, net, self.budget, max_trials=trials
                 )
             return simplify_route(
-                route, router, net, *ends, self.budget, max_trials=trials,
+                route,
+                router,
+                net,
+                *ends,
+                self.budget,
+                max_trials=trials,
                 repair_invalid=repair_invalid,
             )
         except BudgetExhausted:
@@ -912,7 +1193,9 @@ class NativeBackend:
             obstacle.kind,
             centerline=obstacle.centerline,
             copper_radius=obstacle.copper_radius + extra if obstacle.centerline else 0,
-            corner_radius=obstacle.corner_radius + extra if obstacle.corner_radius else 0,
+            corner_radius=obstacle.corner_radius + extra
+            if obstacle.corner_radius
+            else 0,
             min_track_clearance=obstacle.min_track_clearance,
             min_via_clearance=obstacle.min_via_clearance,
             boundary_only=obstacle.boundary_only,
@@ -927,42 +1210,60 @@ class NativeBackend:
             result.extend(
                 self._clearance_envelope(_obstacle(o), current)
                 for o in _previous_obstacles(
-                    route_payload(plan.route, plan.net, s.width, s.size, s.drill, s.profile,
-                                  plan_dimensions(plan, s))
+                    route_payload(
+                        plan.route,
+                        plan.net,
+                        s.width,
+                        s.size,
+                        s.drill,
+                        s.profile,
+                        plan_dimensions(plan, s),
+                    )
                 )
             )
         return tuple(result)
 
     @staticmethod
-    def _plane_via_clear(net: Net, point: Point, setting: Settings,
-                         obstacles: tuple[Obstacle, ...]) -> bool:
+    def _plane_via_clear(
+        net: Net, point: Point, setting: Settings, obstacles: tuple[Obstacle, ...]
+    ) -> bool:
         margin = math.ceil(setting.size / 2) + setting.clearance
-        if not (setting.lower.x + margin <= point.x <= setting.upper.x - margin
-                and setting.lower.y + margin <= point.y <= setting.upper.y - margin):
+        if not (
+            setting.lower.x + margin <= point.x <= setting.upper.x - margin
+            and setting.lower.y + margin <= point.y <= setting.upper.y - margin
+        ):
             return False
         for obstacle in obstacles:
             same_net = obstacle.net == net.name and obstacle.kind != "keepout"
             if same_net and obstacle.kind not in {"pad", "via"}:
                 continue
-            margin = math.ceil(setting.size / 2) + obstacle.gap(setting.clearance, via=True)
+            margin = math.ceil(setting.size / 2) + obstacle.gap(
+                setting.clearance, via=True
+            )
             # Avoid the more expensive exact check when even the expanded
             # bounding box cannot contain the candidate via.
-            if (point.x < obstacle.lower.x - margin - 1
-                    or point.x > obstacle.upper.x + margin + 1
-                    or point.y < obstacle.lower.y - margin - 1
-                    or point.y > obstacle.upper.y + margin + 1):
+            if (
+                point.x < obstacle.lower.x - margin - 1
+                or point.x > obstacle.upper.x + margin + 1
+                or point.y < obstacle.lower.y - margin - 1
+                or point.y > obstacle.upper.y + margin + 1
+            ):
                 continue
             if GridRouter._intersects_box(point, point, obstacle, margin):
                 return False
         return True
 
-    def clear_plane_sites(self, net: Net, prior: tuple[NetPlan, ...], tree: Route) -> frozenset[Site]:
+    def clear_plane_sites(
+        self, net: Net, prior: tuple[NetPlan, ...], tree: Route
+    ) -> frozenset[Site]:
         """Rank sampled plane sites without discarding difficult alternatives."""
         sites = {site for island in net.islands for site, _ in island.zone_anchors}
         if not sites:
             return frozenset()
         setting = self.settings[net.name]
-        if setting.constraints and not setting.constraints.allows_via_geometry(setting.size, setting.drill):
+        if setting.constraints and not setting.constraints.allows_via_geometry(
+            setting.size, setting.drill
+        ):
             return frozenset()
         obstacles = (
             *tuple(self._clearance_envelope(o, setting) for o in self.obstacles),
@@ -981,11 +1282,20 @@ class NativeBackend:
         setting = self.settings[net.name]
         margin = math.ceil(setting.width / 2) + setting.clearance
         point = site.point
-        return (setting.lower.x + margin <= point.x <= setting.upper.x - margin
-                and setting.lower.y + margin <= point.y <= setting.upper.y - margin)
+        return (
+            setting.lower.x + margin <= point.x <= setting.upper.x - margin
+            and setting.lower.y + margin <= point.y <= setting.upper.y - margin
+        )
 
-    def direct_plane_path(self, net: Net, tree: Route, start: Site, end: Site,
-                          router: GridRouter, obstacles: tuple[Obstacle, ...]) -> Route | None:
+    def direct_plane_path(
+        self,
+        net: Net,
+        tree: Route,
+        start: Site,
+        end: Site,
+        router: GridRouter,
+        obstacles: tuple[Obstacle, ...],
+    ) -> Route | None:
         """Try a short through-via at a sampled, existing-plane access site."""
         virtual = {site for island in net.islands for site, _ in island.zone_anchors}
         if (start in virtual) == (end in virtual) or start.point == end.point:
@@ -994,23 +1304,37 @@ class NativeBackend:
         if plane.layer == terminal.layer or not router.allow_new_vias:
             return None
         setting = self.settings[net.name]
-        if not self._plane_via_clear(net, plane.point, setting, (*obstacles, *setting.extra)):
+        if not self._plane_via_clear(
+            net, plane.point, setting, (*obstacles, *setting.extra)
+        ):
             return None
         first_allowed = self.endpoint_headings(net, tree, start, arriving=False)
         last_allowed = self.endpoint_headings(net, tree, end, arriving=True)
         candidates = []
         for points in router._stub_paths(start.point, end.point):
-            segments = tuple(Segment(a, b, terminal.layer) for a, b in zip(points, points[1:]))
-            if not segments or any(not router.edge_clear(s.start, s.end, s.layer) for s in segments):
+            segments = tuple(
+                Segment(a, b, terminal.layer) for a, b in zip(points, points[1:])
+            )
+            if not segments or any(
+                not router.edge_clear(s.start, s.end, s.layer) for s in segments
+            ):
                 continue
             first = GridRouter._direction(segments[0].start, segments[0].end)
             last = GridRouter._direction(segments[-1].start, segments[-1].end)
-            if (first_allowed is not None and first not in first_allowed
-                    or last_allowed is not None and last not in last_allowed
-                    or router.initial_directions is not None and first not in router.initial_directions
-                    or router.final_directions is not None and last not in router.final_directions):
+            if (
+                first_allowed is not None
+                and first not in first_allowed
+                or last_allowed is not None
+                and last not in last_allowed
+                or router.initial_directions is not None
+                and first not in router.initial_directions
+                or router.final_directions is not None
+                and last not in router.final_directions
+            ):
                 continue
-            raw = Route(segments, (Via(plane.point, "F.Cu", "B.Cu"),), (), 0.0, 0, 0.0, 0)
+            raw = Route(
+                segments, (Via(plane.point, "F.Cu", "B.Cu"),), (), 0.0, 0, 0.0, 0
+            )
             try:
                 candidate = self.combine(net, (raw,))
                 self.combine(net, (tree, candidate))
@@ -1074,7 +1398,9 @@ class NativeBackend:
                         self.budget,
                     )
                 )
-                route, refinement_limited = self._path_with_context(router, net, tree, start, end)
+                route, refinement_limited = self._path_with_context(
+                    router, net, tree, start, end
+                )
                 limited |= refinement_limited
                 self.budget.expanded += route.expanded
                 limited |= route.search_truncated

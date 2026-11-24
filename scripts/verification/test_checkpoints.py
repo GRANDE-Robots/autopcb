@@ -520,7 +520,13 @@ class CheckpointTests(unittest.TestCase):
         self.before = self.board.read_bytes()
         # Same geometry under new copper: open count unchanged, style clean.
         candidate = Route(
-            (Segment(Point.from_mm([2, 7]), Point.from_mm([8, 7]), "F.Cu"),), (), (), 6, 0, 0, 0
+            (Segment(Point.from_mm([2, 7]), Point.from_mm([8, 7]), "F.Cu"),),
+            (),
+            (),
+            6,
+            0,
+            0,
+            0,
         )
         seed = {
             "schema": 1,

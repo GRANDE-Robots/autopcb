@@ -36,7 +36,9 @@ def _schematic_no_connects(source: str) -> set[tuple[str, str]]:
     occupied = set()
     for kind in ("label", "global_label", "hierarchical_label", "junction"):
         for _, _, block in top_level(source, kind):
-            occupied.update(point_key(*point) for point in top_level_points(block, kind))
+            occupied.update(
+                point_key(*point) for point in top_level_points(block, kind)
+            )
     wires = []
     for _, _, block in top_level(source, "wire"):
         points = [point_key(*point) for point in top_level_points(block, "wire")]
@@ -60,8 +62,10 @@ def _schematic_no_connects(source: str) -> set[tuple[str, str]]:
             raise ValueError("A schematic no-connect marker needs one coordinate")
         point = point_key(*points[0])
         pins = set(endpoints.get(point, ()))
-        if len(pins) == 1 and point not in occupied and not any(
-            on_wire(point, start, end) for start, end in wires
+        if (
+            len(pins) == 1
+            and point not in occupied
+            and not any(on_wire(point, start, end) for start, end in wires)
         ):
             result.update(pins)
     return result
@@ -95,7 +99,9 @@ def inventory_board(board, *, schematic: str | None = None) -> BoardInventory:
     for pad in board.GetPads():
         uid = identifier(pad)
         name = pad.GetNetname()
-        copper = any(pad.IsOnLayer(layer) for layer in board.GetEnabledLayers().CuStack())
+        copper = any(
+            pad.IsOnLayer(layer) for layer in board.GetEnabledLayers().CuStack()
+        )
         if not name:
             if copper and pad.GetAttribute() != pcbnew.PAD_ATTRIB_NPTH:
                 key = (pad.GetParentFootprint().GetReference(), pad.GetNumber())
@@ -126,7 +132,12 @@ def inventory_board(board, *, schematic: str | None = None) -> BoardInventory:
     connectivity = board.GetConnectivity()
     connectivity.Build(board)
     nets = []
-    for name in sorted(pads_by_net.keys() | tracks_by_net.keys() | vias_by_net.keys() | zones_by_net.keys()):
+    for name in sorted(
+        pads_by_net.keys()
+        | tracks_by_net.keys()
+        | vias_by_net.keys()
+        | zones_by_net.keys()
+    ):
         pads = pads_by_net.get(name, {})
         items = items_by_net.get(name, {})
         remaining = set(items)
@@ -144,7 +155,8 @@ def inventory_board(board, *, schematic: str | None = None) -> BoardInventory:
             remaining.difference_update(members)
             copper_islands.append(members)
         pad_islands = tuple(
-            members for island in copper_islands
+            members
+            for island in copper_islands
             if (members := tuple(uid for uid in island if uid in pads))
         )
         nets.append(

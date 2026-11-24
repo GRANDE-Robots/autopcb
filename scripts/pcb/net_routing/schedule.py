@@ -91,9 +91,9 @@ def search_orders(
     for proposed_order in net_orders(ordered_nets, budget, requested):
         # Nets with one surviving island need only an electrical/rework check.
         # Check them first so they do not reserve a full routing time slice.
-        order = tuple(name for name in proposed_order if len(by_name[name].islands) <= 1) + tuple(
-            name for name in proposed_order if len(by_name[name].islands) > 1
-        )
+        order = tuple(
+            name for name in proposed_order if len(by_name[name].islands) <= 1
+        ) + tuple(name for name in proposed_order if len(by_name[name].islands) > 1)
         if order in orders:
             continue
         orders.append(order)
@@ -117,9 +117,15 @@ def search_orders(
                                 candidates = solve(by_name[name], board.plans)
                             if not board.plans and budget.limit_events == prior_limits:
                                 independent[name] = candidates
-                        searches.append({"net": name, "prior_nets": [p.net for p in board.plans],
-                                         "candidates": len(candidates), "cached": cached,
-                                         "budget_limited": budget.limit_events > prior_limits})
+                        searches.append(
+                            {
+                                "net": name,
+                                "prior_nets": [p.net for p in board.plans],
+                                "candidates": len(candidates),
+                                "cached": cached,
+                                "budget_limited": budget.limit_events > prior_limits,
+                            }
+                        )
                         for candidate in candidates:
                             if candidate.net != name:
                                 raise ValueError("Net backend returned the wrong net")

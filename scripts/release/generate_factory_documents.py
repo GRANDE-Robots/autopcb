@@ -68,7 +68,10 @@ def generate(project, output):
     )
     for n, h in stack["evidence_files"].items():
         evidence = data_reference(P, n)
-        require(evidence.is_file() and sha(evidence) == h, "Stack calculator evidence changed: " + n)
+        require(
+            evidence.is_file() and sha(evidence) == h,
+            "Stack calculator evidence changed: " + n,
+        )
     stack_name = stack["stackup_id"]
     order_mm = stack["nominal_order_thickness_mm"]
     finished_mm = stack["displayed_finished_thickness_mm"]

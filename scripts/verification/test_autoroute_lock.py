@@ -25,8 +25,10 @@ class LockWaitTests(unittest.TestCase):
         def advance(seconds):
             now[0] += seconds
 
-        with patch("pcb.net_routing.runner.time.monotonic", side_effect=lambda: now[0]), \
-                patch("pcb.net_routing.runner.time.sleep", side_effect=advance):
+        with (
+            patch("pcb.net_routing.runner.time.monotonic", side_effect=lambda: now[0]),
+            patch("pcb.net_routing.runner.time.sleep", side_effect=advance),
+        ):
             _acquire_lock(acquire, wait_seconds=1.0, progress=messages.append)
         self.assertEqual(len(attempts), 3)
         self.assertEqual(len(messages), 1)
@@ -37,8 +39,13 @@ class LockWaitTests(unittest.TestCase):
         def busy():
             raise OSError("busy")
 
-        with patch("pcb.net_routing.runner.time.monotonic", side_effect=lambda: now[0]), \
-                patch("pcb.net_routing.runner.time.sleep", side_effect=lambda seconds: now.__setitem__(0, now[0] + seconds)):
+        with (
+            patch("pcb.net_routing.runner.time.monotonic", side_effect=lambda: now[0]),
+            patch(
+                "pcb.net_routing.runner.time.sleep",
+                side_effect=lambda seconds: now.__setitem__(0, now[0] + seconds),
+            ),
+        ):
             with self.assertRaisesRegex(RuntimeError, "Another AutoPCB run is active"):
                 _acquire_lock(busy, wait_seconds=0.2)
 
@@ -51,11 +58,15 @@ class LockWaitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             lock = Path(temporary) / "active.lock"
             ready = Path(temporary) / "ready"
-            code = ("from pathlib import Path; import sys,time; "
-                    "from pcb.net_routing.runner import _exclusive; "
-                    "lock=_exclusive(Path(sys.argv[1])); lock.__enter__(); "
-                    "Path(sys.argv[2]).write_text('ready'); time.sleep(1); lock.__exit__(None,None,None)")
-            child = subprocess.Popen([sys.executable, "-B", "-c", code, str(lock), str(ready)])
+            code = (
+                "from pathlib import Path; import sys,time; "
+                "from pcb.net_routing.runner import _exclusive; "
+                "lock=_exclusive(Path(sys.argv[1])); lock.__enter__(); "
+                "Path(sys.argv[2]).write_text('ready'); time.sleep(1); lock.__exit__(None,None,None)"
+            )
+            child = subprocess.Popen(
+                [sys.executable, "-B", "-c", code, str(lock), str(ready)]
+            )
             try:
                 deadline = time.monotonic() + 8
                 while not ready.exists() and time.monotonic() < deadline:

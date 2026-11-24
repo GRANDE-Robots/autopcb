@@ -18,10 +18,19 @@ from pcb.route_optimizer import COPPER_LAYERS, Point, mm
 from pcb.move_scope import MoveScope
 from pcb.route_validation import CandidateRejected, RouteContract, validate_routes
 from pcb.net_routing.checkpoint import (
-    CheckpointWindowUnavailable, route_access_inset, search_window, choose_checkpoint,
-    choose_transaction_checkpoint, original_anchor,
+    CheckpointWindowUnavailable,
+    route_access_inset,
+    search_window,
+    choose_checkpoint,
+    choose_transaction_checkpoint,
+    original_anchor,
 )
-from pcb.net_routing.backend import NativeBackend, Settings, plan_dimensions, route_payload
+from pcb.net_routing.backend import (
+    NativeBackend,
+    Settings,
+    plan_dimensions,
+    route_payload,
+)
 from pcb.net_routing.model import Budget, BudgetExhausted, Limits
 from pcb.net_routing.native import (
     Snapshot,
@@ -34,8 +43,12 @@ from pcb.net_routing.native import (
 from pcb.net_routing.schedule import BoardPlan, search_orders
 from pcb.net_routing.topology import whole_net
 from pcb.net_routing.rework import (
-    RemovedCopper, ReworkWeights, capture_removals, include_repair_contacts,
-    junction_tail_cost, placement_cost,
+    RemovedCopper,
+    ReworkWeights,
+    capture_removals,
+    include_repair_contacts,
+    junction_tail_cost,
+    placement_cost,
 )
 from pcb.net_routing.rules import RoutingRules
 
@@ -55,8 +68,9 @@ class Candidate:
         return self.board.cost + self.placement_cost + self.junction_rework_cost
 
 
-def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, weights=None,
-                                    *, source_unchanged=False):
+def _solve_with_terminal_refinement(
+    net, prior, backend, budget, removed=None, weights=None, *, source_unchanged=False
+):
     """Keep a greedy tree when local cleanup cannot improve or validate it."""
     variants = []
     setting = backend.settings[net.name]
@@ -64,30 +78,44 @@ def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, w
     weights = weights or ReworkWeights()
 
     def rework_cost(route):
-        return copper.score(route, width=setting.width, size=setting.size,
-                            drill=setting.drill, weights=weights,
-                            segment_dimensions=setting.profile.pieces if setting.profile else None).cost
+        return copper.score(
+            route,
+            width=setting.width,
+            size=setting.size,
+            drill=setting.drill,
+            weights=weights,
+            segment_dimensions=setting.profile.pieces if setting.profile else None,
+        ).cost
 
-    restored = backend.restored_plan(net, prior, removed, source_unchanged=source_unchanged)
+    restored = backend.restored_plan(
+        net, prior, removed, source_unchanged=source_unchanged
+    )
     if restored is not None:
         if restored.source_modified:
             score = copper.score(
-                restored.route, width=setting.width, size=setting.size,
-                drill=setting.drill, weights=weights,
+                restored.route,
+                width=setting.width,
+                size=setting.size,
+                drill=setting.drill,
+                weights=weights,
                 segment_dimensions=plan_dimensions(restored, setting),
             )
             restored = replace(restored, rework_cost=score.cost)
         variants.append(restored)
 
     def collect(candidate_net, engine):
-        for candidate in whole_net(candidate_net, prior, engine, budget, rework_cost=rework_cost):
+        for candidate in whole_net(
+            candidate_net, prior, engine, budget, rework_cost=rework_cost
+        ):
             refined = engine.refine_complete(candidate_net, prior, candidate.route)
             if (
                 refined.segments != candidate.route.segments
                 and refined.cost + rework_cost(refined) + 1e-9 < candidate.cost
                 and engine.accept(candidate_net, refined)
             ):
-                variants.append(replace(candidate, route=refined, rework_cost=rework_cost(refined)))
+                variants.append(
+                    replace(candidate, route=refined, rework_cost=rework_cost(refined))
+                )
             variants.append(candidate)
 
     # After earlier nets have been placed, try a tighter window around this
@@ -96,28 +124,46 @@ def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, w
     if restored is None and prior and len(net.islands) > 1:
         try:
             anchors = choose_checkpoint(net, maximum=len(net.islands)).anchors
-            bounds = (setting.lower.x / 1e6, setting.lower.y / 1e6,
-                      setting.upper.x / 1e6, setting.upper.y / 1e6)
+            bounds = (
+                setting.lower.x / 1e6,
+                setting.lower.y / 1e6,
+                setting.upper.x / 1e6,
+                setting.upper.y / 1e6,
+            )
             window, step = search_window(
-                anchors, bounds, 1.5, setting.step / 1e6,
-                len(setting.layers), setting.raw.get("max_cells", 250000),
+                anchors,
+                bounds,
+                1.5,
+                setting.step / 1e6,
+                len(setting.layers),
+                setting.raw.get("max_cells", 250000),
                 access_inset=route_access_inset(setting.raw),
             )
         except CheckpointWindowUnavailable as error:
             budget.failure("local_window", f"{net.name}: {error}")
         else:
             if tuple(window) != tuple(bounds):
-                islands = tuple(replace(
-                    island, sites=tuple(site for site in island.sites
-                                        if window[0] <= site.point.x / 1e6 <= window[2]
-                                        and window[1] <= site.point.y / 1e6 <= window[3])
-                ) for island in net.islands)
+                islands = tuple(
+                    replace(
+                        island,
+                        sites=tuple(
+                            site
+                            for site in island.sites
+                            if window[0] <= site.point.x / 1e6 <= window[2]
+                            and window[1] <= site.point.y / 1e6 <= window[3]
+                        ),
+                    )
+                    for island in net.islands
+                )
                 if all(island.sites for island in islands):
                     local_net = replace(net, islands=islands)
                     local = Settings(
                         {**setting.raw, "bounds_mm": list(window), "step_mm": step},
-                        setting.native, setting.copper, setting.board_bounds,
-                        setting.edge_clearance, setting.saved_rules,
+                        setting.native,
+                        setting.copper,
+                        setting.board_bounds,
+                        setting.edge_clearance,
+                        setting.saved_rules,
                     )
                     engine = NativeBackend(
                         {**backend.settings, net.name: local}, backend.obstacles, budget
@@ -130,7 +176,11 @@ def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, w
     # Once an exact restoration is available, reserve most of this net's
     # slice for the other nets in the transaction. If the restored path is
     # blocked by an earlier proposal, normal full-slice search still applies.
-    limit = budget.net_slice(4) if restored is not None and budget.slice_deadline is not None else nullcontext()
+    limit = (
+        budget.net_slice(4)
+        if restored is not None and budget.slice_deadline is not None
+        else nullcontext()
+    )
     try:
         with limit:
             collect(net, backend)
@@ -143,7 +193,23 @@ def _solve_with_terminal_refinement(net, prior, backend, budget, removed=None, w
 def configurations(data: object) -> tuple[dict, dict[str, dict], Limits]:
     data = _fields(
         data,
-        {"board_snapshot", "shared", "nets", "orders", "movable", "placement", "search", "rip_up", "rework", "max_islands", "repair_max_islands", "checkpoint_offset", "checkpoint_margin_mm", "recovery_stage", "recovery_bounds_mm"},
+        {
+            "board_snapshot",
+            "shared",
+            "nets",
+            "orders",
+            "movable",
+            "placement",
+            "search",
+            "rip_up",
+            "rework",
+            "max_islands",
+            "repair_max_islands",
+            "checkpoint_offset",
+            "checkpoint_margin_mm",
+            "recovery_stage",
+            "recovery_bounds_mm",
+        },
         "net planner",
     )
     shared = _fields(
@@ -177,10 +243,18 @@ def configurations(data: object) -> tuple[dict, dict[str, dict], Limits]:
         raise ValueError("Each rip-up entry must be a list of copper items")
     maximum = data.get("max_islands")
     offset = data.get("checkpoint_offset", 0)
-    if maximum is not None and (isinstance(maximum, bool) or not isinstance(maximum, int) or not 2 <= maximum <= 20):
+    if maximum is not None and (
+        isinstance(maximum, bool)
+        or not isinstance(maximum, int)
+        or not 2 <= maximum <= 20
+    ):
         raise ValueError("max_islands must be an integer between 2 and 20")
     repair_maximum = data.get("repair_max_islands", maximum)
-    if repair_maximum is not None and (isinstance(repair_maximum, bool) or not isinstance(repair_maximum, int) or not 2 <= repair_maximum <= 20):
+    if repair_maximum is not None and (
+        isinstance(repair_maximum, bool)
+        or not isinstance(repair_maximum, int)
+        or not 2 <= repair_maximum <= 20
+    ):
         raise ValueError("repair_max_islands must be an integer between 2 and 20")
     if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
         raise ValueError("checkpoint_offset must be a nonnegative integer")
@@ -190,7 +264,12 @@ def configurations(data: object) -> tuple[dict, dict[str, dict], Limits]:
     ReworkWeights.from_config(data.get("rework"))
     MoveScope.from_config(data.get("placement"))
     margin = data.get("checkpoint_margin_mm", 4.0)
-    if isinstance(margin, bool) or not isinstance(margin, (int, float)) or not math.isfinite(margin) or margin <= 0:
+    if (
+        isinstance(margin, bool)
+        or not isinstance(margin, (int, float))
+        or not math.isfinite(margin)
+        or margin <= 0
+    ):
         raise ValueError("checkpoint_margin_mm must be finite and positive")
     return data, nets, Limits.from_config(data.get("search", {}))
 
@@ -209,7 +288,9 @@ def plan_nets(
     if not isinstance(source_name, str) or not source_name:
         raise ValueError("board_snapshot must be a saved PCB path or 'pcb'")
     source = (
-        native_path(project, ".kicad_pcb") if source_name == "pcb" else project / source_name
+        native_path(project, ".kicad_pcb")
+        if source_name == "pcb"
+        else project / source_name
     )
     budget = Budget(limits)
     candidates: list[Candidate] = []
@@ -227,8 +308,14 @@ def plan_nets(
             if identifiers.intersection(selected_ids):
                 raise ValueError("Copper may not be removed more than once")
             selected_ids.update(identifiers)
-            index = next(i for i, contract in enumerate(original_contracts) if contract.net == name)
-            original_contracts[index] = replace(original_contracts[index], removals=tuple(removals))
+            index = next(
+                i
+                for i, contract in enumerate(original_contracts)
+                if contract.net == name
+            )
+            original_contracts[index] = replace(
+                original_contracts[index], removals=tuple(removals)
+            )
             removal_changes.extend(
                 {"document": "pcb", "target": item, "op": "remove", "path": []}
                 for item in removals
@@ -245,7 +332,9 @@ def plan_nets(
             ):
                 if removal_changes:
                     snapshot.board_path.write_bytes(
-                        CampaignPlanner(snapshot.directory).plan("pcb", removal_changes).after
+                        CampaignPlanner(snapshot.directory)
+                        .plan("pcb", removal_changes)
+                        .after
                     )
                 board = load_board(snapshot.board_path, refill_zones=refill_zones)
                 edge_box = board.GetBoardEdgesBoundingBox()
@@ -256,12 +345,18 @@ def plan_nets(
                 edge_clearance = int(board.GetDesignSettings().m_CopperEdgeClearance)
                 zone_count = sum(not zone.GetIsRuleArea() for zone in board.Zones())
                 native = {}
-                effective_requests = {name: dict(settings) for name, settings in requests.items()}
+                effective_requests = {
+                    name: dict(settings) for name, settings in requests.items()
+                }
                 checkpoint_contracts = []
                 for name, settings in effective_requests.items():
-                    layers = settings.get("layers", [
-                        board.GetLayerName(layer) for layer in board.GetEnabledLayers().CuStack()
-                    ])
+                    layers = settings.get(
+                        "layers",
+                        [
+                            board.GetLayerName(layer)
+                            for layer in board.GetEnabledLayers().CuStack()
+                        ],
+                    )
                     if (
                         not isinstance(layers, list)
                         or not layers
@@ -270,14 +365,21 @@ def plan_nets(
                         raise ValueError("layers must list known copper layers")
                     zone_via_margin = 0
                     if refill_zones:
-                        via = _fields(settings.get("via", {}), {"size_mm", "drill_mm"}, "via")
+                        via = _fields(
+                            settings.get("via", {}), {"size_mm", "drill_mm"}, "via"
+                        )
                         via_size = mm(via.get("size_mm", 0.6))
                         clearance = mm(settings.get("clearance_mm", 0.2))
                         if via_size <= 0 or clearance < 0:
-                            raise ValueError("Via size must be positive and clearance nonnegative")
+                            raise ValueError(
+                                "Via size must be positive and clearance nonnegative"
+                            )
                         zone_via_margin = (via_size + 1) // 2 + clearance
                     native[name] = discover(
-                        board, name, tuple(layers), budget,
+                        board,
+                        name,
+                        tuple(layers),
+                        budget,
                         include_zone_access=refill_zones,
                         zone_via_margin=zone_via_margin,
                     )
@@ -285,52 +387,84 @@ def plan_nets(
                         native[name] = replace(
                             native[name],
                             net=include_repair_contacts(
-                                board, native[name].net, removed_copper[name], budget=budget
+                                board,
+                                native[name].net,
+                                removed_copper[name],
+                                budget=budget,
                             ),
                         )
                     if data.get("max_islands") is not None:
-                        if len(native[name].net.islands) >= 2 or poses or data.get("rip_up", {}).get(name):
+                        if (
+                            len(native[name].net.islands) >= 2
+                            or poses
+                            or data.get("rip_up", {}).get(name)
+                        ):
                             if poses or data.get("rip_up", {}).get(name):
                                 selection = choose_transaction_checkpoint(
-                                    original_board, native[name].net, target=name == next(iter(requests)),
+                                    original_board,
+                                    native[name].net,
+                                    target=name == next(iter(requests)),
                                     maximum=data["max_islands"],
-                                    repair_maximum=data.get("repair_max_islands", data["max_islands"]),
+                                    repair_maximum=data.get(
+                                        "repair_max_islands", data["max_islands"]
+                                    ),
                                     offset=data.get("checkpoint_offset", 0),
                                 )
                             else:
                                 selection = choose_checkpoint(
-                                    native[name].net, maximum=data["max_islands"],
+                                    native[name].net,
+                                    maximum=data["max_islands"],
                                     offset=data.get("checkpoint_offset", 0),
                                 )
                             partial, anchors = selection.net, selection.anchors
                             window, step = search_window(
-                                anchors, tuple(settings["bounds_mm"]),
+                                anchors,
+                                tuple(settings["bounds_mm"]),
                                 data.get("checkpoint_margin_mm", 4.0),
-                                settings.get("step_mm", 0.25), len(layers),
+                                settings.get("step_mm", 0.25),
+                                len(layers),
                                 settings.get("max_cells", 250000),
                                 access_inset=route_access_inset(settings),
                             )
                             settings["bounds_mm"] = list(window)
                             settings["step_mm"] = step
-                            checkpoint_records.append({
-                                "net": name, "index": selection.index, "count": selection.count,
-                                "islands": sorted(island.identifier for island in partial.islands),
-                                "bounds_mm": list(window), "step_mm": step,
-                                "stage": data.get("recovery_stage", 0),
-                            })
-                            local_islands = tuple(
-                                replace(island, sites=tuple(
-                                    site for site in island.sites
-                                    if window[0] <= site.point.x / 1e6 <= window[2]
-                                    and window[1] <= site.point.y / 1e6 <= window[3]
-                                )) for island in partial.islands
+                            checkpoint_records.append(
+                                {
+                                    "net": name,
+                                    "index": selection.index,
+                                    "count": selection.count,
+                                    "islands": sorted(
+                                        island.identifier for island in partial.islands
+                                    ),
+                                    "bounds_mm": list(window),
+                                    "step_mm": step,
+                                    "stage": data.get("recovery_stage", 0),
+                                }
                             )
-                            native[name] = replace(native[name], net=replace(partial, islands=local_islands))
+                            local_islands = tuple(
+                                replace(
+                                    island,
+                                    sites=tuple(
+                                        site
+                                        for site in island.sites
+                                        if window[0] <= site.point.x / 1e6 <= window[2]
+                                        and window[1] <= site.point.y / 1e6 <= window[3]
+                                    ),
+                                )
+                                for island in partial.islands
+                            )
+                            native[name] = replace(
+                                native[name],
+                                net=replace(partial, islands=local_islands),
+                            )
                             physical_sites = {
-                                virtual: physical for island in partial.islands
+                                virtual: physical
+                                for island in partial.islands
                                 for virtual, physical in island.zone_anchors
                             }
-                            bound_anchors = tuple(physical_sites.get(site, site) for site in anchors)
+                            bound_anchors = tuple(
+                                physical_sites.get(site, site) for site in anchors
+                            )
                             if poses:
                                 bound_anchors = tuple(
                                     original_anchor(original_board, board, name, site)
@@ -338,16 +472,32 @@ def plan_nets(
                                 )
                             first = bound_anchors[0]
                             checkpoint_contracts.extend(
-                                RouteContract(name, first.point, first.layer, site.point, site.layer)
+                                RouteContract(
+                                    name,
+                                    first.point,
+                                    first.layer,
+                                    site.point,
+                                    site.layer,
+                                )
                                 for site in (bound_anchors[1:] or bound_anchors)
                             )
                         else:
-                            checkpoint_contracts.extend(c for c in original_contracts if c.net == name)
+                            checkpoint_contracts.extend(
+                                c for c in original_contracts if c.net == name
+                            )
                 for name, removals in data.get("rip_up", {}).items():
                     if data.get("max_islands") is not None and removals:
-                        index = next(i for i, contract in enumerate(checkpoint_contracts) if contract.net == name)
-                        checkpoint_contracts[index] = replace(checkpoint_contracts[index], removals=tuple(removals))
-                saved_rules = RoutingRules.from_board(board, snapshot.board_path.with_suffix(".kicad_dru"))
+                        index = next(
+                            i
+                            for i, contract in enumerate(checkpoint_contracts)
+                            if contract.net == name
+                        )
+                        checkpoint_contracts[index] = replace(
+                            checkpoint_contracts[index], removals=tuple(removals)
+                        )
+                saved_rules = RoutingRules.from_board(
+                    board, snapshot.board_path.with_suffix(".kicad_dru")
+                )
                 del board
                 baseline = obstacles(
                     snapshot.board_path,
@@ -373,7 +523,12 @@ def plan_nets(
                     tuple(item.net for item in native.values()),
                     budget,
                     lambda net, prior: _solve_with_terminal_refinement(
-                        net, prior, backend, budget, removed_copper.get(net.name), rework_weights,
+                        net,
+                        prior,
+                        backend,
+                        budget,
+                        removed_copper.get(net.name),
+                        rework_weights,
                         source_unchanged=not poses,
                     ),
                     data.get("orders"),
@@ -395,11 +550,20 @@ def plan_nets(
                     key = tuple(sorted(poses.items())), result.signature
                     if key not in seen:
                         seen.add(key)
-                        candidates.append(Candidate(
-                            result, poses, (*moves, *removal_changes), settings,
-                            tuple(checkpoint_contracts if data.get("max_islands") is not None else original_contracts),
-                            placement_cost(original_board, poses, rework_weights),
-                        ))
+                        candidates.append(
+                            Candidate(
+                                result,
+                                poses,
+                                (*moves, *removal_changes),
+                                settings,
+                                tuple(
+                                    checkpoint_contracts
+                                    if data.get("max_islands") is not None
+                                    else original_contracts
+                                ),
+                                placement_cost(original_board, poses, rework_weights),
+                            )
+                        )
                 candidates.sort(key=lambda c: (c.cost, c.board.signature))
                 budget.pruned += max(0, len(candidates) - limits.board_beam)
                 candidates = candidates[: limits.board_beam]
@@ -419,15 +583,19 @@ def plan_nets(
             "complete_candidates": len(candidates),
             "optimality": "not_proven",
             "source_mode": "saved_disk_snapshot",
-            "scope": "partial_net_checkpoint" if data.get("max_islands") is not None else "whole_net",
+            "scope": "partial_net_checkpoint"
+            if data.get("max_islands") is not None
+            else "whole_net",
             "applied": False,
             "planner_sha256": snapshot.tool_hashes,
             "limitations": [
                 "Finite grids, access sites, detour alternatives, placements and beams are sampled.",
                 "Failure or a search limit leaves feasibility unknown; no global optimum is claimed.",
-                ("Search uses freshly refilled temporary zones; native closing checks refill again."
-                 if refill_zones else
-                 "Zones are not credited for connectivity during search; native closing checks refill them."),
+                (
+                    "Search uses freshly refilled temporary zones; native closing checks refill again."
+                    if refill_zones
+                    else "Zones are not credited for connectivity during search; native closing checks refill them."
+                ),
                 "Supplied electrical ratings are not independently established by this planner.",
                 "Signal integrity, reference copper, component ratings and manufacturing readiness require review.",
                 "Search clips to the board extent and saved edge allowance; exact outlines and custom rules are checked by native DRC.",
@@ -460,9 +628,13 @@ def plan_nets(
                         merge_collinear=not bool(candidate.poses),
                         pruned_tails=pruned_tails,
                         protected_sites=tuple(
-                            site for contract in candidate_contracts if contract.net == plan.net
-                            for site in ((contract.start, contract.start_layer),
-                                         (contract.end, contract.end_layer))
+                            site
+                            for contract in candidate_contracts
+                            if contract.net == plan.net
+                            for site in (
+                                (contract.start, contract.start_layer),
+                                (contract.end, contract.end_layer),
+                            )
                         ),
                     )
                     changes.extend(additions)
@@ -481,7 +653,7 @@ def plan_nets(
                             )
                         candidate_contracts[index] = replace(
                             candidate_contracts[index],
-                            removals=(*candidate_contracts[index].removals, *removals)
+                            removals=(*candidate_contracts[index].removals, *removals),
                         )
             except ValueError as error:
                 rejected.append({"cost": candidate.cost, "reason": str(error)})
@@ -490,7 +662,9 @@ def plan_nets(
             candidate = replace(candidate, junction_rework_cost=junction_rework_cost)
             materialized.append((candidate, changes, candidate_contracts))
         materialized.sort(key=lambda entry: (entry[0].cost, entry[0].board.signature))
-        for candidate, changes, candidate_contracts in materialized[: limits.validation_candidates if validate else 1]:
+        for candidate, changes, candidate_contracts in materialized[
+            : limits.validation_candidates if validate else 1
+        ]:
             evidence = None
             if validate and changes:
                 snapshot.check()
@@ -506,9 +680,7 @@ def plan_nets(
                     )
                 except CandidateRejected as error:
                     snapshot.check()
-                    rejected.append(
-                        {"cost": candidate.cost, "reason": str(error)}
-                    )
+                    rejected.append({"cost": candidate.cost, "reason": str(error)})
                     continue
                 if evidence["status"] != "no_new_drc_violations":
                     rejected.append(
@@ -527,7 +699,9 @@ def plan_nets(
                     evidence["whole_net_pad_counts"] = original_pad_count
                     evidence["whole_net_connectivity"] = "all_requested_pads_connected"
                 else:
-                    evidence["checkpoint_connectivity"] = "selected_copper_islands_connected"
+                    evidence["checkpoint_connectivity"] = (
+                        "selected_copper_islands_connected"
+                    )
             selected = candidate
             result.update(
                 {
@@ -563,8 +737,15 @@ def plan_nets(
             )
             for plan in candidate.board.plans:
                 s = candidate.settings[plan.net]
-                payload = route_payload(plan.route, plan.net, s.width, s.size, s.drill,
-                                        s.profile, plan_dimensions(plan, s))
+                payload = route_payload(
+                    plan.route,
+                    plan.net,
+                    s.width,
+                    s.size,
+                    s.drill,
+                    s.profile,
+                    plan_dimensions(plan, s),
+                )
                 if not details:
                     payload.pop("segments")
                     payload.pop("vias")
@@ -582,8 +763,13 @@ def plan_nets(
             if include_changes:
                 result["unvalidated_campaign_changes"] = changes
                 result["route_contracts"] = [
-                    {"net": c.net, "start": [c.start.x, c.start.y], "start_layer": c.start_layer,
-                     "end": [c.end.x, c.end.y], "end_layer": c.end_layer}
+                    {
+                        "net": c.net,
+                        "start": [c.start.x, c.start.y],
+                        "start_layer": c.start_layer,
+                        "end": [c.end.x, c.end.y],
+                        "end_layer": c.end_layer,
+                    }
                     for c in candidate_contracts
                 ]
             break

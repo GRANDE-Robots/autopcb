@@ -7,7 +7,12 @@ from collections import defaultdict
 from dataclasses import replace
 from itertools import combinations
 
-from pcb.net_routing.geometry import RouteGeometryError, aggregate, intersection, on_segment
+from pcb.net_routing.geometry import (
+    RouteGeometryError,
+    aggregate,
+    intersection,
+    on_segment,
+)
 from pcb.net_routing.model import Budget, BudgetExhausted, Net, Site
 from pcb.route_optimizer import GridRouter, Route, Segment
 from core.compat import strict_zip
@@ -33,7 +38,9 @@ def _terminal_chains(route: Route, net: Net) -> list[tuple[Site, ...]]:
     """
     segments = route.segments
     if not segments or len(segments) > 64:
-        raise RefinementNotApplicable("Too many segments for bounded terminal refinement")
+        raise RefinementNotApplicable(
+            "Too many segments for bounded terminal refinement"
+        )
     cuts = [{s.start, s.end} for s in segments]
     anchors = set(net.pad_sites)
     anchors.update(site for island in net.islands for site in island.sites)
@@ -132,9 +139,13 @@ def simplify_terminal_branches(
             for path in paths
         ]
         best = aggregate(
-            (route,), existing=net.existing, weights=router.weights,
-            layer_penalties=router.layer_penalties, guide=router.guide,
-            pad_sites=net.pad_sites, pad_copper=net.pad_copper,
+            (route,),
+            existing=net.existing,
+            weights=router.weights,
+            layer_penalties=router.layer_penalties,
+            guide=router.guide,
+            pad_sites=net.pad_sites,
+            pad_copper=net.pad_copper,
             forbid_staircase=router.forbid_staircase,
             minimum_segment=router.min_segment_length,
         )
@@ -144,7 +155,8 @@ def simplify_terminal_branches(
         (i for i, path in enumerate(paths) if len(path) > 2),
         key=lambda i: (
             not (paths[i][0] in net.pad_sites or paths[i][-1] in net.pad_sites),
-            paths[i][0].key, paths[i][-1].key,
+            paths[i][0].key,
+            paths[i][-1].key,
         ),
     )[:max_trials]
     if not choices:
@@ -158,16 +170,25 @@ def simplify_terminal_branches(
             local_net = replace(net, existing=(*net.existing, *other))
             local = Route(parts[index], (), (), 0, 0, 0, 0)
             improved = simplify_route(
-                local, router, local_net, paths[index][0], paths[index][-1],
-                budget, max_trials=per_chain,
+                local,
+                router,
+                local_net,
+                paths[index][0],
+                paths[index][-1],
+                budget,
+                max_trials=per_chain,
             )
             if improved.segments == local.segments:
                 continue
             candidate = replace(best, segments=(*other, *improved.segments))
             measured = aggregate(
-                (candidate,), existing=net.existing, weights=router.weights,
-                layer_penalties=router.layer_penalties, guide=router.guide,
-                pad_sites=net.pad_sites, pad_copper=net.pad_copper,
+                (candidate,),
+                existing=net.existing,
+                weights=router.weights,
+                layer_penalties=router.layer_penalties,
+                guide=router.guide,
+                pad_sites=net.pad_sites,
+                pad_copper=net.pad_copper,
                 forbid_staircase=router.forbid_staircase,
                 minimum_segment=router.min_segment_length,
             )
@@ -423,9 +444,8 @@ def simplify_route(
                                 points[:i] + list(shortcut) + points[j + 1 :]
                             )
                             candidate = measure(trial)
-                            if (
-                                candidate is not None
-                                and (best is None or candidate.cost + 1e-9 < best.cost)
+                            if candidate is not None and (
+                                best is None or candidate.cost + 1e-9 < best.cost
                             ):
                                 if (
                                     selected is None

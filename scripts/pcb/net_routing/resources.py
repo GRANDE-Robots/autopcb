@@ -1,4 +1,5 @@
 """Guard worker memory using a Windows job or a sampled POSIX process tree."""
+
 from __future__ import annotations
 
 import ctypes
@@ -13,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 
-GIB = 1024 ** 3
+GIB = 1024**3
 # KiCad 10 loads both PCB and schematic engines for parity checking. This is
 # a conservative launch guard for that native workflow, not proof that every
 # board can fit. The OS still enforces the selected aggregate commit ceiling.
@@ -36,25 +37,42 @@ def available_memory() -> AvailableMemory:
                 name, _, data = line.partition(":")
                 if name in ("MemAvailable", "SwapFree"):
                     records[name] = int(data.split()[0]) * 1024
-        return AvailableMemory(records["MemAvailable"], records["MemAvailable"] + records.get("SwapFree", 0))
+        return AvailableMemory(
+            records["MemAvailable"],
+            records["MemAvailable"] + records.get("SwapFree", 0),
+        )
     if sys.platform == "darwin":
         result = subprocess.check_output(["vm_stat"], text=True, timeout=5)
         first, *rows = result.splitlines()
         page_size = int(first.split("page size of ", 1)[1].split()[0])
-        counts = {row.partition(":")[0].lower(): row.partition(":")[2].strip().rstrip(".") for row in rows}
-        capacity = sum(int(counts.get(key, "0")) for key in
-                       ("pages free", "pages inactive", "pages speculative")) * page_size
+        counts = {
+            row.partition(":")[0].lower(): row.partition(":")[2].strip().rstrip(".")
+            for row in rows
+        }
+        capacity = (
+            sum(
+                int(counts.get(key, "0"))
+                for key in ("pages free", "pages inactive", "pages speculative")
+            )
+            * page_size
+        )
         return AvailableMemory(capacity, capacity)
     if sys.platform != "win32":
         raise RuntimeError("No routing memory probe is available on this platform")
     from ctypes import wintypes
 
     class MemoryStatus(ctypes.Structure):
-        _fields_ = [("length", wintypes.DWORD), ("load", wintypes.DWORD),
-                    ("total_physical", ctypes.c_ulonglong), ("available_physical", ctypes.c_ulonglong),
-                    ("total_pagefile", ctypes.c_ulonglong), ("available_pagefile", ctypes.c_ulonglong),
-                    ("total_virtual", ctypes.c_ulonglong), ("available_virtual", ctypes.c_ulonglong),
-                    ("available_extended_virtual", ctypes.c_ulonglong)]
+        _fields_ = [
+            ("length", wintypes.DWORD),
+            ("load", wintypes.DWORD),
+            ("total_physical", ctypes.c_ulonglong),
+            ("available_physical", ctypes.c_ulonglong),
+            ("total_pagefile", ctypes.c_ulonglong),
+            ("available_pagefile", ctypes.c_ulonglong),
+            ("total_virtual", ctypes.c_ulonglong),
+            ("available_virtual", ctypes.c_ulonglong),
+            ("available_extended_virtual", ctypes.c_ulonglong),
+        ]
 
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(MemoryStatus)]
@@ -63,7 +81,9 @@ def available_memory() -> AvailableMemory:
     status.length = ctypes.sizeof(status)
     if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):
         raise ctypes.WinError(ctypes.get_last_error())
-    return AvailableMemory(int(status.available_physical), int(status.available_pagefile))
+    return AvailableMemory(
+        int(status.available_physical), int(status.available_pagefile)
+    )
 
 
 def memory_ceiling(available: int) -> int:
@@ -82,16 +102,26 @@ def job_memory_ceiling(available: int, page_size: int) -> int:
     return limit
 
 
-def plan_resources(available: AvailableMemory, *, memory_gib: float | None = None,
-                   page_size: int = mmap.PAGESIZE) -> dict:
+def plan_resources(
+    available: AvailableMemory,
+    *,
+    memory_gib: float | None = None,
+    page_size: int = mmap.PAGESIZE,
+) -> dict:
     """Select a bounded budget; never silently raise the automatic RAM limit."""
     automatic = job_memory_ceiling(available.physical, page_size)
     if memory_gib is None:
         limit = automatic
     else:
-        if (isinstance(memory_gib, bool) or not isinstance(memory_gib, (int, float))
-                or not math.isfinite(memory_gib) or not 0 < memory_gib <= 6):
-            raise ValueError("--memory-gib must be a finite number greater than zero and at most 6")
+        if (
+            isinstance(memory_gib, bool)
+            or not isinstance(memory_gib, (int, float))
+            or not math.isfinite(memory_gib)
+            or not 0 < memory_gib <= 6
+        ):
+            raise ValueError(
+                "--memory-gib must be a finite number greater than zero and at most 6"
+            )
         limit = int(memory_gib * GIB) // page_size * page_size
     if limit < MIN_NATIVE_BYTES:
         raise MemoryError(
@@ -105,15 +135,19 @@ def plan_resources(available: AvailableMemory, *, memory_gib: float | None = Non
             f"the {limit / GIB:.2f} GiB routing budget needs another 0.25 GiB of headroom. "
             "No routing started. Retry after memory becomes available."
         )
-    return {"available_physical_bytes": available.physical,
-            "available_commit_bytes": available.commit,
-            "job_commit_limit_bytes": limit,
-            "budget_mode": "automatic" if memory_gib is None else "explicit",
-            "scope": "routing process and child workers"}
+    return {
+        "available_physical_bytes": available.physical,
+        "available_commit_bytes": available.commit,
+        "job_commit_limit_bytes": limit,
+        "budget_mode": "automatic" if memory_gib is None else "explicit",
+        "scope": "routing process and child workers",
+    }
 
 
 def _resident_tree() -> int:
-    output = subprocess.check_output(["ps", "-ax", "-o", "pid=,ppid=,rss="], text=True, timeout=5)
+    output = subprocess.check_output(
+        ["ps", "-ax", "-o", "pid=,ppid=,rss="], text=True, timeout=5
+    )
     children = {}
     memory = {}
     for line in output.splitlines():
@@ -145,7 +179,9 @@ def _posix_limit(plan: dict):
         try:
             while not done.wait(0.5):
                 if _resident_tree() > budget:
-                    failures.append("The sampled routing process tree exceeded its memory budget.")
+                    failures.append(
+                        "The sampled routing process tree exceeded its memory budget."
+                    )
                     interrupt_main()
                     return
         except (OSError, ValueError, subprocess.SubprocessError) as error:
@@ -156,7 +192,11 @@ def _posix_limit(plan: dict):
     thread.start()
     try:
         try:
-            yield {**plan, "scope": "routing process tree", "budget_metric": "sampled_resident_bytes"}
+            yield {
+                **plan,
+                "scope": "routing process tree",
+                "budget_metric": "sampled_resident_bytes",
+            }
         except KeyboardInterrupt:
             if not failures:
                 raise
@@ -168,15 +208,22 @@ def _posix_limit(plan: dict):
 
 
 @contextmanager
-def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
-                    progress=None):
+def limit_resources(
+    *, memory_gib: float | None = None, wait_seconds: float = 0, progress=None
+):
     """Constrain this CLI process and children; fail closed if unavailable.
 
     Windows uses committed memory. POSIX uses aggregate resident samples.
     """
-    if (isinstance(wait_seconds, bool) or not isinstance(wait_seconds, (int, float))
-            or not math.isfinite(wait_seconds) or wait_seconds < 0):
-        raise ValueError("--wait-for-memory must be a finite, nonnegative number of seconds")
+    if (
+        isinstance(wait_seconds, bool)
+        or not isinstance(wait_seconds, (int, float))
+        or not math.isfinite(wait_seconds)
+        or wait_seconds < 0
+    ):
+        raise ValueError(
+            "--wait-for-memory must be a finite, nonnegative number of seconds"
+        )
     deadline = time.monotonic() + wait_seconds
     next_message = 0.0
     while True:
@@ -188,8 +235,12 @@ def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
             if remaining <= 0:
                 raise
             if progress and time.monotonic() >= next_message:
-                progress({"event": "stage", "message":
-                          f"Waiting for native-check memory; up to {remaining:.0f} seconds remain"})
+                progress(
+                    {
+                        "event": "stage",
+                        "message": f"Waiting for native-check memory; up to {remaining:.0f} seconds remain",
+                    }
+                )
                 next_message = time.monotonic() + 20
             time.sleep(min(5, remaining))
     if sys.platform != "win32":
@@ -199,27 +250,58 @@ def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
     from ctypes import wintypes
 
     class BasicLimit(ctypes.Structure):
-        _fields_ = [("process_time", ctypes.c_longlong), ("job_time", ctypes.c_longlong),
-                    ("flags", wintypes.DWORD), ("minimum_working_set", ctypes.c_size_t),
-                    ("maximum_working_set", ctypes.c_size_t), ("active_process_limit", wintypes.DWORD),
-                    ("affinity", ctypes.c_size_t), ("priority_class", wintypes.DWORD),
-                    ("scheduling_class", wintypes.DWORD)]
+        _fields_ = [
+            ("process_time", ctypes.c_longlong),
+            ("job_time", ctypes.c_longlong),
+            ("flags", wintypes.DWORD),
+            ("minimum_working_set", ctypes.c_size_t),
+            ("maximum_working_set", ctypes.c_size_t),
+            ("active_process_limit", wintypes.DWORD),
+            ("affinity", ctypes.c_size_t),
+            ("priority_class", wintypes.DWORD),
+            ("scheduling_class", wintypes.DWORD),
+        ]
 
     class IoCounters(ctypes.Structure):
-        _fields_ = [(name, ctypes.c_ulonglong) for name in
-                    ("read_ops", "write_ops", "other_ops", "read_bytes", "write_bytes", "other_bytes")]
+        _fields_ = [
+            (name, ctypes.c_ulonglong)
+            for name in (
+                "read_ops",
+                "write_ops",
+                "other_ops",
+                "read_bytes",
+                "write_bytes",
+                "other_bytes",
+            )
+        ]
 
     class ExtendedLimit(ctypes.Structure):
-        _fields_ = [("basic", BasicLimit), ("io", IoCounters),
-                    ("process_memory_limit", ctypes.c_size_t), ("job_memory_limit", ctypes.c_size_t),
-                    ("peak_process_memory", ctypes.c_size_t), ("peak_job_memory", ctypes.c_size_t)]
+        _fields_ = [
+            ("basic", BasicLimit),
+            ("io", IoCounters),
+            ("process_memory_limit", ctypes.c_size_t),
+            ("job_memory_limit", ctypes.c_size_t),
+            ("peak_process_memory", ctypes.c_size_t),
+            ("peak_job_memory", ctypes.c_size_t),
+        ]
 
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
     kernel.CreateJobObjectW.restype = wintypes.HANDLE
-    kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
     kernel.SetInformationJobObject.restype = wintypes.BOOL
-    kernel.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p]
+    kernel.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+    ]
     kernel.QueryInformationJobObject.restype = wintypes.BOOL
     kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
     kernel.AssignProcessToJobObject.restype = wintypes.BOOL
@@ -239,10 +321,14 @@ def limit_resources(*, memory_gib: float | None = None, wait_seconds: float = 0,
         if not kernel.SetInformationJobObject(job, 9, ctypes.byref(settings), size):
             raise ctypes.WinError(ctypes.get_last_error())
         actual = ExtendedLimit()
-        if not kernel.QueryInformationJobObject(job, 9, ctypes.byref(actual), size, None):
+        if not kernel.QueryInformationJobObject(
+            job, 9, ctypes.byref(actual), size, None
+        ):
             raise ctypes.WinError(ctypes.get_last_error())
         if actual.job_memory_limit != limit or not (actual.basic.flags & 0x00000200):
-            raise RuntimeError(f"Windows returned job memory limit {actual.job_memory_limit}, requested {limit}, flags {actual.basic.flags:#x}")
+            raise RuntimeError(
+                f"Windows returned job memory limit {actual.job_memory_limit}, requested {limit}, flags {actual.basic.flags:#x}"
+            )
         if not kernel.AssignProcessToJobObject(job, kernel.GetCurrentProcess()):
             raise ctypes.WinError(ctypes.get_last_error())
         yield plan

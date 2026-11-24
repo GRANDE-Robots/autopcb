@@ -407,7 +407,9 @@ def render_pdf(html_path: Path, staged_pdf: Path, title: str, pdfinfo: str) -> N
         validate_pdf(staged_pdf, title, pdfinfo)
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         if qt_error is not None:
-            raise RuntimeError(f"Both PDF renderers failed. Qt: {qt_error}\n{exc}") from exc
+            raise RuntimeError(
+                f"Both PDF renderers failed. Qt: {qt_error}\n{exc}"
+            ) from exc
         raise
 
 
@@ -566,8 +568,13 @@ def main(arguments: list[str] | None = None) -> int:
     config_bytes = config_path.read_bytes()
     config_hash = hashlib.sha256(config_bytes).hexdigest()
     config = json.loads(config_bytes.decode("utf-8-sig"))
-    if not isinstance(config, dict) or not {"documents"} <= config.keys() <= {"documents", "relative_to"}:
-        raise ValueError("PDF configuration needs documents and an optional relative_to")
+    if not isinstance(config, dict) or not {"documents"} <= config.keys() <= {
+        "documents",
+        "relative_to",
+    }:
+        raise ValueError(
+            "PDF configuration needs documents and an optional relative_to"
+        )
     relative = config.get("relative_to", "project")
     if relative not in ("project", "support"):
         raise ValueError("PDF relative_to must be project or support")
@@ -589,15 +596,22 @@ def main(arguments: list[str] | None = None) -> int:
         outputs.add(output)
         documents.append((source, output))
     for index, (source, output) in enumerate(documents, 1):
-        with console.activity(f"{index}/{len(documents)} | Rendering {source.name} -> {output.name}"):
-            build_pdf(source, output, project=project, guards={config_path: config_hash})
+        with console.activity(
+            f"{index}/{len(documents)} | Rendering {source.name} -> {output.name}"
+        ):
+            build_pdf(
+                source, output, project=project, guards={config_path: config_hash}
+            )
 
     def display(console: Console, result: dict) -> None:
         console.heading("AutoPCB | Documentation PDFs updated")
         for name in result["outputs"]:
             console.line(name, prefix="  ")
 
-    console.result({"status": "rendered", "outputs": [str(output) for _, output in documents]}, display)
+    console.result(
+        {"status": "rendered", "outputs": [str(output) for _, output in documents]},
+        display,
+    )
     return 0
 
 

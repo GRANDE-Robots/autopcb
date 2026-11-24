@@ -29,7 +29,10 @@ class SchedulerTests(unittest.TestCase):
         )
         rounds = api.schedule(work, workers=2, max_batch_nets=4)
         self.assertEqual(len(rounds), 1)
-        self.assertEqual({tuple(item.name for item in batch.items) for batch in rounds[0].batches}, {("timing", "driver"), ("remote",)})
+        self.assertEqual(
+            {tuple(item.name for item in batch.items) for batch in rounds[0].batches},
+            {("timing", "driver"), ("remote",)},
+        )
 
     def test_conflicting_batches_do_not_run_at_the_same_time(self):
         api = self.api()
@@ -37,7 +40,15 @@ class SchedulerTests(unittest.TestCase):
         rounds = api.schedule(work, workers=2, max_batch_nets=2)
         self.assertEqual(len(rounds), 3)
         self.assertTrue(all(len(round_.batches) == 1 for round_ in rounds))
-        self.assertEqual([item.name for round_ in rounds for batch in round_.batches for item in batch.items], [f"n{i}" for i in range(5)])
+        self.assertEqual(
+            [
+                item.name
+                for round_ in rounds
+                for batch in round_.batches
+                for item in batch.items
+            ],
+            [f"n{i}" for i in range(5)],
+        )
 
     def test_touching_windows_conflict_and_no_net_disappears(self):
         api = self.api()
@@ -48,7 +59,15 @@ class SchedulerTests(unittest.TestCase):
         )
         rounds = api.schedule(work, workers=2, max_batch_nets=1)
         self.assertEqual(len(rounds), 2)
-        self.assertEqual({item.name for round_ in rounds for batch in round_.batches for item in batch.items}, {"a", "b", "c"})
+        self.assertEqual(
+            {
+                item.name
+                for round_ in rounds
+                for batch in round_.batches
+                for item in batch.items
+            },
+            {"a", "b", "c"},
+        )
 
     def test_duplicate_names_and_invalid_windows_are_rejected(self):
         api = self.api()
@@ -75,7 +94,10 @@ class SchedulerTests(unittest.TestCase):
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
             result = api.work_from_board(board, inventory_board(board), {"SIGNAL": 0})
-            self.assertEqual([(item.name, item.island_count) for item in result.items], [("SIGNAL", 2)])
+            self.assertEqual(
+                [(item.name, item.island_count) for item in result.items],
+                [("SIGNAL", 2)],
+            )
             self.assertEqual(result.blockers, ())
 
 

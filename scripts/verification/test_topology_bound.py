@@ -42,16 +42,25 @@ def lookup(router, distances, point, layer):
 class TopologyBoundTests(unittest.TestCase):
     def test_grid_bounds_are_exact_without_constructing_points(self):
         router = GridRouter(
-            p(-1.23, 4.56), p(2.07, 7.89), mm(.37), ("F.Cu", "B.Cu"),
-            "SIGNAL", mm(.2), mm(.1), mm(.6), mm(.3),
+            p(-1.23, 4.56),
+            p(2.07, 7.89),
+            mm(0.37),
+            ("F.Cu", "B.Cu"),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.1),
+            mm(0.6),
+            mm(0.3),
         )
-        for margin in (0, 1, mm(.15), mm(.4), mm(2)):
+        for margin in (0, 1, mm(0.15), mm(0.4), mm(2)):
             expected = {
                 (x, y): router._inside_point(router._point(x, y), margin)
                 for x in range(-2, router.nx + 3)
                 for y in range(-2, router.ny + 3)
             }
-            with mock.patch.object(router, "_point", side_effect=AssertionError("point allocation")):
+            with mock.patch.object(
+                router, "_point", side_effect=AssertionError("point allocation")
+            ):
                 actual = {
                     (x, y): router._inside(x, y, margin)
                     for x in range(-2, router.nx + 3)
@@ -63,33 +72,56 @@ class TopologyBoundTests(unittest.TestCase):
         from pcb.topology_bound import grid_bounds
 
         router = GridRouter(
-            p(-1.23, 4.56), p(2.07, 7.89), mm(.37), ("F.Cu", "B.Cu"),
-            "SIGNAL", mm(.2), mm(.1), mm(.6), mm(.3),
+            p(-1.23, 4.56),
+            p(2.07, 7.89),
+            mm(0.37),
+            ("F.Cu", "B.Cu"),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.1),
+            mm(0.6),
+            mm(0.3),
         )
-        for margin in (0, 1, mm(.15), mm(.4), mm(2)):
+        for margin in (0, 1, mm(0.15), mm(0.4), mm(2)):
             xmin, ymin, xmax, ymax = grid_bounds(router, margin)
             for x in range(-2, router.nx + 3):
                 for y in range(-2, router.ny + 3):
-                    self.assertEqual(xmin <= x <= xmax and ymin <= y <= ymax,
-                                     router._inside(x, y, margin))
+                    self.assertEqual(
+                        xmin <= x <= xmax and ymin <= y <= ymax,
+                        router._inside(x, y, margin),
+                    )
 
     def test_partial_guidance_matches_unguided_search_on_seeded_obstacle_fields(self):
         rng = random.Random(20261029)
         compared = 0
         for _ in range(20):
             obstacles = tuple(
-                Obstacle(p(x - 0.04, y - 0.04), p(x + 0.04, y + 0.04),
-                         ("F.Cu", "B.Cu"), "OTHER")
-                for x in range(1, 8) for y in range(1, 8)
+                Obstacle(
+                    p(x - 0.04, y - 0.04),
+                    p(x + 0.04, y + 0.04),
+                    ("F.Cu", "B.Cu"),
+                    "OTHER",
+                )
+                for x in range(1, 8)
+                for y in range(1, 8)
                 if (x, y) not in {(1, 1), (7, 7)} and rng.random() < 0.12
             )
-            settings = dict(lower=p(0, 0), upper=p(8, 8), step=mm(1),
-                            layers=("F.Cu", "B.Cu"), net="SIGNAL",
-                            width=mm(0.2), clearance=mm(0.1),
-                            via_size=mm(0.6), via_drill=mm(0.3),
-                            obstacles=obstacles, max_expansions=30_000,
-                            weights=Weights(length=1, bend=1, via=10, diagonal=1),
-                            forbid_staircase=True, gentle_turns=True)
+            settings = dict(
+                lower=p(0, 0),
+                upper=p(8, 8),
+                step=mm(1),
+                layers=("F.Cu", "B.Cu"),
+                net="SIGNAL",
+                width=mm(0.2),
+                clearance=mm(0.1),
+                via_size=mm(0.6),
+                via_drill=mm(0.3),
+                obstacles=obstacles,
+                max_expansions=30_000,
+                weights=Weights(length=1, bend=1, via=10, diagonal=1),
+                forbid_staircase=True,
+                gentle_turns=True,
+            )
             baseline = GridRouter(**settings)
             guided = GridRouter(**settings, topology_heuristic=True)
             try:
@@ -98,8 +130,9 @@ class TopologyBoundTests(unittest.TestCase):
                 continue
             result = guided.route(p(1, 1), "B.Cu", p(7, 7), "B.Cu")
             self.assertAlmostEqual(result.cost, reference.cost, places=7)
-            self.assertTrue(all(guided.edge_clear(s.start, s.end, s.layer)
-                                for s in result.segments))
+            self.assertTrue(
+                all(guided.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+            )
             compared += 1
         self.assertGreaterEqual(compared, 5)
 
@@ -113,12 +146,18 @@ class TopologyBoundTests(unittest.TestCase):
         full = relaxed_costs(router, goal)
         router.check_budget = mock.Mock()
         partial = relaxed_costs(router, goal, stop_at=start, max_expansions=5000)
-        self.assertAlmostEqual(lookup(router, partial, p(8.25, 5), "B.Cu"),
-                               lookup(router, full, p(8.25, 5), "B.Cu"))
+        self.assertAlmostEqual(
+            lookup(router, partial, p(8.25, 5), "B.Cu"),
+            lookup(router, full, p(8.25, 5), "B.Cu"),
+        )
         self.assertLess(router.check_budget.call_count, 5)
-        self.assertTrue(all(pcost <= fcost + 1e-8
-                            for pcost, fcost in strict_zip(partial, full)
-                            if math.isfinite(fcost)))
+        self.assertTrue(
+            all(
+                pcost <= fcost + 1e-8
+                for pcost, fcost in strict_zip(partial, full)
+                if math.isfinite(fcost)
+            )
+        )
 
     def test_partial_bound_never_calls_unexplored_cells_unreachable(self):
         self.assertIn("stop_at", inspect.signature(relaxed_costs).parameters)
@@ -127,8 +166,9 @@ class TopologyBoundTests(unittest.TestCase):
         gx, gy = router._index(p(8, 5))
         sx, sy = router._index(p(2, 5))
         layer = router.layers.index("B.Cu")
-        costs = relaxed_costs(router, (gx, gy, layer), stop_at=(sx, sy, layer),
-                              max_expansions=2)
+        costs = relaxed_costs(
+            router, (gx, gy, layer), stop_at=(sx, sy, layer), max_expansions=2
+        )
         full = relaxed_costs(router, (gx, gy, layer))
         bound = lookup(router, costs, p(2, 5), "B.Cu")
         self.assertTrue(math.isfinite(bound))
@@ -136,20 +176,31 @@ class TopologyBoundTests(unittest.TestCase):
 
     def test_relaxed_topology_does_not_reject_a_clear_diagonal(self):
         obstacles = tuple(
-            Obstacle(p(x - 0.05, y - 0.05), p(x + 0.05, y + 0.05),
-                     ("F.Cu", "B.Cu"), "OTHER")
+            Obstacle(
+                p(x - 0.05, y - 0.05), p(x + 0.05, y + 0.05), ("F.Cu", "B.Cu"), "OTHER"
+            )
             for x, y in ((2, 1), (1, 2))
         )
         router = GridRouter(
-            p(0, 0), p(3, 3), mm(1), ("F.Cu", "B.Cu"), "SIGNAL",
-            mm(0.2), mm(0.1), mm(0.6), mm(0.3), obstacles=obstacles,
+            p(0, 0),
+            p(3, 3),
+            mm(1),
+            ("F.Cu", "B.Cu"),
+            "SIGNAL",
+            mm(0.2),
+            mm(0.1),
+            mm(0.6),
+            mm(0.3),
+            obstacles=obstacles,
             topology_heuristic=True,
         )
         try:
             route = router.route(p(1, 1), "B.Cu", p(2, 2), "B.Cu")
         except NoGridRoute as exc:
             self.fail(f"The clearance-checked diagonal is legal: {exc}")
-        self.assertTrue(all(router.edge_clear(s.start, s.end, s.layer) for s in route.segments))
+        self.assertTrue(
+            all(router.edge_clear(s.start, s.end, s.layer) for s in route.segments)
+        )
         self.assertEqual(route.segments[0].start, p(1, 1))
         self.assertEqual(route.segments[-1].end, p(2, 2))
         x, y = router._index(p(2, 2))

@@ -11,30 +11,41 @@ from core.native_command import NativeCommandError, NativeResourceError, run_che
 
 class NativeCommandTests(unittest.TestCase):
     def test_silent_failure_retains_exit_status(self):
-        with mock.patch("core.native_command.subprocess.run", return_value=
-                        subprocess.CompletedProcess(["tool"], 7, "", "")):
+        with mock.patch(
+            "core.native_command.subprocess.run",
+            return_value=subprocess.CompletedProcess(["tool"], 7, "", ""),
+        ):
             with self.assertRaisesRegex(NativeCommandError, "exit 7.*no diagnostic"):
                 run_checked(["tool"], operation="Native check")
 
     def test_both_output_streams_are_retained(self):
-        with mock.patch("core.native_command.subprocess.run", return_value=
-                        subprocess.CompletedProcess(["tool"], 1, "why", "what")):
+        with mock.patch(
+            "core.native_command.subprocess.run",
+            return_value=subprocess.CompletedProcess(["tool"], 1, "why", "what"),
+        ):
             with self.assertRaises(NativeCommandError) as caught:
                 run_checked(["tool"], operation="Native check")
         self.assertIn("what\nwhy", str(caught.exception))
 
     def test_native_commit_exhaustion_is_distinct_from_a_design_failure(self):
-        with mock.patch("core.native_command.subprocess.run", return_value=
-                        subprocess.CompletedProcess(["tool"], 3221226505, "",
-                                                    "error 1455: paging file is too small")):
+        with mock.patch(
+            "core.native_command.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                ["tool"], 3221226505, "", "error 1455: paging file is too small"
+            ),
+        ):
             with self.assertRaises(NativeResourceError) as caught:
                 run_checked(["tool"], operation="KiCad DRC")
         self.assertIsInstance(caught.exception, MemoryError)
 
     def test_timeout_keeps_partial_diagnostics(self):
-        error = subprocess.TimeoutExpired(["tool"], 3, output=b"loading", stderr=b"slow")
+        error = subprocess.TimeoutExpired(
+            ["tool"], 3, output=b"loading", stderr=b"slow"
+        )
         with mock.patch("core.native_command.subprocess.run", side_effect=error):
-            with self.assertRaisesRegex(NativeCommandError, "timed out after 3") as caught:
+            with self.assertRaisesRegex(
+                NativeCommandError, "timed out after 3"
+            ) as caught:
                 run_checked(["tool"], operation="Native check", timeout=3)
         self.assertIn("slow\nloading", str(caught.exception))
 
@@ -58,14 +69,22 @@ class NativeCommandTests(unittest.TestCase):
                 return success
 
             with mock.patch("core.native_command.subprocess.run", side_effect=produce):
-                self.assertEqual(run_checked(["tool"], operation="Native check", output=output), success)
+                self.assertEqual(
+                    run_checked(["tool"], operation="Native check", output=output),
+                    success,
+                )
 
     def test_missing_executable_is_actionable(self):
-        with mock.patch("core.native_command.subprocess.run", side_effect=FileNotFoundError("tool")):
+        with mock.patch(
+            "core.native_command.subprocess.run", side_effect=FileNotFoundError("tool")
+        ):
             with self.assertRaisesRegex(NativeCommandError, "could not start"):
                 run_checked(["tool"], operation="Native check")
 
     def test_process_creation_memory_failure_keeps_its_category(self):
-        with mock.patch("core.native_command.subprocess.run", side_effect=OSError(12, "memory exhausted")):
+        with mock.patch(
+            "core.native_command.subprocess.run",
+            side_effect=OSError(12, "memory exhausted"),
+        ):
             with self.assertRaises(NativeResourceError):
                 run_checked(["tool"], operation="Native check")

@@ -18,10 +18,10 @@ class RoutingStyleTests(unittest.TestCase):
             self.trace(board, start, end)
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(pcbnew.VECTOR2I(mm(1), mm(1)))
-        via.SetWidth(mm(.6))
-        via.SetDrill(mm(.3))
+        via.SetWidth(mm(0.6))
+        via.SetDrill(mm(0.3))
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetNetCode(board.FindNet('N').GetNetCode())
+        via.SetNetCode(board.FindNet("N").GetNetCode())
         board.Add(via)
         self.assertEqual(len(api.audit_style(board).staircases), 1)
 
@@ -82,19 +82,27 @@ class RoutingStyleTests(unittest.TestCase):
         api = self.api()
         board = self.board()
         points = ((0, 0), (0, 1), (1, 2), (2, 2), (3, 3), (4, 3), (4, 4), (3, 5))
-        tracks = [self.trace(board, first, last) for first, last in zip(points, points[1:])]
+        tracks = [
+            self.trace(board, first, last) for first, last in zip(points, points[1:])
+        ]
         findings = api.audit_style(board).staircases
         self.assertEqual(len(findings), 1)
-        self.assertEqual(set(findings[0].item_ids), {item.m_Uuid.AsString() for item in tracks[1:4]})
+        self.assertEqual(
+            set(findings[0].item_ids), {item.m_Uuid.AsString() for item in tracks[1:4]}
+        )
 
     def test_staircase_identifies_all_tracks_in_a_collinear_split(self):
         api = self.api()
         board = self.board()
         points = ((0, 0), (1, 1), (1.5, 1), (2, 1), (3, 2), (4, 3))
-        tracks = [self.trace(board, first, last) for first, last in zip(points, points[1:])]
+        tracks = [
+            self.trace(board, first, last) for first, last in zip(points, points[1:])
+        ]
         findings = api.audit_style(board).staircases
         self.assertEqual(len(findings), 1)
-        self.assertEqual(set(findings[0].item_ids), {item.m_Uuid.AsString() for item in tracks})
+        self.assertEqual(
+            set(findings[0].item_ids), {item.m_Uuid.AsString() for item in tracks}
+        )
 
     def test_standard_dogleg_survives_rotation_reversal_and_collinear_splits(self):
         api = self.api()
@@ -173,9 +181,16 @@ class RoutingStyleTests(unittest.TestCase):
         first, second = self.board(), self.board()
         for a, b in (((0, 0), (1, 1)), ((1, 1), (2, 1)), ((2, 1), (3, 2))):
             self.trace(first, a, b)
-        for a, b in (((3, 2), (2, 1)), ((2, 1), (1.5, 1)), ((1.5, 1), (1, 1)), ((1, 1), (0, 0))):
+        for a, b in (
+            ((3, 2), (2, 1)),
+            ((2, 1), (1.5, 1)),
+            ((1.5, 1), (1, 1)),
+            ((1, 1), (0, 0)),
+        ):
             self.trace(second, a, b)
-        self.assertEqual(api.audit_style(first).staircases, api.audit_style(second).staircases)
+        self.assertEqual(
+            api.audit_style(first).staircases, api.audit_style(second).staircases
+        )
 
 
 class StandaloneRouteStyleTests(unittest.TestCase):
@@ -197,17 +212,23 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         self.assertEqual(old["old"], same["new"])
         self.assertNotEqual(old["old"], changed["new"])
         self.assertEqual(_segment_identities(board(track("a"), track("b"))), {})
-        nested = _segment_identities(board(track("new", extra='(custom (uuid "other"))')))
+        nested = _segment_identities(
+            board(track("new", extra='(custom (uuid "other"))'))
+        )
         self.assertNotEqual(old["old"], nested["new"])
-        self.assertEqual(_segment_identities(board(track("new").replace('(net "N")', '(net 1)'))), {})
+        self.assertEqual(
+            _segment_identities(board(track("new").replace('(net "N")', "(net 1)"))), {}
+        )
 
-    def test_native_dangling_identity_tracks_endpoint_net_layer_width_and_direction(self):
+    def test_native_dangling_identity_tracks_endpoint_net_layer_width_and_direction(
+        self,
+    ):
         import pcbnew
 
         from pcb.route_optimizer import mm
         from pcb.route_validation import _dangling_track_identities
 
-        def identity(start, end, *, width=.2, layer=pcbnew.F_Cu, net="N"):
+        def identity(start, end, *, width=0.2, layer=pcbnew.F_Cu, net="N"):
             board = pcbnew.BOARD()
             netinfo = pcbnew.NETINFO_ITEM(board, net)
             board.Add(netinfo)
@@ -219,12 +240,18 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             track.SetNetCode(netinfo.GetNetCode())
             board.Add(track)
             identifier = track.m_Uuid.AsString()
-            report = {"violations": [{"type": "track_dangling", "items": [{"uuid": identifier}]}]}
+            report = {
+                "violations": [
+                    {"type": "track_dangling", "items": [{"uuid": identifier}]}
+                ]
+            }
             result = _dangling_track_identities(board, report)[identifier]
-            self.assertEqual((track.GetStart().x, track.GetStart().y),
-                             (mm(start[0]), mm(start[1])))
-            self.assertEqual((track.GetEnd().x, track.GetEnd().y),
-                             (mm(end[0]), mm(end[1])))
+            self.assertEqual(
+                (track.GetStart().x, track.GetStart().y), (mm(start[0]), mm(start[1]))
+            )
+            self.assertEqual(
+                (track.GetEnd().x, track.GetEnd().y), (mm(end[0]), mm(end[1]))
+            )
             return result
 
         old = set(identity((2, 6), (4, 6)))
@@ -232,7 +259,7 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         self.assertEqual(len(old), 2)
         self.assertEqual(len(old & extended), 1)
         self.assertFalse(old & set(identity((2, 6), (2, 8))))
-        self.assertFalse(old & set(identity((2, 6), (4, 6), width=.21)))
+        self.assertFalse(old & set(identity((2, 6), (4, 6), width=0.21)))
         self.assertFalse(old & set(identity((2, 6), (4, 6), layer=pcbnew.B_Cu)))
         self.assertFalse(old & set(identity((2, 6), (4, 6), net="OTHER")))
 
@@ -248,20 +275,34 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-native-style-") as directory:
             source = RouteOptimizerTests.make_board(Path(directory))
             before = source.read_bytes()
-            pieces = (((2, 2), (3, 3)), ((3, 3), (5, 3)),
-                      ((5, 3), (7, 5)), ((7, 5), (8, 5)))
+            pieces = (
+                ((2, 2), (3, 3)),
+                ((3, 3), (5, 3)),
+                ((5, 3), (7, 5)),
+                ((7, 5), (8, 5)),
+            )
             changes = []
             for index, (start, end) in enumerate(pieces):
                 expression = (
-                    f'(segment (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) '
+                    f"(segment (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) "
                     f'(width 0.2) (layer "F.Cu") (net "SIGNAL") '
                     f'(uuid "00000000-0000-4000-8000-{index + 1:012d}"))'
                 )
-                changes.append({"document": "pcb", "target": {"kind": "root"},
-                                "op": "insert", "path": [], "expression": expression})
-            contract = RouteContract("SIGNAL", Point.from_mm((2, 2)), "F.Cu",
-                                     Point.from_mm((8, 5)), "F.Cu")
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
+                changes.append(
+                    {
+                        "document": "pcb",
+                        "target": {"kind": "root"},
+                        "op": "insert",
+                        "path": [],
+                        "expression": expression,
+                    }
+                )
+            contract = RouteContract(
+                "SIGNAL", Point.from_mm((2, 2)), "F.Cu", Point.from_mm((8, 5)), "F.Cu"
+            )
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
             self.assertEqual(evidence["status"], "rejected", evidence)
             self.assertIn("staircases", evidence["new_style_issues"])
             self.assertEqual(source.read_bytes(), before)
@@ -281,14 +322,18 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-restore-style-") as directory:
             source = RouteOptimizerTests.make_board(Path(directory))
             board = pcbnew.LoadBoard(str(source))
-            pieces = (((2, 2), (3, 3)), ((3, 3), (5, 3)),
-                      ((5, 3), (7, 5)), ((7, 5), (8, 5)))
+            pieces = (
+                ((2, 2), (3, 3)),
+                ((3, 3), (5, 3)),
+                ((5, 3), (7, 5)),
+                ((7, 5), (8, 5)),
+            )
             removed = []
             for start, end in pieces:
                 track = pcbnew.PCB_TRACK(board)
                 track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
                 track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-                track.SetWidth(mm(.2))
+                track.SetWidth(mm(0.2))
                 track.SetLayer(pcbnew.F_Cu)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
@@ -296,24 +341,43 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             self.assertTrue(audit_style(board).staircases)
             pcbnew.SaveBoard(str(source), board)
             before = source.read_bytes()
-            changes = [{"document": "pcb", "target": item, "op": "remove", "path": []}
-                       for item in removed]
+            changes = [
+                {"document": "pcb", "target": item, "op": "remove", "path": []}
+                for item in removed
+            ]
             for index, (start, end) in enumerate(pieces):
                 expression = (
-                    f'(segment (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) '
+                    f"(segment (start {start[0]} {start[1]}) (end {end[0]} {end[1]}) "
                     f'(width 0.2) (layer "F.Cu") (net "SIGNAL") '
                     f'(uuid "00000000-0000-4000-8000-{index + 1:012d}"))'
                 )
-                changes.append({"document": "pcb", "target": {"kind": "root"},
-                                "op": "insert", "path": [], "expression": expression})
-            contract = RouteContract("SIGNAL", Point.from_mm((2, 2)), "F.Cu",
-                                     Point.from_mm((8, 5)), "F.Cu", tuple(removed))
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
+                changes.append(
+                    {
+                        "document": "pcb",
+                        "target": {"kind": "root"},
+                        "op": "insert",
+                        "path": [],
+                        "expression": expression,
+                    }
+                )
+            contract = RouteContract(
+                "SIGNAL",
+                Point.from_mm((2, 2)),
+                "F.Cu",
+                Point.from_mm((8, 5)),
+                "F.Cu",
+                tuple(removed),
+            )
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
             self.assertEqual(evidence["new_style_issues"], [])
             self.assertEqual(source.read_bytes(), before)
 
-    def test_native_validation_can_restore_a_track_at_an_unchanged_off_angle_contact(self):
+    def test_native_validation_can_restore_a_track_at_an_unchanged_off_angle_contact(
+        self,
+    ):
         import hashlib
         import tempfile
         from pathlib import Path
@@ -325,7 +389,9 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         from pcb.route_validation import RouteContract, validate_routes
         from verification.test_route_optimizer import RouteOptimizerTests
 
-        with tempfile.TemporaryDirectory(prefix="autopcb-restore-contact-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="autopcb-restore-contact-"
+        ) as directory:
             source = RouteOptimizerTests.make_board(Path(directory))
             board = pcbnew.LoadBoard(str(source))
             tracks = []
@@ -337,7 +403,7 @@ class StandaloneRouteStyleTests(unittest.TestCase):
                 track = pcbnew.PCB_TRACK(board)
                 track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
                 track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-                track.SetWidth(mm(.2))
+                track.SetWidth(mm(0.2))
                 track.SetLayer(pcbnew.F_Cu)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
@@ -347,20 +413,31 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             before = source.read_bytes()
             removal = {"kind": "segment", "uuid": tracks[1].m_Uuid.AsString()}
             expression = (
-                '(segment (start 4 2.000001) (end 5.000001 2.000001) (width 0.2) '
+                "(segment (start 4 2.000001) (end 5.000001 2.000001) (width 0.2) "
                 '(layer "F.Cu") (net "SIGNAL") '
                 '(uuid "00000000-0000-4000-8000-000000000001"))'
             )
             changes = [
                 {"document": "pcb", "target": removal, "op": "remove", "path": []},
-                {"document": "pcb", "target": {"kind": "root"}, "op": "insert",
-                 "path": [], "expression": expression},
+                {
+                    "document": "pcb",
+                    "target": {"kind": "root"},
+                    "op": "insert",
+                    "path": [],
+                    "expression": expression,
+                },
             ]
             contract = RouteContract(
-                "SIGNAL", Point.from_mm((2, 2)), "F.Cu",
-                Point.from_mm((8, 5)), "F.Cu", (removal,),
+                "SIGNAL",
+                Point.from_mm((2, 2)),
+                "F.Cu",
+                Point.from_mm((8, 5)),
+                "F.Cu",
+                (removal,),
             )
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
             self.assertEqual(evidence["new_style_issues"], [])
             self.assertEqual(source.read_bytes(), before)
@@ -376,7 +453,9 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         from pcb.route_validation import RouteContract, validate_routes
         from verification.test_route_optimizer import RouteOptimizerTests
 
-        with tempfile.TemporaryDirectory(prefix="autopcb-restore-warning-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="autopcb-restore-warning-"
+        ) as directory:
             source = RouteOptimizerTests.make_board(Path(directory))
             board = pcbnew.LoadBoard(str(source))
             tracks = []
@@ -384,7 +463,7 @@ class StandaloneRouteStyleTests(unittest.TestCase):
                 track = pcbnew.PCB_TRACK(board)
                 track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
                 track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-                track.SetWidth(mm(.2))
+                track.SetWidth(mm(0.2))
                 track.SetLayer(pcbnew.F_Cu)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
@@ -393,24 +472,45 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             before = source.read_bytes()
             removal = {"kind": "segment", "uuid": tracks[1].m_Uuid.AsString()}
             expression = (
-                '(segment (start 4 2.000001) (end 8 2.000001) (width 0.2) '
+                "(segment (start 4 2.000001) (end 8 2.000001) (width 0.2) "
                 '(layer "F.Cu") (net "SIGNAL") '
                 '(uuid "00000000-0000-4000-8000-000000000001"))'
             )
             changes = [
                 {"document": "pcb", "target": removal, "op": "remove", "path": []},
-                {"document": "pcb", "target": {"kind": "root"}, "op": "insert",
-                 "path": [], "expression": expression},
+                {
+                    "document": "pcb",
+                    "target": {"kind": "root"},
+                    "op": "insert",
+                    "path": [],
+                    "expression": expression,
+                },
             ]
             contract = RouteContract(
-                "SIGNAL", Point.from_mm((2, 2)), "F.Cu",
-                Point.from_mm((8, 2.000001)), "F.Cu", (removal,),
+                "SIGNAL",
+                Point.from_mm((2, 2)),
+                "F.Cu",
+                Point.from_mm((8, 2.000001)),
+                "F.Cu",
+                (removal,),
             )
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
-            self.assertEqual(evidence["status"], "no_new_drc_violations", evidence["new_violations"])
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
+            self.assertEqual(
+                evidence["status"], "no_new_drc_violations", evidence["new_violations"]
+            )
             self.assertEqual(evidence["candidate_warnings"], 3)
-            changed = [changes[0], {**changes[1], "expression": expression.replace("(width 0.2)", "(width 0.21)")}]
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changed, [contract])
+            changed = [
+                changes[0],
+                {
+                    **changes[1],
+                    "expression": expression.replace("(width 0.2)", "(width 0.21)"),
+                },
+            ]
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changed, [contract]
+            )
             self.assertEqual(evidence["status"], "rejected")
             self.assertTrue(evidence["new_violations"])
             self.assertEqual(source.read_bytes(), before)
@@ -435,7 +535,7 @@ class StandaloneRouteStyleTests(unittest.TestCase):
                 track = pcbnew.PCB_TRACK(board)
                 track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
                 track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-                track.SetWidth(mm(.2))
+                track.SetWidth(mm(0.2))
                 track.SetLayer(pcbnew.F_Cu)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
@@ -446,15 +546,31 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             removal = {"kind": "segment", "uuid": tracks[1].m_Uuid.AsString()}
             changes = [
                 {"document": "pcb", "target": removal, "op": "remove", "path": []},
-                {"document": "pcb", "target": {"kind": "root"}, "op": "insert", "path": [],
-                 "expression": '(segment (start 4 2) (end 4 5) (width 0.2) (layer "F.Cu") '
-                               '(net "SIGNAL") (uuid "00000000-0000-4000-8000-000000000001"))'},
+                {
+                    "document": "pcb",
+                    "target": {"kind": "root"},
+                    "op": "insert",
+                    "path": [],
+                    "expression": '(segment (start 4 2) (end 4 5) (width 0.2) (layer "F.Cu") '
+                    '(net "SIGNAL") (uuid "00000000-0000-4000-8000-000000000001"))',
+                },
             ]
             contract = RouteContract(
-                "SIGNAL", Point.from_mm((2, 2)), "F.Cu", Point.from_mm((8, 5)), "F.Cu", (removal,),
+                "SIGNAL",
+                Point.from_mm((2, 2)),
+                "F.Cu",
+                Point.from_mm((8, 5)),
+                "F.Cu",
+                (removal,),
             )
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
-            self.assertEqual(evidence["status"], "no_new_drc_violations", evidence["new_style_issues"])
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
+            self.assertEqual(
+                evidence["status"],
+                "no_new_drc_violations",
+                evidence["new_style_issues"],
+            )
             self.assertEqual(evidence["new_style_issues"], [])
             self.assertEqual(source.read_bytes(), before)
 
@@ -469,7 +585,9 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         from pcb.route_validation import RouteContract, validate_routes
         from verification.test_route_optimizer import RouteOptimizerTests
 
-        with tempfile.TemporaryDirectory(prefix="autopcb-hidden-dangling-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="autopcb-hidden-dangling-"
+        ) as directory:
             source = RouteOptimizerTests.make_board(Path(directory))
             board = pcbnew.LoadBoard(str(source))
             tracks = []
@@ -477,7 +595,7 @@ class StandaloneRouteStyleTests(unittest.TestCase):
                 track = pcbnew.PCB_TRACK(board)
                 track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
                 track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
-                track.SetWidth(mm(.2))
+                track.SetWidth(mm(0.2))
                 track.SetLayer(pcbnew.F_Cu)
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
@@ -487,16 +605,33 @@ class StandaloneRouteStyleTests(unittest.TestCase):
             removal = {"kind": "segment", "uuid": tracks[1].m_Uuid.AsString()}
             changes = [
                 {"document": "pcb", "target": removal, "op": "remove", "path": []},
-                {"document": "pcb", "target": {"kind": "root"}, "op": "insert", "path": [],
-                 "expression": '(segment (start 2 6) (end 5 6) (width 0.2) (layer "F.Cu") '
-                               '(net "SIGNAL") (uuid "00000000-0000-4000-8000-000000000001"))'},
+                {
+                    "document": "pcb",
+                    "target": {"kind": "root"},
+                    "op": "insert",
+                    "path": [],
+                    "expression": '(segment (start 2 6) (end 5 6) (width 0.2) (layer "F.Cu") '
+                    '(net "SIGNAL") (uuid "00000000-0000-4000-8000-000000000001"))',
+                },
             ]
             contract = RouteContract(
-                "SIGNAL", Point.from_mm((2, 2)), "F.Cu", Point.from_mm((8, 5)), "F.Cu", (removal,),
+                "SIGNAL",
+                Point.from_mm((2, 2)),
+                "F.Cu",
+                Point.from_mm((8, 5)),
+                "F.Cu",
+                (removal,),
             )
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
             self.assertEqual(evidence["status"], "rejected")
-            self.assertTrue(any(item["type"] == "track_dangling" for item in evidence["new_violations"]))
+            self.assertTrue(
+                any(
+                    item["type"] == "track_dangling"
+                    for item in evidence["new_violations"]
+                )
+            )
             self.assertEqual(source.read_bytes(), before)
 
 

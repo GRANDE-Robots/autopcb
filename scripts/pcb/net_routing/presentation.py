@@ -29,37 +29,67 @@ def _names(console: Console, title: str, names) -> None:
 def show_pair_probe(console: Console, report: dict) -> None:
     console.heading("AutoPCB | Paired-signal diagnostic")
     if report["status"] == "no_candidate":
-        console.line("No extractable paired-route proposal was found within this trial.")
-    console.rows([
-        ("Pairs examined", len(report["pairs"])),
-        ("Saved / trial opens", f"{report['saved_opens']} / {report['candidate_opens']}"),
-        ("Saved / trial pair opens", f"{report['saved_critical_opens']} / {report['candidate_critical_opens']}"),
-        ("Saved / trial other errors", f"{report['saved_other_errors']} / {report['other_errors']}"),
-        ("Saved / trial warnings", f"{report['saved_warnings']} / {report['warnings']}"),
-        ("Trial additions", f"{report['added_traces']} tracks; {report['added_vias']} vias"),
-        ("Non-octilinear tracks skipped", report["skipped_non_octilinear"]),
-        ("New style findings", sum(report["new_style_issues"].values())),
-        ("New via-in-pad overlaps", len(report.get("new_via_pad_overlaps", ()))),
-        ("Saved / trial segments missing reference", f"{report['reference_before_missing']} / {report['reference_after_missing']}"),
-        ("Unsupported reference geometry", report["reference_unsupported"]),
-        ("Protected changes", len(report["protected_changes"])),
-    ])
+        console.line(
+            "No extractable paired-route proposal was found within this trial."
+        )
+    console.rows(
+        [
+            ("Pairs examined", len(report["pairs"])),
+            (
+                "Saved / trial opens",
+                f"{report['saved_opens']} / {report['candidate_opens']}",
+            ),
+            (
+                "Saved / trial pair opens",
+                f"{report['saved_critical_opens']} / {report['candidate_critical_opens']}",
+            ),
+            (
+                "Saved / trial other errors",
+                f"{report['saved_other_errors']} / {report['other_errors']}",
+            ),
+            (
+                "Saved / trial warnings",
+                f"{report['saved_warnings']} / {report['warnings']}",
+            ),
+            (
+                "Trial additions",
+                f"{report['added_traces']} tracks; {report['added_vias']} vias",
+            ),
+            ("Non-octilinear tracks skipped", report["skipped_non_octilinear"]),
+            ("New style findings", sum(report["new_style_issues"].values())),
+            ("New via-in-pad overlaps", len(report.get("new_via_pad_overlaps", ()))),
+            (
+                "Saved / trial segments missing reference",
+                f"{report['reference_before_missing']} / {report['reference_after_missing']}",
+            ),
+            ("Unsupported reference geometry", report["reference_unsupported"]),
+            ("Protected changes", len(report["protected_changes"])),
+        ]
+    )
     if report["new_style_issues"]:
-        console.line("Style findings: " + ", ".join(
-            f"{name.replace('_', ' ')}: {count}" for name, count in report["new_style_issues"].items()
-        ))
+        console.line(
+            "Style findings: "
+            + ", ".join(
+                f"{name.replace('_', ' ')}: {count}"
+                for name, count in report["new_style_issues"].items()
+            )
+        )
     if console.verbose:
         for pair in report["pairs"]:
             detail = f"{pair['positive']} / {pair['negative']}: {pair['gap_mm']:.3f} mm target"
             if "saved_opens" in pair:
-                detail += (f"; opens {pair['saved_opens']} / {pair['trial_opens']}"
-                           f"; incomplete reference segments {pair['trial_missing_reference_segments']}")
+                detail += (
+                    f"; opens {pair['saved_opens']} / {pair['trial_opens']}"
+                    f"; incomplete reference segments {pair['trial_missing_reference_segments']}"
+                )
             console.line(detail, prefix="  ")
         obstacles = report.get("nearby_reference_obstacles", {})
         if obstacles:
-            console.line("Nearby non-ground copper (conservative screen): " + ", ".join(
-                f"{net}: {count}" for net, count in obstacles.items()
-            ), prefix="  ")
+            console.line(
+                "Nearby non-ground copper (conservative screen): "
+                + ", ".join(f"{net}: {count}" for net, count in obstacles.items()),
+                prefix="  ",
+            )
     for item in report["limitations"]:
         console.line(item, prefix="  - ")
 
@@ -160,7 +190,9 @@ def _attempts(console: Console, attempts: list[dict]) -> None:
         for reason in attempt.get("limits_hit", []):
             reasons[_LIMIT_LABELS.get(reason, f"Search limit: {reason}")] += 1
         for reason, count in attempt.get("failures", {}).items():
-            reasons[_FAILURE_LABELS.get(reason, str(reason))] += count if isinstance(count, int) else 1
+            reasons[_FAILURE_LABELS.get(reason, str(reason))] += (
+                count if isinstance(count, int) else 1
+            )
     for reason, count in reasons.most_common(None if console.verbose else 3):
         console.line(f"{reason} ({count})", prefix="  - ")
     if len(reasons) > 3 and not console.verbose:
@@ -172,36 +204,51 @@ def _attempts(console: Console, attempts: list[dict]) -> None:
         for attempt in attempts:
             zones = attempt.get("zone_count", attempt.get("ignored_zone_count", 0))
             if isinstance(zones, int) and zones > 0:
-                message = (f"{zones} zones refilled for search; final checks refill again."
-                           if attempt.get("zone_connectivity") == "refilled"
-                           else f"{zones} zone fills are not credited for connectivity during search.")
+                message = (
+                    f"{zones} zones refilled for search; final checks refill again."
+                    if attempt.get("zone_connectivity") == "refilled"
+                    else f"{zones} zone fills are not credited for connectivity during search."
+                )
                 console.line(message, prefix="  - ")
             for order in attempt.get("orders", []):
                 names = order.get("order", [])
                 reached = order.get("nets_reached", 0)
                 if names and isinstance(reached, int):
-                    state = ("stopped at " + names[reached]
-                             if 0 <= reached < len(names) else "completed")
+                    state = (
+                        "stopped at " + names[reached]
+                        if 0 <= reached < len(names)
+                        else "completed"
+                    )
                     console.line(f"Order: {' -> '.join(names)} ({state})", prefix="  ")
             if isinstance(attempt.get("rework_cost"), (int, float)):
-                console.line(f"Route cost: {attempt['routing_cost']:.2f}; "
-                             f"existing-copper change cost: {attempt['rework_cost']:.2f}", prefix="  ")
+                console.line(
+                    f"Route cost: {attempt['routing_cost']:.2f}; "
+                    f"existing-copper change cost: {attempt['rework_cost']:.2f}",
+                    prefix="  ",
+                )
             for checkpoint in attempt.get("checkpoints", []):
                 stage = checkpoint.get("stage", 0)
                 console.line(
                     f"{checkpoint['net']}: {STAGE_NAMES[stage]}, choice {checkpoint['index'] + 1}"
                     f"/{checkpoint['count']}, {len(checkpoint['islands'])} copper groups, "
-                    f"grid {checkpoint['step_mm']:g} mm", prefix="  ")
+                    f"grid {checkpoint['step_mm']:g} mm",
+                    prefix="  ",
+                )
             for category, details in attempt.get("failure_details", {}).items():
                 for detail in details:
-                    console.line(f"{_FAILURE_LABELS.get(category, category)}: {detail}", prefix="    ")
+                    console.line(
+                        f"{_FAILURE_LABELS.get(category, category)}: {detail}",
+                        prefix="    ",
+                    )
             for rejection in attempt.get("rejected_candidates", []):
                 if rejection.get("reason"):
                     console.line(rejection["reason"], prefix="    Candidate rejected: ")
         calls = [item.get("path_calls") for item in attempts]
         seconds = [item.get("elapsed_seconds") for item in attempts]
         calls_recorded = bool(calls) and all(isinstance(value, int) for value in calls)
-        time_recorded = bool(seconds) and all(isinstance(value, (float, int)) for value in seconds)
+        time_recorded = bool(seconds) and all(
+            isinstance(value, (float, int)) for value in seconds
+        )
         console.rows(
             [
                 ("Search calls", sum(calls) if calls_recorded else "Not recorded"),
@@ -214,7 +261,13 @@ def _attempts(console: Console, attempts: list[dict]) -> None:
 
 
 def show_run(console: Console, report: dict) -> None:
-    console.heading("AutoPCB | Routing preview " + report["status"].replace("_", " "))
+    status = report["status"]
+    heading = (
+        "Routing preview has zero opens"
+        if status == "preview_zero_opens"
+        else "Routing preview " + status.replace("_", " ")
+    )
+    console.heading("AutoPCB | " + heading)
     console.rows(
         [
             ("Saved board opens", report.get("saved_board_opens")),
@@ -247,7 +300,9 @@ def show_run(console: Console, report: dict) -> None:
         )
         if console.verbose:
             reasons = Counter(
-                reason.partition(": ")[2] if reason.startswith("Reference conflict ") and ": " in reason else reason
+                reason.partition(": ")[2]
+                if reason.startswith("Reference conflict ") and ": " in reason
+                else reason
                 for reason in repair_blockers
             )
             for reason, count in reasons.most_common():
@@ -258,16 +313,26 @@ def show_run(console: Console, report: dict) -> None:
     if report.get("run_id"):
         limits = report.get("resource_limits") or {}
         budget = limits.get("job_commit_limit_bytes", 0) / 1024**3
-        memory_option = f" --memory-gib {budget:g}" if limits.get("budget_mode") == "explicit" else ""
+        memory_option = (
+            f" --memory-gib {budget:g}"
+            if limits.get("budget_mode") == "explicit"
+            else ""
+        )
         action = report.get("resume_action", "resume")
         if action == "unknown":
-            console.line("Continuation cannot be determined; check the saved inputs and tools.")
+            console.line(
+                "Continuation cannot be determined; check the saved inputs and tools."
+            )
         elif action == "restart":
             console.line("Saved inputs or policy changed; start a new preview:")
             console.command(f"python run.py pcb autoroute run{memory_option}")
+        elif status == "preview_zero_opens":
+            console.line("Verify the saved board after applying a routing improvement.")
         else:
             console.line("Resume this preview:")
-            console.command(f"python run.py pcb autoroute run --{action} {report['run_id']}{memory_option}")
+            console.command(
+                f"python run.py pcb autoroute run --{action} {report['run_id']}{memory_option}"
+            )
 
 
 class RoutingDisplay:
@@ -310,8 +375,11 @@ class RoutingDisplay:
         elif event == "search":
             round_label = f"Round {record['round']}" if "round" in record else "Batch"
             console.stage(
-                round_label + " | " + STAGE_NAMES[record.get("recovery_stage", 0)]
-                + " | Searching and checking: " + ", ".join(record["nets"])
+                round_label
+                + " | "
+                + STAGE_NAMES[record.get("recovery_stage", 0)]
+                + " | Searching and checking: "
+                + ", ".join(record["nets"])
             )
             console.line(
                 f"Opens: {record['saved_opens']} saved / {record['preview_opens']} preview",

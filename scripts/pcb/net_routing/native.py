@@ -45,8 +45,11 @@ class Snapshot:
         if schematic.is_file():
             files.add(schematic)
         project = self.source.parent
-        support = (config_path(project, "autopcb.json"), data_path(project, "POWER_LOAD_BUDGET.csv"),
-                   data_path(project, "STACKUP_CURRENT.json"))
+        support = (
+            config_path(project, "autopcb.json"),
+            data_path(project, "POWER_LOAD_BUDGET.csv"),
+            data_path(project, "STACKUP_CURRENT.json"),
+        )
         files.update(path for path in support if path.is_file())
         return tuple(sorted(files))
 
@@ -73,7 +76,9 @@ class Snapshot:
             names = {path: self.input_name(path) for path in self.fingerprints}
             if len(set(names.values())) != len(names):
                 raise ValueError("Native snapshot has two sources for the same file")
-            _copy_inputs(list(self.fingerprints), self.source, self.directory, names=names)
+            _copy_inputs(
+                list(self.fingerprints), self.source, self.directory, names=names
+            )
             for path, digest in self.fingerprints.items():
                 copied = self.directory / names[path]
                 if sha(copied) != digest:
@@ -133,8 +138,18 @@ def load_board(path: Path, *, refill_zones: bool = False):
     return board
 
 
-def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_sites,
-                       budget, via_margin: int, *, contacts=(), sample: bool = True):
+def _zone_access_sites(
+    board,
+    name: str,
+    layers: tuple[str, ...],
+    islands,
+    pad_sites,
+    budget,
+    via_margin: int,
+    *,
+    contacts=(),
+    sample: bool = True,
+):
     """Sample plane sites bound to existing copper in the same filled polygon."""
     import pcbnew
 
@@ -144,11 +159,23 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
             position = pad.GetPosition()
             pads_at.setdefault((int(position.x), int(position.y)), []).append(pad)
     additions = [dict(island.zone_anchors) for island in islands]
-    offsets = tuple((mm(dx), mm(dy)) for dx, dy in (
-        (.6, 0), (-.6, 0), (0, .6), (0, -.6),
-        (1.2, 0), (-1.2, 0), (0, 1.2), (0, -1.2),
-        (.6, .6), (.6, -.6), (-.6, .6), (-.6, -.6),
-    ))
+    offsets = tuple(
+        (mm(dx), mm(dy))
+        for dx, dy in (
+            (0.6, 0),
+            (-0.6, 0),
+            (0, 0.6),
+            (0, -0.6),
+            (1.2, 0),
+            (-1.2, 0),
+            (0, 1.2),
+            (0, -1.2),
+            (0.6, 0.6),
+            (0.6, -0.6),
+            (-0.6, 0.6),
+            (-0.6, -0.6),
+        )
+    )
     for zone in board.Zones():
         if zone.GetIsRuleArea() or zone.GetNetname() != name:
             continue
@@ -164,8 +191,11 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
                 for index, island in enumerate(islands):
                     virtual = {site for site, _ in island.zone_anchors}
                     physical = tuple(
-                        site for site in island.sites
-                        if site not in virtual and site.layer == layer and polygon.Contains(
+                        site
+                        for site in island.sites
+                        if site not in virtual
+                        and site.layer == layer
+                        and polygon.Contains(
                             pcbnew.VECTOR2I(site.point.x, site.point.y), outline
                         )
                     )
@@ -181,19 +211,26 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
                         continue
                     if contact in islands[owner].sites or contact in additions[owner]:
                         continue
-                    additions[owner][contact] = min(physical, key=lambda site: (
-                        (site.point.x - contact.point.x) ** 2
-                        + (site.point.y - contact.point.y) ** 2,
-                        site.key,
-                    ))
+                    additions[owner][contact] = min(
+                        physical,
+                        key=lambda site: (
+                            (site.point.x - contact.point.x) ** 2
+                            + (site.point.y - contact.point.y) ** 2,
+                            site.key,
+                        ),
+                    )
                 if not sample:
                     continue
                 for index, island in enumerate(islands):
                     if index == owner:
                         continue
-                    centers = sorted(island.sites, key=lambda site: (
-                        site not in pad_sites, site.key,
-                    ))[:2]
+                    centers = sorted(
+                        island.sites,
+                        key=lambda site: (
+                            site not in pad_sites,
+                            site.key,
+                        ),
+                    )[:2]
                     added = 0
                     for center in centers:
                         for dx, dy in offsets:
@@ -201,18 +238,27 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
                             position = pcbnew.VECTOR2I(point.x, point.y)
                             if via_margin and any(
                                 pad.HitTest(position, via_margin)
-                                for pad in pads_at.get((center.point.x, center.point.y), ())
+                                for pad in pads_at.get(
+                                    (center.point.x, center.point.y), ()
+                                )
                             ):
                                 continue
                             if not polygon.Contains(position, outline):
                                 continue
                             virtual = Site(point, layer)
-                            if virtual in islands[owner].sites or virtual in additions[owner]:
+                            if (
+                                virtual in islands[owner].sites
+                                or virtual in additions[owner]
+                            ):
                                 continue
-                            anchor = min(physical, key=lambda site: (
-                                (site.point.x - point.x) ** 2 + (site.point.y - point.y) ** 2,
-                                site.key,
-                            ))
+                            anchor = min(
+                                physical,
+                                key=lambda site: (
+                                    (site.point.x - point.x) ** 2
+                                    + (site.point.y - point.y) ** 2,
+                                    site.key,
+                                ),
+                            )
                             additions[owner][virtual] = anchor
                             added += 1
                             if added >= 12:
@@ -220,9 +266,17 @@ def _zone_access_sites(board, name: str, layers: tuple[str, ...], islands, pad_s
                         if added >= 12:
                             break
     return tuple(
-        replace(island,
-                sites=tuple(sorted(set(island.sites) | set(additions[index]), key=lambda site: site.key)),
-                zone_anchors=tuple(sorted(additions[index].items(), key=lambda pair: pair[0].key)))
+        replace(
+            island,
+            sites=tuple(
+                sorted(
+                    set(island.sites) | set(additions[index]), key=lambda site: site.key
+                )
+            ),
+            zone_anchors=tuple(
+                sorted(additions[index].items(), key=lambda pair: pair[0].key)
+            ),
+        )
         for index, island in enumerate(islands)
     )
 
@@ -234,7 +288,9 @@ class PadCore:
     check treats it. Rotated, offset or custom pads give none.
     """
 
-    def __call__(self, pad, layers: dict[str, int]) -> tuple[tuple[str, int, int, int, int], ...]:
+    def __call__(
+        self, pad, layers: dict[str, int]
+    ) -> tuple[tuple[str, int, int, int, int], ...]:
         import pcbnew
 
         angle = pad.GetOrientationDegrees() % 180
@@ -242,38 +298,69 @@ class PadCore:
             return ()
         at, result = pad.GetPosition(), []
         for name, layer in layers.items():
-            offset, size, shape = pad.GetOffset(layer), pad.GetSize(layer), pad.GetShape(layer)
+            offset, size, shape = (
+                pad.GetOffset(layer),
+                pad.GetSize(layer),
+                pad.GetShape(layer),
+            )
             if not pad.IsOnLayer(layer) or offset.x or offset.y:
                 continue
-            width, height = (int(size.y), int(size.x)) if angle else (int(size.x), int(size.y))
+            width, height = (
+                (int(size.y), int(size.x)) if angle else (int(size.x), int(size.y))
+            )
             if shape == pcbnew.PAD_SHAPE_RECT:
                 dx, dy = width // 2, height // 2
             elif shape == pcbnew.PAD_SHAPE_ROUNDRECT:
                 radius = int(pad.GetRoundRectCornerRadius(layer))
                 dx, dy = width // 2 - radius, height // 2 - radius
             elif shape == pcbnew.PAD_SHAPE_OVAL:
-                dx, dy = ((width - height) // 2, height // 2) if width >= height else (width // 2, (height - width) // 2)
+                dx, dy = (
+                    ((width - height) // 2, height // 2)
+                    if width >= height
+                    else (width // 2, (height - width) // 2)
+                )
             elif shape == pcbnew.PAD_SHAPE_CIRCLE:
                 dx = dy = int(width / 2 / math.sqrt(2))
             else:
                 continue
             if dx >= 0 and dy >= 0:
-                result.append((name, int(at.x) - dx, int(at.y) - dy, int(at.x) + dx, int(at.y) + dy))
+                result.append(
+                    (
+                        name,
+                        int(at.x) - dx,
+                        int(at.y) - dy,
+                        int(at.x) + dx,
+                        int(at.y) + dy,
+                    )
+                )
         return tuple(result)
 
 
 pad_core = PadCore()
 
 
-def discover(board, name: str, layers: tuple[str, ...], budget: Budget,
-             *, include_zone_access: bool = False, zone_via_margin: int = 0) -> NativeNet:
+def discover(
+    board,
+    name: str,
+    layers: tuple[str, ...],
+    budget: Budget,
+    *,
+    include_zone_access: bool = False,
+    zone_via_margin: int = 0,
+) -> NativeNet:
     import pcbnew
 
     if not name or name.startswith("unconnected-") or board.FindNet(name) is None:
         raise ValueError(f"Unknown or intentionally unconnected net: {name}")
-    if isinstance(zone_via_margin, bool) or not isinstance(zone_via_margin, int) or zone_via_margin < 0:
+    if (
+        isinstance(zone_via_margin, bool)
+        or not isinstance(zone_via_margin, int)
+        or zone_via_margin < 0
+    ):
         raise ValueError("zone_via_margin must be a nonnegative integer")
-    layer_ids = {board.GetLayerName(layer): layer for layer in board.GetEnabledLayers().CuStack()}
+    layer_ids = {
+        board.GetLayerName(layer): layer for layer in board.GetEnabledLayers().CuStack()
+    }
     if not set(layers) <= layer_ids.keys():
         raise ValueError("Requested routing layers are not enabled on the saved board")
     pads = {p.m_Uuid.AsString(): p for p in board.GetPads() if p.GetNetname() == name}
@@ -381,11 +468,15 @@ def discover(board, name: str, layers: tuple[str, ...], budget: Budget,
                 )
             )
     if include_zone_access:
-        islands = list(_zone_access_sites(
-            board, name, layers, islands, pad_sites, budget, zone_via_margin
-        ))
+        islands = list(
+            _zone_access_sites(
+                board, name, layers, islands, pad_sites, budget, zone_via_margin
+            )
+        )
     routing = {layer: layer_ids[layer] for layer in layers}
-    copper = PadCopper(tuple(box for pad in pads.values() for box in pad_core(pad, routing)))
+    copper = PadCopper(
+        tuple(box for pad in pads.values() for box in pad_core(pad, routing))
+    )
     net = Net(name, tuple(islands), tuple(s for s, _ in tracks), pad_sites, copper)
     return NativeNet(net, tuple(tracks), tuple(vias), unsupported)
 
@@ -404,7 +495,10 @@ def contracts(board, names: tuple[str, ...]) -> list[RouteContract]:
         for pad in pads:
             layer = next(
                 layer
-                for layer in (board.GetLayerName(identifier) for identifier in board.GetEnabledLayers().CuStack())
+                for layer in (
+                    board.GetLayerName(identifier)
+                    for identifier in board.GetEnabledLayers().CuStack()
+                )
                 if pad.IsOnLayer(board.GetLayerID(layer))
             )
             at = pad.GetPosition()
@@ -414,7 +508,9 @@ def contracts(board, names: tuple[str, ...]) -> list[RouteContract]:
             # A single pad can still have detached tracks or vias on its net.
             # The self-anchor binds the net; full-net validation checks every
             # remaining copper island rather than treating this as completion.
-            result.append(RouteContract(name, first.point, first.layer, first.point, first.layer))
+            result.append(
+                RouteContract(name, first.point, first.layer, first.point, first.layer)
+            )
             continue
         result.extend(
             RouteContract(name, first.point, first.layer, s.point, s.layer)
@@ -423,8 +519,13 @@ def contracts(board, names: tuple[str, ...]) -> list[RouteContract]:
     return result
 
 
-def placements(snapshot: Snapshot, raw: object, names: set[str], budget: Budget,
-               scope: MoveScope = MoveScope()):
+def placements(
+    snapshot: Snapshot,
+    raw: object,
+    names: set[str],
+    budget: Budget,
+    scope: MoveScope = MoveScope(),
+):
     """Yield finite explicit poses the scope allows; never invent permission to move."""
     if not isinstance(raw, list):
         raise ValueError("movable must be an array of explicit pose choices")

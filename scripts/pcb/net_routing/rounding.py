@@ -29,7 +29,8 @@ def _octilinear(start: tuple[int, int], end: tuple[int, int]) -> bool:
 
 def _straight_tracks(board) -> dict[str, object]:
     return {
-        item.m_Uuid.AsString(): item for item in board.GetTracks()
+        item.m_Uuid.AsString(): item
+        for item in board.GetTracks()
         if not isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC))
     }
 
@@ -37,19 +38,29 @@ def _straight_tracks(board) -> dict[str, object]:
 def _joint_tracks(board, net: str, layer: int, point: tuple[int, int]) -> set[str]:
     """Reject a point that also touches a pad, via, branch or crossing track."""
     at = pcbnew.VECTOR2I(*point)
-    if any(pad.GetNetname() == net and pad.IsOnLayer(layer) and pad.HitTest(at)
-           for pad in board.GetPads()):
+    if any(
+        pad.GetNetname() == net and pad.IsOnLayer(layer) and pad.HitTest(at)
+        for pad in board.GetPads()
+    ):
         return set()
-    if any(isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)) and item.GetNetname() == net
-           and item.IsOnLayer(layer) and item.HitTest(at) for item in board.GetTracks()):
+    if any(
+        isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC))
+        and item.GetNetname() == net
+        and item.IsOnLayer(layer)
+        and item.HitTest(at)
+        for item in board.GetTracks()
+    ):
         return set()
     touching = {
-        uid for uid, track in _straight_tracks(board).items()
+        uid
+        for uid, track in _straight_tracks(board).items()
         if track.GetNetname() == net and track.GetLayer() == layer and track.HitTest(at)
     }
     endpoints = {
-        uid for uid, track in _straight_tracks(board).items()
-        if track.GetNetname() == net and track.GetLayer() == layer
+        uid
+        for uid, track in _straight_tracks(board).items()
+        if track.GetNetname() == net
+        and track.GetLayer() == layer
         and point in {_point(track.GetStart()), _point(track.GetEnd())}
     }
     return endpoints if len(endpoints) == 2 and endpoints == touching else set()
@@ -59,13 +70,16 @@ def _track_points(track) -> tuple[tuple[int, int], tuple[int, int]]:
     return _point(track.GetStart()), _point(track.GetEnd())
 
 
-def _joint_targets(point: tuple[int, int], originals: dict) -> tuple[tuple[int, int], ...]:
+def _joint_targets(
+    point: tuple[int, int], originals: dict
+) -> tuple[tuple[int, int], ...]:
     """Intersect octilinear directions from fixed endpoints in integer nanometres."""
     fixed = [end if start == point else start for start, end in originals.values()]
     if len(fixed) != 2:
         return ()
-    targets = {(point[0] + x, point[1] + y)
-               for x, y in product((-1, 0, 1), repeat=2) if x or y}
+    targets = {
+        (point[0] + x, point[1] + y) for x, y in product((-1, 0, 1), repeat=2) if x or y
+    }
     lines = ((0, 1), (1, 0), (1, -1), (1, 1))
     for (a, b), (c, d) in product(lines, repeat=2):
         det = a * d - c * b
@@ -77,12 +91,20 @@ def _joint_targets(point: tuple[int, int], originals: dict) -> tuple[tuple[int, 
         if nx % det == 0 and ny % det == 0:
             targets.add((nx // det, ny // det))
     targets.discard(point)
+
     def distance_squared(target: tuple[int, int]) -> int:
         return (target[0] - point[0]) ** 2 + (target[1] - point[1]) ** 2
 
-    return tuple(sorted((target for target in targets
-                         if distance_squared(target) <= MAX_JOINT_SHIFT_NM ** 2),
-                        key=lambda target: (distance_squared(target), target)))
+    return tuple(
+        sorted(
+            (
+                target
+                for target in targets
+                if distance_squared(target) <= MAX_JOINT_SHIFT_NM**2
+            ),
+            key=lambda target: (distance_squared(target), target),
+        )
+    )
 
 
 def find_candidate(board, eligible: set[str]) -> dict | None:
@@ -102,7 +124,9 @@ def find_candidate(board, eligible: set[str]) -> dict | None:
             if uid not in ids:
                 continue
             items = [tracks[name] for name in sorted(ids)]
-            if any(item.IsLocked() or item.GetParentGroup() is not None for item in items):
+            if any(
+                item.IsLocked() or item.GetParentGroup() is not None for item in items
+            ):
                 continue
             originals = {item.m_Uuid.AsString(): _track_points(item) for item in items}
             old_bad = sum(not _octilinear(*points) for points in originals.values())
@@ -112,24 +136,43 @@ def find_candidate(board, eligible: set[str]) -> dict | None:
                 if new_ids and new_ids != ids:
                     continue
                 at = pcbnew.VECTOR2I(*target)
-                if any(p.GetNetname() == net and p.IsOnLayer(layer) and p.HitTest(at)
-                       for p in board.GetPads()):
+                if any(
+                    p.GetNetname() == net and p.IsOnLayer(layer) and p.HitTest(at)
+                    for p in board.GetPads()
+                ):
                     continue
-                if any(isinstance(v, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)) and v.GetNetname() == net
-                       and v.IsOnLayer(layer) and v.HitTest(at) for v in board.GetTracks()):
+                if any(
+                    isinstance(v, (pcbnew.PCB_VIA, pcbnew.PCB_ARC))
+                    and v.GetNetname() == net
+                    and v.IsOnLayer(layer)
+                    and v.HitTest(at)
+                    for v in board.GetTracks()
+                ):
                     continue
-                if any(name not in ids and other.GetNetname() == net
-                       and other.GetLayer() == layer and other.HitTest(at)
-                       for name, other in tracks.items()):
+                if any(
+                    name not in ids
+                    and other.GetNetname() == net
+                    and other.GetLayer() == layer
+                    and other.HitTest(at)
+                    for name, other in tracks.items()
+                ):
                     continue
                 revised = {
-                    name: (target if start == point else start, target if end == point else end)
+                    name: (
+                        target if start == point else start,
+                        target if end == point else end,
+                    )
                     for name, (start, end) in originals.items()
                 }
-                if any(_octilinear(*originals[name]) and not _octilinear(*points)
-                       for name, points in revised.items()):
+                if any(
+                    _octilinear(*originals[name]) and not _octilinear(*points)
+                    for name, points in revised.items()
+                ):
                     continue
-                if sum(not _octilinear(*points) for points in revised.values()) >= old_bad:
+                if (
+                    sum(not _octilinear(*points) for points in revised.values())
+                    >= old_bad
+                ):
                     continue
                 try:
                     for item in items:
@@ -151,14 +194,24 @@ def find_candidate(board, eligible: set[str]) -> dict | None:
                     ):
                         if old == new:
                             continue
-                        x, y = (format(Decimal(value) / 1_000_000, "f") for value in new)
-                        changes.append({
-                            "document": "pcb", "target": {"kind": "segment", "uuid": name},
-                            "op": "replace", "path": [field], "expression": f"({field} {x} {y})",
-                        })
-                return {"net": net, "changes": changes, "corrected": old_bad - sum(
-                    not _octilinear(*points) for points in revised.values()
-                )}
+                        x, y = (
+                            format(Decimal(value) / 1_000_000, "f") for value in new
+                        )
+                        changes.append(
+                            {
+                                "document": "pcb",
+                                "target": {"kind": "segment", "uuid": name},
+                                "op": "replace",
+                                "path": [field],
+                                "expression": f"({field} {x} {y})",
+                            }
+                        )
+                return {
+                    "net": net,
+                    "changes": changes,
+                    "corrected": old_bad
+                    - sum(not _octilinear(*points) for points in revised.values()),
+                }
     return None
 
 
@@ -176,12 +229,21 @@ def _forms(data: bytes):
             uid = ids[0].atoms()[1].value
             if uid in segments:
                 raise ValueError("Duplicate track UUID")
-            segments[uid] = tuple(_canonical(x) for x in item.items
-                                  if not isinstance(x, Form) or x.name not in {"start", "end"})
+            segments[uid] = tuple(
+                _canonical(x)
+                for x in item.items
+                if not isinstance(x, Form) or x.name not in {"start", "end"}
+            )
         elif isinstance(item, Form) and item.name == "zone":
             # Zone refill is independently checked; its rules and outline must match.
-            other[tuple(_canonical(x) for x in item.items
-                        if not isinstance(x, Form) or x.name not in {"filled_polygon", "fill_segments"})] += 1
+            other[
+                tuple(
+                    _canonical(x)
+                    for x in item.items
+                    if not isinstance(x, Form)
+                    or x.name not in {"filled_polygon", "fill_segments"}
+                )
+            ] += 1
         else:
             # KiCad may reorder top-level records during refill. Compare the
             # full contents and multiplicity of each unchanged board item.
@@ -189,8 +251,9 @@ def _forms(data: bytes):
     return segments, other
 
 
-def verify_candidate(before: bytes, after: bytes, old_board, new_board,
-                     eligible: set[str]) -> dict:
+def verify_candidate(
+    before: bytes, after: bytes, old_board, new_board, eligible: set[str]
+) -> dict:
     """Recompute the bounded endpoint-only proof from native board snapshots."""
     old_forms, old_other = _forms(before)
     new_forms, new_other = _forms(after)
@@ -207,24 +270,32 @@ def verify_candidate(before: bytes, after: bytes, old_board, new_board,
         if a == b:
             continue
         net, layer = str(old.GetNetname()), old.GetLayer()
-        if (net not in eligible or old.IsLocked() or old.GetParentGroup() is not None
-                or str(new.GetNetname()) != net or new.GetLayer() != layer):
+        if (
+            net not in eligible
+            or old.IsLocked()
+            or old.GetParentGroup() is not None
+            or str(new.GetNetname()) != net
+            or new.GetLayer() != layer
+        ):
             raise ValueError("Rounding touched protected or unsupported copper")
         if _octilinear(*a) and not _octilinear(*b):
             raise ValueError("Rounding introduced an off-angle track")
         for first, second in strict_zip(a, b):
             if first == second:
                 continue
-            if ((first[0] - second[0]) ** 2 + (first[1] - second[1]) ** 2
-                    > MAX_JOINT_SHIFT_NM ** 2):
+            if (first[0] - second[0]) ** 2 + (
+                first[1] - second[1]
+            ) ** 2 > MAX_JOINT_SHIFT_NM**2:
                 raise ValueError("Joint alignment exceeded 0.05 mm")
             moved[(net, layer, first, second)].add(uid)
         changed.add(uid)
     if not changed:
         raise ValueError("Rounding did not change any track")
     for (net, layer, old_point, new_point), ids in moved.items():
-        if (_joint_tracks(old_board, net, layer, old_point) != ids
-                or _joint_tracks(new_board, net, layer, new_point) != ids):
+        if (
+            _joint_tracks(old_board, net, layer, old_point) != ids
+            or _joint_tracks(new_board, net, layer, new_point) != ids
+        ):
             raise ValueError("Rounding moved an anchored, branched or split joint")
     old_style, new_style = audit_style(old_board), audit_style(new_board)
     old_norm = normalize_segment_identities(old_style, _segment_identities(before))
@@ -234,5 +305,9 @@ def verify_candidate(before: bytes, after: bytes, old_board, new_board,
     corrected = len(old_style.non_octilinear) - len(new_style.non_octilinear)
     if corrected <= 0:
         raise ValueError("Rounding did not reduce off-angle tracks")
-    return {"corrected": corrected, "changed_tracks": len(changed),
-            "moved_joints": len(moved), "nets": sorted({key[0] for key in moved})}
+    return {
+        "corrected": corrected,
+        "changed_tracks": len(changed),
+        "moved_joints": len(moved),
+        "nets": sorted({key[0] for key in moved}),
+    }

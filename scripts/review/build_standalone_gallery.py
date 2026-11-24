@@ -110,7 +110,9 @@ def main():
         and any(name.endswith(".kicad_pcb") for name in native)
         and any(name.endswith(".kicad_sch") for name in native)
     ), "Missing native source identity"
-    title = html.escape(Path(next(name for name in native if name.endswith(".kicad_pcb"))).stem)
+    title = html.escape(
+        Path(next(name for name in native if name.endswith(".kicad_pcb"))).stem
+    )
     nav = (
         "<nav>"
         + "".join(
@@ -158,9 +160,12 @@ def main():
             'content="width=device-width, '
             'initial-scale=1"><title>'
         )
-        + title + " — review views</title><style>"
+        + title
+        + " — review views</title><style>"
         + css
-        + "</style><h1>" + title + " — "
+        + "</style><h1>"
+        + title
+        + " — "
         + str(len(views))
         + " views</h1><p>"
         + html.escape(a.status)

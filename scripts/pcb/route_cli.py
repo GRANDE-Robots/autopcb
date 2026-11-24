@@ -98,8 +98,17 @@ def _bounds(value: object) -> tuple[Point, Point]:
 
 def _obstacle(value: object) -> Obstacle:
     data = _fields(
-        value, {"bounds_mm", "layers", "net", "kind", "centerline_mm", "radius_mm",
-                "min_track_clearance_mm", "min_via_clearance_mm"},
+        value,
+        {
+            "bounds_mm",
+            "layers",
+            "net",
+            "kind",
+            "centerline_mm",
+            "radius_mm",
+            "min_track_clearance_mm",
+            "min_via_clearance_mm",
+        },
         "obstacle",
     )
     lower, upper = _bounds(data.get("bounds_mm"))
@@ -120,8 +129,13 @@ def _obstacle(value: object) -> Obstacle:
         if radius <= 0:
             raise ValueError("A capsule radius must be positive")
     return Obstacle(
-        lower, upper, tuple(layers), data.get("net", ""), data.get("kind", "copper"),
-        centerline=centerline, copper_radius=radius,
+        lower,
+        upper,
+        tuple(layers),
+        data.get("net", ""),
+        data.get("kind", "copper"),
+        centerline=centerline,
+        copper_radius=radius,
         min_track_clearance=mm(data.get("min_track_clearance_mm", 0)),
         min_via_clearance=mm(data.get("min_via_clearance_mm", 0)),
     )
@@ -183,8 +197,13 @@ def campaign_changes(
         {"document": "pcb", "target": removal, "op": "remove", "path": []}
         for removal in (removals or [])
     ]
-    materialized = (pair for original in route.segments for pair in
-                    (segment_dimensions(original) if segment_dimensions else ((original, width),)))
+    materialized = (
+        pair
+        for original in route.segments
+        for pair in (
+            segment_dimensions(original) if segment_dimensions else ((original, width),)
+        )
+    )
     for segment, segment_width in materialized:
         expression = (
             f"(segment (start {_number(segment.start.x)} {_number(segment.start.y)}) "
@@ -316,17 +335,29 @@ def plan(
     if snapshot is not None:
         if not isinstance(snapshot, str) or not snapshot:
             raise ValueError("board_snapshot must be a saved PCB path or 'pcb'")
-        path = native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
+        path = (
+            native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
+        )
         if not path.is_absolute():
             path = project / path
         snapshot_path = path.resolve()
-        reader = native_cache.load if native_cache is not None else read_native_obstacles
+        reader = (
+            native_cache.load if native_cache is not None else read_native_obstacles
+        )
         native = reader(path, net, assume_refill=assume_refill, removals=removals)
-        disabled = [layer for layer in requested_layers if layer not in native.enabled_layers]
+        disabled = [
+            layer for layer in requested_layers if layer not in native.enabled_layers
+        ]
         if "layers" in data and disabled:
-            raise ValueError("Requested copper layers are not enabled on the saved board: " + ", ".join(disabled))
-        layers = ([layer for layer in layers if layer in native.enabled_layers]
-                  if "layers" in data else list(native.enabled_layers))
+            raise ValueError(
+                "Requested copper layers are not enabled on the saved board: "
+                + ", ".join(disabled)
+            )
+        layers = (
+            [layer for layer in layers if layer in native.enabled_layers]
+            if "layers" in data
+            else list(native.enabled_layers)
+        )
         if start_layer not in layers or end_layer not in layers:
             raise ValueError("Endpoint layers must be enabled on the saved board")
         obstacles.extend(native.obstacles)
@@ -334,12 +365,18 @@ def plan(
         existing_vias = native.vias
         source_hash = native.source_sha256
     if constraints is not None:
-        eligible, excluded_layers = constraints.eligible_layers(layers, width, clearance)
+        eligible, excluded_layers = constraints.eligible_layers(
+            layers, width, clearance
+        )
         layers = list(eligible)
         if start_layer not in layers or end_layer not in layers:
-            raise ValueError("An endpoint layer does not satisfy the supplied electrical limits")
+            raise ValueError(
+                "An endpoint layer does not satisfy the supplied electrical limits"
+            )
         if snapshot is not None:
-            constraints.check_configured_stackup(layers, dict(native.copper_thicknesses))
+            constraints.check_configured_stackup(
+                layers, dict(native.copper_thicknesses)
+            )
     for key in ("max_expansions", "max_cells"):
         if key in data and (
             isinstance(data[key], bool) or not isinstance(data[key], int)
@@ -413,7 +450,9 @@ def plan(
         check_budget=check_budget,
         first_feasible=data.get("first_feasible", False),
     )
-    route = optimizer.route(start, start_layer, end, end_layer, candidate_check=candidate_check)
+    route = optimizer.route(
+        start, start_layer, end, end_layer, candidate_check=candidate_check
+    )
     electrical = {
         "status": "not_assessed",
         "reason": "No electrical constraints supplied",

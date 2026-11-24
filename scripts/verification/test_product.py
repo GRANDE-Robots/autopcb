@@ -24,7 +24,7 @@ from core.paths import (
     support_input_name,
 )
 from autopcb.native import Native
-from core.project import PROFILE_NAME, ProjectPaths, SourceSnapshot, declared_high_speed
+from core.project import PROFILE_NAME, ProjectPaths, ProjectProfile, SourceSnapshot
 from pcb.route_validation import _copy_inputs, _inputs
 
 
@@ -62,20 +62,21 @@ class ProjectIntakeTests(unittest.TestCase):
     def test_family_empty_pair_declaration_differs_from_unknown_model(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.assertIsNone(declared_high_speed(root, {"GND"}))
+            self.assertIsNone(ProjectProfile.declared_high_speed(root, {"GND"}))
             profile = root / PROFILE_NAME
             profile.write_text(
                 '{"schema_version":1,"high_speed_reviewed":true,"differential_pairs":[]}'
             )
-            self.assertEqual(declared_high_speed(root, {"GND"}), set())
+            self.assertEqual(ProjectProfile.declared_high_speed(root, {"GND"}), set())
             profile.write_text(
                 '{"schema_version":1,"high_speed_reviewed":true,"differential_pairs":[["P","N"]]}'
             )
             self.assertEqual(
-                declared_high_speed(root, {"/P", "/N", "GND"}), {"/P", "/N"}
+                ProjectProfile.declared_high_speed(root, {"/P", "/N", "GND"}),
+                {"/P", "/N"},
             )
             with self.assertRaisesRegex(ValueError, "Missing"):
-                declared_high_speed(root, {"P", "/P", "N"})
+                ProjectProfile.declared_high_speed(root, {"P", "/P", "N"})
 
 
 class WorkspaceTests(unittest.TestCase):

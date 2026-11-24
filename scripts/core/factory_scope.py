@@ -14,11 +14,11 @@ from pathlib import Path
 from core.paths import data_path, support_input_name
 
 from core.assembly_rotation import POLICY_FILE as ROTATION_POLICY_FILE
-from core.assembly_rotation import SCHEDULE_FIELDS, apply_offsets, load_policy
+from core.assembly_rotation import SCHEDULE_FIELDS, AssemblyRotation
 from core.export_helpers import (
     BOM_FIELDS,
     CPL_FIELDS,
-    natural,
+    BomRows,
     readcsv,
     require,
     sha,
@@ -164,7 +164,7 @@ def consolidate(parts, geometry_by_ref):
         identity_geometries[identity].add(geometry)
     rows, evidence = [], []
     for key, members in groups.items():
-        members.sort(key=lambda p: natural(p["Designator"]))
+        members.sort(key=lambda p: BomRows.natural(p["Designator"]))
         first = members[0]
         row = {
             k: first[k]
@@ -193,8 +193,8 @@ def consolidate(parts, geometry_by_ref):
                 "Original_comments": sorted({p["Comment"] for p in members}),
             }
         )
-    rows.sort(key=lambda r: natural(r["Designator"].split(",")[0]))
-    evidence.sort(key=lambda r: natural(r["Designator"].split(",")[0]))
+    rows.sort(key=lambda r: BomRows.natural(r["Designator"].split(",")[0]))
+    evidence.sort(key=lambda r: BomRows.natural(r["Designator"].split(",")[0]))
     covered = [r for row in rows for r in row["Designator"].split(",")]
     require(
         len(covered) == len(set(covered)) == len(parts) and set(covered) == set(refs),
@@ -348,11 +348,11 @@ def export_factory_scope(
     bom, merge_evidence, split_evidence = consolidate(factory, geometry)
     factoryrefs = {p["Designator"] for p in factory}
     rotation_policy = data_path(project, ROTATION_POLICY_FILE)
-    factorycpl, rotation_schedule = apply_offsets(
+    factorycpl, rotation_schedule = AssemblyRotation.apply(
         [p for p in cpl if p["Designator"] in factoryrefs],
         factory,
         geometry,
-        load_policy(project),
+        AssemblyRotation.load(project),
     )
     require(
         sum(p["Quantity"] for p in bom) == len(factorycpl) == len(factory),
@@ -381,10 +381,10 @@ def export_factory_scope(
             for p in project.glob("*.kicad_*")
             if p.suffix in (".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_dru")
         },
-        "system_required_refs": sorted(allrefs, key=natural),
-        "factory_assembly_refs": sorted(factoryrefs, key=natural),
+        "system_required_refs": sorted(allrefs, key=BomRows.natural),
+        "factory_assembly_refs": sorted(factoryrefs, key=BomRows.natural),
         "required_owner_install_refs": sorted(
-            {p["Designator"] for p in owner}, key=natural
+            {p["Designator"] for p in owner}, key=BomRows.natural
         ),
         "system_parts": len(parts),
         "factory_parts": len(factory),

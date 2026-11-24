@@ -12,7 +12,7 @@ from autopcb import design, jobs
 from autopcb.layout import Budget, Layout
 from autopcb.native import Native
 from autopcb.workspace import Workspace
-from core.project import project_entries
+from core.project import ProjectPaths
 
 
 class DesktopWorkspace:
@@ -189,7 +189,7 @@ def _run(args) -> dict:
         entries = (
             workspace.entries()
             if args.project is None
-            else project_entries(
+            else ProjectPaths.entries(
                 args.project if args.project.is_dir() else args.project.parent
             )
         )

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.assembly_rotation import POLICY_FILE, apply_offsets, load_policy
+from core.assembly_rotation import POLICY_FILE, AssemblyRotation
 
 
 def fixture():
@@ -59,7 +59,7 @@ class RotationTests(unittest.TestCase):
     def test_only_qualified_angle_changes_without_mutating_native_or_positions(self):
         parts, cpl, geometry, p = fixture()
         original = copy.deepcopy(cpl)
-        out, receipt = apply_offsets(cpl, parts, geometry, p)
+        out, receipt = AssemblyRotation.apply(cpl, parts, geometry, p)
         self.assertEqual(cpl, original)
         self.assertEqual(out[0]["Rotation"], "90.000000")
         self.assertEqual(out[1:], original[1:])
@@ -74,7 +74,7 @@ class RotationTests(unittest.TestCase):
         cpl[0]["Layer"] = "Bottom"
         p["overrides"][0]["expected"]["Layer"] = "Bottom"
         p["overrides"][0]["offset_deg"] = -90
-        out, _ = apply_offsets(cpl, parts, geometry, p)
+        out, _ = AssemblyRotation.apply(cpl, parts, geometry, p)
         self.assertEqual(out[0]["Rotation"], "270.000000")
         self.assertEqual(out[0]["Layer"], "Bottom")
 
@@ -90,7 +90,7 @@ class RotationTests(unittest.TestCase):
             parts, cpl, g, p = fixture()
             p["overrides"][0].update(change)
             with self.subTest(change=change), self.assertRaises(RuntimeError):
-                apply_offsets(cpl, parts, g, p)
+                AssemblyRotation.apply(cpl, parts, g, p)
 
     def test_changed_identity_angle_side_or_geometry_cannot_reuse_offset(self):
         for field in (
@@ -110,7 +110,7 @@ class RotationTests(unittest.TestCase):
                 self.subTest(field=field),
                 self.assertRaisesRegex(RuntimeError, "stale rotation guard"),
             ):
-                apply_offsets(cpl, parts, g, p)
+                AssemblyRotation.apply(cpl, parts, g, p)
 
     def test_duplicate_missing_or_owner_only_reference_is_rejected(self):
         for mode in ("duplicate_rule", "missing_ref", "owner_only", "duplicate_cpl"):
@@ -125,7 +125,7 @@ class RotationTests(unittest.TestCase):
             if mode == "duplicate_cpl":
                 cpl.append(dict(cpl[0]))
             with self.subTest(mode=mode), self.assertRaises(RuntimeError):
-                apply_offsets(cpl, parts, g, p)
+                AssemblyRotation.apply(cpl, parts, g, p)
 
     def test_actual_qualification_file_must_match_its_controlled_hash(self):
         for folder, reference in (
@@ -148,17 +148,17 @@ class RotationTests(unittest.TestCase):
                     "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
                 }
                 (inputs / POLICY_FILE).write_text(json.dumps(policy))
-                self.assertEqual(load_policy(root), policy)
+                self.assertEqual(AssemblyRotation.load(root), policy)
                 evidence.write_text("different preview")
                 with self.assertRaisesRegex(
                     RuntimeError, "qualification evidence changed"
                 ):
-                    load_policy(root)
+                    AssemblyRotation.load(root)
 
     def test_empty_policy_preserves_every_original_factory_row(self):
         parts, cpl, g, p = fixture()
         p["overrides"] = []
-        out, schedule = apply_offsets(cpl, parts, g, p)
+        out, schedule = AssemblyRotation.apply(cpl, parts, g, p)
         self.assertEqual(out, cpl)
         self.assertEqual(schedule, [])
 

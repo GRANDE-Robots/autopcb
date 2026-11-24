@@ -315,10 +315,10 @@ class ReferenceScreen:
 
     def _scope(self, names: set[str]) -> tuple[list, str | None]:
         """Return the declared pairs and their reference net, or raise the blocker."""
-        from core.project import declared_pairs, read_profile
+        from core.project import ProjectProfile
         from pcb.net_routing.reference import high_speed_nets
 
-        pairs = declared_pairs(self.paths.root, names)
+        pairs = ProjectProfile.declared_pairs(self.paths.root, names)
         if pairs is None:
             raise ValueError(
                 "Review the high-speed scope and record an explicit pair list in the project profile."
@@ -336,7 +336,7 @@ class ReferenceScreen:
                 )
         if not pairs:
             return pairs, None
-        configured = read_profile(self.paths.root).get("reference_net", "GND")
+        configured = ProjectProfile.read(self.paths.root).get("reference_net", "GND")
         if not isinstance(configured, str) or not configured:
             raise ValueError("Choose a native reference net in the project profile.")
         matches = names & {configured, "/" + configured}

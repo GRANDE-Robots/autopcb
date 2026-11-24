@@ -10,7 +10,7 @@ from pathlib import Path
 import pcbnew as pcb
 
 from autopcb.native import Native
-from core.project import ProjectPaths, declared_pairs
+from core.project import ProjectPaths, ProjectProfile
 from pcb.freeroute_delta import native_item_nets, unconnected_by_net
 from pcb.net_routing.protection import ProtectedState
 from pcb.net_routing.reference import adjacent_reference_layers, sample_reference
@@ -211,7 +211,7 @@ def seed(entry: Path, request: dict) -> dict:
             "Pair seeding needs an outer signal layer and its adjacent reference layer."
         )
     names = {str(name) for name in board.GetNetsByName() if str(name)}
-    pairs = declared_pairs(paths.root, names)
+    pairs = ProjectProfile.declared_pairs(paths.root, names)
     ground_matches = names & {limits.reference_net, "/" + limits.reference_net}
     if (
         not pairs

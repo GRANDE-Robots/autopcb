@@ -23,12 +23,9 @@ from core.export_helpers import (
     CPL_FIELDS,
     FILES,
     REGISTER_FIELDS,
+    BomRows,
     assert_current_inputs,
-    exact_metadata,
     factory_input_dir,
-    feature_kind,
-    group_bom,
-    natural,
     readcsv,
     require,
     sha,
@@ -215,7 +212,7 @@ def main():
     native_flags = []
     module_rows = []
     native_fields_by_ref = {}
-    for ref in sorted(set(fs) | set(comps), key=natural):
+    for ref in sorted(set(fs) | set(comps), key=BomRows.natural):
         f = fs.get(ref)
         c = comps.get(ref)
         require(f is not None, f"{ref}: schematic has no placed PCB footprint")
@@ -225,7 +222,7 @@ def main():
             else {e.GetName(): e.GetText() for e in f.GetFields()}
         )
         fp = str(f.GetFPID().GetLibItemName())
-        kind = feature_kind(ref, fp, fields, known_features)
+        kind = BomRows.feature_kind(ref, fp, fields, known_features)
         if kind:
             require(
                 ref in known_features
@@ -253,7 +250,7 @@ def main():
             c.findtext("footprint", "").split(":")[-1] == fp,
             f"{ref}: schematic/PCB footprint mismatch",
         )
-        meta = exact_metadata(fields, old.get(ref, {}), ref, provenance)
+        meta = BomRows.exact_metadata(fields, old.get(ref, {}), ref, provenance)
         boardfields = {e.GetName(): e.GetText() for e in f.GetFields()}
         for k in ["MPN", "Manufacturer"]:
             if k in boardfields:
@@ -337,7 +334,7 @@ def main():
     require(bool(parts), "No purchased parts or modules found")
     module_refs = {r["Designator"] for r in module_rows}
     pr = [r for r in parts if r["Designator"] not in module_refs]
-    bom = group_bom(parts)
+    bom = BomRows.group(parts)
     writecsv(M / FILES["register"], pr, REGISTER_FIELDS)
     writecsv(M / FILES["bom"], bom, BOM_FIELDS)
     writecsv(
@@ -372,10 +369,10 @@ def main():
         {
             "source_sha256": source,
             "required_refs": [r["Designator"] for r in parts],
-            "required_module_refs": sorted(module_refs, key=natural),
+            "required_module_refs": sorted(module_refs, key=BomRows.natural),
             "fabricated_feature_refs": [r["Designator"] for r in features],
             "legacy_register_refs_not_in_current_board_parts": sorted(
-                set(old) - {r["Designator"] for r in pr}, key=natural
+                set(old) - {r["Designator"] for r in pr}, key=BomRows.natural
             ),
             "membership_basis": (
                 "Native schematic plus placed board, explicit fabricated "
@@ -792,9 +789,9 @@ def main():
     from release.normalize_ipc_netlist import normalize as normalize_ipc
 
     normalize_ipc(P, OUT)
-    from core.fabrication_supplements import apply_fabrication_supplements
+    from core.fabrication_supplements import FabricationSupplements
 
-    apply_fabrication_supplements(P, M)
+    FabricationSupplements.apply(P, M)
     from release.generate_factory_documents import generate as generate_factory_docs
 
     generate_factory_docs(P, OUT)

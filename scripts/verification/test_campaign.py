@@ -12,12 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from core.campaign_cli import apply_plan, main
-from core.kicad_campaign import (
-    CampaignFile,
-    CampaignPlanner,
-    _build_target_index,
-    _select,
-)
+from core.kicad_campaign import CampaignFile, CampaignForms, CampaignPlanner
 from core.kicad_sexpr import Form, parse
 
 
@@ -225,21 +220,22 @@ class CampaignTests(unittest.TestCase):
             {"kind": "segment", "uuid": "track-1"},
             {"kind": "footprint", "reference": "TP2"},
         ]
-        index = _build_target_index(root, [{"target": target} for target in targets])
-        expected = [_select(root, target) for target in targets]
+        index = CampaignForms.index(root, [{"target": target} for target in targets])
+        expected = [CampaignForms.select(root, target) for target in targets]
         with mock.patch.object(
             Form, "descendants", side_effect=AssertionError("unexpected rescan")
         ):
             self.assertEqual(
-                [_select(root, target, index) for target in targets], expected
+                [CampaignForms.select(root, target, index) for target in targets],
+                expected,
             )
 
     def test_batched_index_still_rejects_duplicate_uuids(self):
         root = parse('(kicad_pcb (segment (uuid "same")) (segment (uuid "same")))')
         target = {"kind": "segment", "uuid": "same"}
-        index = _build_target_index(root, [{"target": target}])
+        index = CampaignForms.index(root, [{"target": target}])
         with self.assertRaisesRegex(ValueError, "exactly one"):
-            _select(root, target, index)
+            CampaignForms.select(root, target, index)
 
     def test_index_preserves_missing_and_invalid_selector_errors(self):
         root = parse(PCB)
@@ -251,13 +247,13 @@ class CampaignTests(unittest.TestCase):
             {"kind": "pad", "uuid": 42},
             {},
         ]
-        index = _build_target_index(root, [{"target": target} for target in targets])
+        index = CampaignForms.index(root, [{"target": target} for target in targets])
         for target in targets:
             with self.subTest(target=target):
                 with self.assertRaises(ValueError) as original:
-                    _select(root, target)
+                    CampaignForms.select(root, target)
                 with self.assertRaises(type(original.exception)) as indexed:
-                    _select(root, target, index)
+                    CampaignForms.select(root, target, index)
                 self.assertEqual(str(indexed.exception), str(original.exception))
 
     def test_batched_uuid_edits_preserve_other_source_bytes(self):

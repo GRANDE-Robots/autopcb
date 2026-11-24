@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from core.kicad_campaign import CampaignFile, Plan, digest
-from core.library_edits import LibraryInputs, file_hash, library_path, plan_library
+from core.compat import file_sha256
+from core.library_edits import LibraryInputs, library_path, plan_library
 from core.library_validation import validate_library
 from core.toolchain import kicad_cli
 
@@ -41,7 +42,7 @@ class PreparedLibraryEdit:
         self.inputs.verify_unchanged()
         if digest(self.campaign_path.read_bytes()) != self.campaign_hash:
             raise RuntimeError("Campaign changed; preview it again")
-        if not self.cli_path.is_file() or file_hash(self.cli_path) != self.cli_hash:
+        if not self.cli_path.is_file() or file_sha256(self.cli_path) != self.cli_hash:
             raise RuntimeError("KiCad CLI changed; preview the library campaign again")
 
     @property
@@ -109,7 +110,7 @@ def prepare(
     project = project.resolve()
     target = library_path(project, document)
     cli_path = kicad_cli(cli)
-    cli_hash = file_hash(cli_path)
+    cli_hash = file_sha256(cli_path)
     inputs = LibraryInputs.capture(project)
     campaign_path, data, original_campaign = CampaignFile(project).read(campaign)
     selected = _selected_changes(project, target, data["changes"])

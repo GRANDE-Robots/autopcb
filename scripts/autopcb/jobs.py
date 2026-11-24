@@ -19,7 +19,7 @@ from autopcb.policy import routing_policy
 from core.export_helpers import sha
 from core.kicad_sexpr import quote
 from core.paths import ProjectStorage
-from core.project import PROFILE_NAME, ProjectPaths, SourceSnapshot, read_profile
+from core.project import PROFILE_NAME, ProjectPaths, ProjectProfile, SourceSnapshot
 
 
 class DraftPlacement:
@@ -280,7 +280,7 @@ def review_evidence(
     reference: dict,
     storage: ProjectStorage | None = None,
 ) -> tuple[bytes | None, str | None]:
-    profile = read_profile(paths.root)
+    profile = ProjectProfile.read(paths.root)
     review = profile.pop("electrical_review", None)
     if not isinstance(review, dict) or not isinstance(review.get("file"), str):
         return None, "A source-bound electrical review report is required."
@@ -400,7 +400,9 @@ def verify(
             working.root / "autopcb-native-reports",
             snapshot,
             storage,
-            save_zones=bool(read_profile(working.root).get("differential_pairs")),
+            save_zones=bool(
+                ProjectProfile.read(working.root).get("differential_pairs")
+            ),
         )
     snapshot.verify_unchanged()
     return {

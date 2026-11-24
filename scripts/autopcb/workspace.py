@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.paths import ProjectStorage
-from core.project import ProjectPaths, project_entries
+from core.project import ProjectPaths
 
 
 @dataclass(frozen=True)
@@ -48,9 +48,9 @@ class Workspace:
                 if directory.is_dir()
                 and not directory.is_symlink()
                 and not directory.name.startswith(".")
-                for project in project_entries(directory)
+                for project in ProjectPaths.entries(directory)
             )
-        return tuple(sorted({*project_entries(self.root), *recorded}))
+        return tuple(sorted({*ProjectPaths.entries(self.root), *recorded}))
 
     def project(self, selected: Path | None) -> ProjectPaths:
         if selected is not None:

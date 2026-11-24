@@ -18,11 +18,11 @@ import os
 from pathlib import Path
 import tempfile
 
+from core.compat import file_sha256
 from core.paths import asset_root
 from core.toolchain import kicad_cli
 from core.pcb_io import (
     BoardSaveGuard,
-    file_sha256,
     quiet_duplicate_image_handlers,
     typed_copper,
 )

@@ -7,12 +7,10 @@ from pathlib import Path
 
 from core.export_helpers import (
     FILES,
+    BomRows,
     assert_current_inputs,
     controlled_input,
-    exact_metadata,
     factory_input_dir,
-    feature_kind,
-    group_bom,
     readcsv,
     sha,
     stable_zip,
@@ -23,7 +21,7 @@ from core.export_helpers import (
 class ExportContractTests(unittest.TestCase):
     def test_new_native_part_needs_no_old_register_row(self):
         evidence = []
-        r = exact_metadata(
+        r = BomRows.exact_metadata(
             {"MPN": "NEW", "Manufacturer": "TI", "LCSC": "C42"}, {}, "U99", evidence
         )
         self.assertEqual(r["MPN"], "NEW")
@@ -31,7 +29,7 @@ class ExportContractTests(unittest.TestCase):
 
     def test_native_mpn_change_overrides_stale_register(self):
         e = []
-        r = exact_metadata(
+        r = BomRows.exact_metadata(
             {"MPN": "DMG2305UX-7", "Manufacturer": "Diodes", "LCSC": "C150470"},
             {"MPN": "DMP2305U-7", "Manufacturer": "old", "LCSC Part #": "old"},
             "Q4",
@@ -42,20 +40,20 @@ class ExportContractTests(unittest.TestCase):
 
     def test_explicit_blank_mpn_does_not_fallback(self):
         with self.assertRaises(RuntimeError):
-            exact_metadata(
+            BomRows.exact_metadata(
                 {"MPN": "", "Manufacturer": "TI"}, {"MPN": "STALE"}, "U1", []
             )
 
     def test_absent_field_may_use_controlled_fallback(self):
         e = []
-        r = exact_metadata(
+        r = BomRows.exact_metadata(
             {"Manufacturer": "TI"}, {"MPN": "EXACT", "LCSC Part #": ""}, "U1", e
         )
         self.assertEqual(r["MPN"], "EXACT")
         self.assertIn("fallback", e[1]["Source"])
 
     def test_native_empty_lcsc_retained_for_global_sourcing(self):
-        r = exact_metadata(
+        r = BomRows.exact_metadata(
             {"MPN": "EXACT", "Manufacturer": "TI", "LCSC": ""},
             {"LCSC Part #": "STALE"},
             "U1",
@@ -64,12 +62,15 @@ class ExportContractTests(unittest.TestCase):
         self.assertEqual(r["LCSC Part #"], "")
 
     def test_reference_prefix_alone_never_omits_purchase(self):
-        self.assertIsNone(feature_kind("TP99", "Connector_PogoPin", {"MPN": "123"}, {}))
-        self.assertIsNone(feature_kind("TP99", "Unknown", {}, {}))
+        self.assertIsNone(
+            BomRows.feature_kind("TP99", "Connector_PogoPin", {"MPN": "123"}, {})
+        )
+        self.assertIsNone(BomRows.feature_kind("TP99", "Unknown", {}, {}))
 
     def test_only_verified_feature_family_is_classified(self):
         self.assertEqual(
-            feature_kind("TP99", "TestPoint_Pad_D1.0mm", {}, {}), "Fabricated test pad"
+            BomRows.feature_kind("TP99", "TestPoint_Pad_D1.0mm", {}, {}),
+            "Fabricated test pad",
         )
 
     def test_dynamic_group_counts_include_added_parts_and_modules(self):
@@ -89,7 +90,7 @@ class ExportContractTests(unittest.TestCase):
                 ("U3", "Teensy", "Module", "PJRC", "OWNER", ""),
             ]
         ]
-        bom = group_bom(parts)
+        bom = BomRows.group(parts)
         self.assertEqual(len(bom), 3)
         self.assertEqual(sum(r["Quantity"] for r in bom), 4)
         self.assertIn("U3", {r for x in bom for r in x["Designator"].split(",")})

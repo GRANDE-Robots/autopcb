@@ -18,7 +18,7 @@ from pcb.net_routing.rework import (
     ReworkWeights,
     capture_removals,
 )
-from pcb.net_routing.runner import _split_failed
+from pcb.net_routing.runner import RoundQueue
 from pcb.net_routing.schedule import BoardPlan
 from pcb.route_junctions import junction_changes
 from pcb.route_optimizer import COPPER_LAYERS, Via, mm
@@ -46,13 +46,13 @@ class ReworkTests(unittest.TestCase):
         request, policy = {"nets": []}, {"exclude_nets": []}
         high_speed = ("USB_DP", "USB_DM")
         with (
-            patch.object(runner, "_board", return_value=board),
+            patch.object(runner.NativePreview, "board", return_value=board),
             patch.object(
                 runner, "unqualified_working_nets", return_value={"GND", "CONTROL"}
             ),
             patch.object(runner, "compile_reroutes", return_value={}) as compile_repair,
         ):
-            runner._compile_reroutes_native(Path("unused"), request, policy, high_speed)
+            runner.NativePreview.reroutes(Path("unused"), request, policy, high_speed)
         compile_repair.assert_called_once_with(
             board,
             request,
@@ -1325,7 +1325,7 @@ class ReworkTests(unittest.TestCase):
             "rip_up": {"B": [{"kind": "segment", "uuid": "old"}]},
         }
         queue = []
-        _split_failed(queue, [request], {"A": 2, "B": 2})
+        RoundQueue.split_failed(queue, [request], {"A": 2, "B": 2})
         self.assertFalse(queue)
 
     def test_search_ranks_reuse_above_cheaper_but_disruptive_replacement(self):

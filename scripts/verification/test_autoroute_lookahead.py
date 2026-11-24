@@ -62,10 +62,10 @@ class FakeSnapshot:
 
 class AutoLookaheadTests(unittest.TestCase):
     def test_only_checked_neutral_previews_can_be_stepping_stones(self):
-        from pcb.net_routing.runner import _neutral_candidate_eligible
+        from pcb.net_routing.runner import PreviewJudge
 
         good = candidate(b"best", b"neutral", 10)
-        self.assertTrue(_neutral_candidate_eligible(good, 10))
+        self.assertTrue(PreviewJudge.neutral_eligible(good, 10))
         for bad in (
             candidate(b"best", b"x", 9),
             candidate(b"best", b"x", 11),
@@ -74,7 +74,7 @@ class AutoLookaheadTests(unittest.TestCase):
             {**good, "new_style_issues": ("staircases",)},
             {**good, "status": "rejected"},
         ):
-            self.assertFalse(_neutral_candidate_eligible(bad, 10))
+            self.assertFalse(PreviewJudge.neutral_eligible(bad, 10))
 
     def test_neutral_branch_promotes_only_a_fully_rechecked_reduction(self):
         result, original, seen = self._exercise("improved")
@@ -152,7 +152,7 @@ class AutoLookaheadTests(unittest.TestCase):
                 return SimpleNamespace(plan=plan)
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     self.assertEqual(
                         (args[0] / "v4.1.kicad_pcb").read_bytes(), b"neutral"
                     )

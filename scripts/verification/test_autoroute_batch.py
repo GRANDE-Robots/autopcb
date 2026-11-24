@@ -313,16 +313,18 @@ class CombinedBatchTests(unittest.TestCase):
         }
         with (
             mock.patch.object(
-                runner, "_search_alternatives_native", return_value=searches
+                runner.NativePreview, "search_alternatives", return_value=searches
             ),
             mock.patch.object(
-                runner, "_preview_round_native", return_value=combined
+                runner.NativePreview, "preview_round", return_value=combined
             ) as validate,
             mock.patch.object(
                 runner, "run_native", side_effect=AssertionError("unexpected fallback")
             ),
         ):
-            decision = runner._preview_ordinary_native(Path("."), requests, 2, (), 2)
+            decision = runner.NativePreview.preview_ordinary(
+                Path("."), requests, 2, (), 2
+            )
         self.assertTrue(decision["combined"])
         self.assertIs(decision["result"], combined)
         self.assertEqual(validate.call_count, 1)
@@ -346,14 +348,16 @@ class CombinedBatchTests(unittest.TestCase):
         ]
         with (
             mock.patch.object(
-                runner, "_search_alternatives_native", return_value=searches
+                runner.NativePreview, "search_alternatives", return_value=searches
             ),
             mock.patch.object(
-                runner, "_preview_round_native", return_value={"status": "rejected"}
+                runner.NativePreview,
+                "preview_round",
+                return_value={"status": "rejected"},
             ),
             mock.patch.object(runner, "run_native", side_effect=individual),
         ):
-            decision = runner._preview_ordinary_native(
+            decision = runner.NativePreview.preview_ordinary(
                 Path("."), self.requests(), 2, (), 2
             )
         self.assertFalse(decision["combined"])
@@ -380,12 +384,14 @@ class CombinedBatchTests(unittest.TestCase):
         ]
         with (
             mock.patch.object(
-                runner, "_search_alternatives_native", return_value=searches
+                runner.NativePreview, "search_alternatives", return_value=searches
             ),
-            mock.patch.object(runner, "_preview_round_native") as combined,
+            mock.patch.object(runner.NativePreview, "preview_round") as combined,
             mock.patch.object(runner, "run_native", side_effect=individual),
         ):
-            decision = runner._preview_ordinary_native(Path("."), requests, 2, (), 2)
+            decision = runner.NativePreview.preview_ordinary(
+                Path("."), requests, 2, (), 2
+            )
         combined.assert_not_called()
         self.assertFalse(decision["combined"])
         self.assertEqual(decision["selected_index"], 0)
@@ -432,14 +438,14 @@ class CombinedBatchTests(unittest.TestCase):
             with (
                 self.subTest(candidate=candidate),
                 mock.patch.object(
-                    runner, "_search_alternatives_native", return_value=searches
+                    runner.NativePreview, "search_alternatives", return_value=searches
                 ),
                 mock.patch.object(
-                    runner, "_preview_round_native", return_value=candidate
+                    runner.NativePreview, "preview_round", return_value=candidate
                 ),
                 mock.patch.object(runner, "run_native", side_effect=fallback),
             ):
-                decision = runner._preview_ordinary_native(
+                decision = runner.NativePreview.preview_ordinary(
                     Path("."), self.requests(), 2, (), 2
                 )
             self.assertFalse(decision["combined"])
@@ -489,14 +495,14 @@ class CombinedBatchTests(unittest.TestCase):
             with (
                 self.subTest(candidate=candidate),
                 mock.patch.object(
-                    runner, "_search_alternatives_native", return_value=searches
+                    runner.NativePreview, "search_alternatives", return_value=searches
                 ),
                 mock.patch.object(
-                    runner, "_preview_round_native", return_value=candidate
+                    runner.NativePreview, "preview_round", return_value=candidate
                 ),
                 mock.patch.object(runner, "run_native", side_effect=fallback),
             ):
-                decision = runner._preview_ordinary_native(
+                decision = runner.NativePreview.preview_ordinary(
                     Path("."), self.requests(), 2, (), 2
                 )
             self.assertFalse(decision["combined"])
@@ -510,7 +516,7 @@ class CombinedBatchTests(unittest.TestCase):
             project = Path(directory)
             source = self.project(project)
             before = source.read_bytes()
-            decision = runner._preview_ordinary_native(
+            decision = runner.NativePreview.preview_ordinary(
                 project, self.requests(), 2, (), 2
             )
             self.assertTrue(decision["combined"], decision)
@@ -554,7 +560,7 @@ class CombinedBatchTests(unittest.TestCase):
     def test_overlapping_repair_alternatives_use_isolated_native_snapshots(self):
         from pcb.net_routing import runner
 
-        parallel = getattr(runner, "_preview_alternatives_native", None)
+        parallel = getattr(runner.NativePreview, "preview_alternatives", None)
         self.assertTrue(
             callable(parallel), "Alternative previews need isolated workers"
         )
@@ -567,7 +573,9 @@ class CombinedBatchTests(unittest.TestCase):
             results = runner.run_native(parallel, project, [limited, good], 2, ())
             self.assertEqual(len(results), 2)
             self.assertEqual(results[1]["status"], "validated_preview", results[1])
-            self.assertIs(runner._select_alternative_result(results, 2), results[1])
+            self.assertIs(
+                runner.PreviewJudge.select_alternative(results, 2), results[1]
+            )
             self.assertEqual(source.read_bytes(), before)
             self.assertFalse((project / "candidate.kicad_pcb").exists())
 
@@ -583,7 +591,7 @@ class CombinedBatchTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "Unknown|not present|not on|no pads"
             ):
-                runner._preview_alternatives_native(project, [good, bad], 2, ())
+                runner.NativePreview.preview_alternatives(project, [good, bad], 2, ())
             self.assertEqual(source.read_bytes(), before)
             self.assertFalse((project / "candidate.kicad_pcb").exists())
 

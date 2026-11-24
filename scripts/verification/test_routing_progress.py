@@ -300,7 +300,7 @@ class RoutingProgressTests(unittest.TestCase):
         from pcb.net_routing.runner import (
             _progress_elapsed,
             _publish_progress,
-            _record_failures,
+            RunState,
             _save,
         )
 
@@ -324,7 +324,7 @@ class RoutingProgressTests(unittest.TestCase):
                 progress, "publish_preview", side_effect=OSError("export failed")
             ):
                 with self.assertRaisesRegex(OSError, "export failed"):
-                    with _record_failures(state_path, state):
+                    with RunState.record_failures(state_path, state):
                         _publish_progress(Path("."), {}, state)
             saved = json.loads(state_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["checkpoint"], {"retained": True})

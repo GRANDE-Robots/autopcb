@@ -328,17 +328,27 @@ def compile_reroutes(
         and board.GetFileName()
     ):
         from pcb.net_routing.obstructions import diagnose
+        from pcb.routability import GridModel
 
-        witnesses, diagnosis_notes = diagnose(
-            board,
-            choice.anchors,
-            eligible,
-            {**settings, "name": target},
-            recovery,
-            reference_nets,
-            weights,
-        )
-        blockers.extend(diagnosis_notes)
+        # Removing tracks cannot help a net that pads and keepouts cut off.
+        if GridModel(board, policy=policy, critical_nets=reference_nets).cut_off(
+            target
+        ):
+            blockers.append(
+                "Parts and keepouts leave the net no way through; "
+                "only moving a part can connect it"
+            )
+        else:
+            witnesses, diagnosis_notes = diagnose(
+                board,
+                choice.anchors,
+                eligible,
+                {**settings, "name": target},
+                recovery,
+                reference_nets,
+                weights,
+            )
+            blockers.extend(diagnosis_notes)
     by_id = {item.uuid: item for item in (*eligible, *target_group)}
     eligible_names = {item.net for item in by_id.values()}
     topology_segments = {
@@ -527,7 +537,13 @@ def compile_reroutes(
         requests.extend(anchored)
         descriptions.extend(anchored_descriptions)
     moved, move_descriptions = placement_requests(
-        board, request, policy, recovery, choice.anchors, tuple(sorted(protected_nets))
+        board,
+        request,
+        policy,
+        recovery,
+        choice.anchors,
+        tuple(sorted(protected_nets)),
+        eligible,
     )
     requests.extend(moved)
     descriptions.extend(move_descriptions)

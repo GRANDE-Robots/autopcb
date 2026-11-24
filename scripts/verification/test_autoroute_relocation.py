@@ -1050,6 +1050,7 @@ class RelocationTests(unittest.TestCase):
             policy = {
                 "route": {**request["shared"], "clearance_mm": 0.2},
                 "max_pins": 2,
+                "placement": BOTTOM_ONLY,
             }
             anchors = (
                 Site(Point.from_mm((2, 2)), "F.Cu"),

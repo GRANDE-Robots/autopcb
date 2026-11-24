@@ -145,22 +145,36 @@ class UnsupportedPlacement(ValueError):
 class MoveGuide:
     """Rank placement moves by the relaxed route a blocked net wants to take.
 
-    The pads of eligible parts are relaxed in a diagnostic search. Parts that
-    route crosses are tried first, and poses that clear it before others.
+    The pads of eligible parts and the copper that may be replaced are relaxed
+    in a diagnostic search. Parts that route crosses are tried first, poses
+    that clear it before others, and the copper it crosses joins a move's
+    repair, so one candidate moves the part and reroutes what it crowds.
     Every candidate is still rerouted and checked natively.
     """
 
-    def __init__(self, board, witnesses=()):
+    def __init__(self, board, witnesses=(), movable=frozenset()):
         self.board, self.witnesses = board, tuple(witnesses)
+        self.movable = frozenset(movable)
 
     @classmethod
     def diagnose(
-        cls, board, request, policy, recovery, anchors, critical_nets, options, nearby
+        cls,
+        board,
+        request,
+        policy,
+        recovery,
+        anchors,
+        critical_nets,
+        options,
+        nearby,
+        records=(),
     ):
         """Relax the parts near the anchors, or every movable part when the net is cut off.
 
         A net that pads and saved copper leave no way through may need a
         distant part moved. One that still has a way through does not.
+        ``records`` are the copper items a repair may remove; the relaxed
+        route may cross them as well.
         """
         import pcbnew
         from pcb.net_routing.obstructions import diagnose
@@ -169,11 +183,9 @@ class MoveGuide:
 
         weights = ReworkWeights.from_config(request.get("rework"))
         target = request["nets"][0]["name"]
-        cut_off = (
-            len(options) > len(nearby)
-            and len(GridModel(board, policy=policy, saved_copper=True).groups(target))
-            > 1
-        )
+        cut_off = len(options) > len(nearby) and GridModel(
+            board, policy=policy, saved_copper=True
+        ).cut_off(target)
         # The parts a route starts and ends on are its endpoints, not obstructions.
         movable = {
             item[2].m_Uuid.AsString(): weights.placement_mm
@@ -190,7 +202,7 @@ class MoveGuide:
         witnesses, _ = diagnose(
             board,
             anchors,
-            [],
+            records,
             settings,
             recovery,
             critical_nets,
@@ -200,12 +212,30 @@ class MoveGuide:
         )
         return cls(
             board,
-            (witness for witness in witnesses if witness.identifiers <= movable.keys()),
+            (witness for witness in witnesses if witness.identifiers & movable.keys()),
+            movable.keys(),
         )
+
+    def parts(self, witness) -> frozenset[str]:
+        """The movable parts a witness names, without the copper it crosses."""
+        return witness.identifiers & self.movable
 
     def names(self, selection) -> bool:
         identifiers = {item[2].m_Uuid.AsString() for item in selection}
-        return any(witness.identifiers <= identifiers for witness in self.witnesses)
+        return any(self.parts(witness) <= identifiers for witness in self.witnesses)
+
+    def crossings(self, identifiers) -> tuple[str, ...]:
+        """The copper that diagnosed routes through these parts cross."""
+        return tuple(
+            sorted(
+                {
+                    uid
+                    for witness in self.witnesses
+                    if self.parts(witness) <= identifiers
+                    for uid in witness.identifiers - self.movable
+                }
+            )
+        )
 
     @property
     def corridors(self):
@@ -221,12 +251,12 @@ class MoveGuide:
         diagnosed = [
             tuple(
                 sorted(
-                    (by_id[uid] for uid in witness.identifiers),
+                    (by_id[uid] for uid in self.parts(witness)),
                     key=lambda item: item[:2],
                 )
             )
             for witness in self.witnesses
-            if len(witness.identifiers) <= 2
+            if len(self.parts(witness)) <= 2
         ]
         nearest = nearby[:3]
         result, seen = [], set()
@@ -881,7 +911,46 @@ def protected_anchor_requests(
     )
 
 
-def placement_requests(board, request, policy, recovery, anchors, critical_nets):
+class PoseLegality:
+    """Whether detached copies of parts keep courtyards and the copper edge rule legal."""
+
+    def __init__(self, board):
+        """Cache every footprint's courtyard on ``board``."""
+        self.board = board
+        self.geometry = {
+            part.m_Uuid.AsString(): _courtyard_geometry(part)
+            for part in board.GetFootprints()
+        }
+
+    def __call__(self, selected, copies) -> bool:
+        """Say whether moving ``selected`` parts to ``copies`` adds no overlap or edge breach.
+
+        Existing overlaps stay baseline findings for native checks; only new
+        ones make a pose illegal.
+        """
+        moved = {
+            item[2].m_Uuid.AsString(): _courtyard_geometry(copy)
+            for item, copy in strict_zip(selected, copies)
+        }
+        before = _courtyard_conflicts(
+            {uid: self.geometry[uid] for uid in moved}, self.geometry
+        )
+        if _courtyard_conflicts(moved, self.geometry) - before:
+            return False
+        # A pad pushed past the copper edge rule cannot pass native DRC.
+        return not (
+            _beyond_edge_clearance(
+                self.board, (pad for copy in copies for pad in copy.Pads())
+            )
+            and not _beyond_edge_clearance(
+                self.board, (pad for item in selected for pad in item[2].Pads())
+            )
+        )
+
+
+def placement_requests(
+    board, request, policy, recovery, anchors, critical_nets, records=()
+):
     """Sample independent single/package-pair poses; repair all affected nets."""
     if not recovery.placement_candidates or not board.GetFileName():
         return [], []
@@ -894,21 +963,23 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
     )
     nearby = [item for item in options if item[0] <= mm(recovery.rip_up_radius_mm * 2)]
     guide = MoveGuide.diagnose(
-        board, request, policy, recovery, anchors, critical_nets, options, nearby
+        board,
+        request,
+        policy,
+        recovery,
+        anchors,
+        critical_nets,
+        options,
+        nearby,
+        records,
     )
     selections = guide.selections(options, nearby)
     box = board.GetBoardEdgesBoundingBox()
-    footprints = tuple(board.GetFootprints())
-    all_geometry = {
-        part.m_Uuid.AsString(): _courtyard_geometry(part) for part in footprints
-    }
+    legal = PoseLegality(board)
+    tracks = {item.m_Uuid.AsString(): item for item in board.GetTracks()}
     streams = []
     for selected in selections:
         selected_ids = {item[2].m_Uuid.AsString() for item in selected}
-        before = _courtyard_conflicts(
-            {identifier: all_geometry[identifier] for identifier in selected_ids},
-            all_geometry,
-        )
         names = set().union(*(item[3] for item in selected)) | {target}
         if len(names) > recovery.placement_nets:
             continue
@@ -919,23 +990,7 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         if sum(map(len, removals.values())) > recovery.placement_items:
             continue
         choices = []
-
-        def legal(selected, copies, before=before):
-            moved = {
-                item[2].m_Uuid.AsString(): _courtyard_geometry(copy)
-                for item, copy in strict_zip(selected, copies)
-            }
-            if _courtyard_conflicts(moved, all_geometry) - before:
-                return False
-            # A pad pushed past the copper edge rule cannot pass native DRC.
-            return not (
-                _beyond_edge_clearance(
-                    board, (pad for copy in copies for pad in copy.Pads())
-                )
-                and not _beyond_edge_clearance(
-                    board, (pad for item in selected for pad in item[2].Pads())
-                )
-            )
+        crossed = guide.crossings(frozenset(selected_ids))
 
         for pose in PoseSampler(board, guide, legal).poses(selected):
             candidate = deepcopy(request)
@@ -967,6 +1022,22 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                 item["uuid"] for items in candidate_removals.values() for item in items
             }
             try:
+                # Copper the diagnosed route crosses is rerouted with the move.
+                _include_obstructions(
+                    board,
+                    candidate_removals,
+                    candidate_dimensions,
+                    [
+                        tracks[uid]
+                        for uid in crossed
+                        if uid in tracks and uid not in removed_ids
+                    ],
+                )
+                removed_ids = {
+                    item["uuid"]
+                    for items in candidate_removals.values()
+                    for item in items
+                }
                 obstructions = _placement_obstructions(
                     board,
                     copies,
@@ -998,6 +1069,10 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
             ):
                 continue
             candidate["rip_up"] = candidate_removals
+            # Several nets share the transaction: try more than one order.
+            candidate["search"]["order_trials"] = max(
+                2, candidate["search"].get("order_trials", 4)
+            )
             candidate["nets"] = [
                 _net_settings(
                     board,

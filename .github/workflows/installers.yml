@@ -22,9 +22,76 @@ jobs:
       - name: Build installer
         run: |
           python packaging/build_desktop.py --output "$env:RUNNER_TEMP\installer"
-          Get-FileHash "$env:RUNNER_TEMP\installer\*.exe" -Algorithm SHA256 | Format-List
+          Get-ChildItem "$env:RUNNER_TEMP\installer\*.exe" | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Tee-Object -FilePath "$($_.FullName).sha256"
+          }
       - uses: actions/upload-artifact@v6
         with:
           name: autopcb-windows-installer
-          path: ${{ runner.temp }}/installer/*.exe
+          path: |
+            ${{ runner.temp }}/installer/*.exe
+            ${{ runner.temp }}/installer/*.sha256
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install KiCad 10 and build tools
+        run: |
+          sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kicad kicad-symbols kicad-footprints xvfb desktop-file-utils
+          python -m pip install ".[desktop-build]"
+      - name: Build package
+        run: |
+          python packaging/build_desktop.py --output "$RUNNER_TEMP/installer"
+          cd "$RUNNER_TEMP/installer"
+          for package in *.deb; do sha256sum "$package" | tee "$package.sha256"; done
+      - name: Check package
+        run: |
+          package=$(ls "$RUNNER_TEMP"/installer/*.deb)
+          for phase in install qualify remove; do
+            xvfb-run -a bash packaging/check_linux_release.sh "$phase" "$package" "$RUNNER_TEMP/evidence"
+          done
+      - uses: actions/upload-artifact@v6
+        with:
+          name: autopcb-linux-package
+          path: |
+            ${{ runner.temp }}/installer/*.deb
+            ${{ runner.temp }}/installer/*.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: autopcb-linux-evidence
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install ".[desktop-build]"
+      - name: Build disk image
+        run: |
+          python packaging/build_desktop.py --output "$RUNNER_TEMP/installer"
+          cd "$RUNNER_TEMP/installer"
+          for image in *.dmg; do shasum -a 256 "$image" | tee "$image.sha256"; done
+      - uses: actions/upload-artifact@v6
+        with:
+          name: autopcb-macos-image
+          path: |
+            ${{ runner.temp }}/installer/*.dmg
+            ${{ runner.temp }}/installer/*.sha256
           if-no-files-found: error

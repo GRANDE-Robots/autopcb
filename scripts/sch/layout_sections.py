@@ -26,8 +26,6 @@ from pathlib import Path
 from sch.schematic_io import SiblingTempWriter
 
 GRID = 1.27  # 50 mil in mm
-TITLE_INSET_X = 2 * GRID
-TITLE_INSET_Y = 2 * GRID
 FRAME_UUID_NAMESPACE = uuid.UUID("762b12c6-c7be-4ef4-9bd6-4b3f6156bfe9")
 FRAME_STROKE = "\t\t\t(width 0.254)\n\t\t\t(type solid)\n\t\t\t(color 79 115 171 1)"
 

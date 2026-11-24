@@ -1,4 +1,8 @@
-"""Native crashes and stale or missing reports must never pass validation."""
+"""test_native_command.py: check that native crashes and stale or missing reports never
+pass validation.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import subprocess
 import tempfile
@@ -10,6 +14,8 @@ from core.native_command import NativeCommandError, NativeResourceError, run_che
 
 
 class NativeCommandTests(unittest.TestCase):
+    """Checks how checked native commands report failures and outputs."""
+
     def test_silent_failure_retains_exit_status(self):
         with mock.patch(
             "core.native_command.subprocess.run",
@@ -64,6 +70,9 @@ class NativeCommandTests(unittest.TestCase):
             output.unlink()
 
             def produce(*args, **kwargs):
+                """Stand in for the process by writing the report it must produce, after
+                checking that stdin is closed.
+                """
                 output.write_text("new")
                 self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
                 return success

@@ -1,4 +1,8 @@
-"""Concurrent preview bookkeeping waits without weakening the write lock."""
+"""test_autoroute_lock.py: check that preview bookkeeping waits for a busy lock without
+weakening it.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import subprocess
 import sys
@@ -12,17 +16,21 @@ from pcb.net_routing.runner import RunLock, _exclusive
 
 
 class LockWaitTests(unittest.TestCase):
+    """Checks the bounded wait on the autoroute run lock."""
+
     def test_retries_a_busy_lock_then_succeeds(self):
         now = [0.0]
         attempts = []
         messages = []
 
         def acquire():
+            """Stand in for a lock attempt that is busy twice, then succeeds."""
             attempts.append(1)
             if len(attempts) < 3:
                 raise OSError("busy")
 
         def advance(seconds):
+            """Stand in for sleeping by moving the fake clock forward."""
             now[0] += seconds
 
         with (
@@ -37,6 +45,7 @@ class LockWaitTests(unittest.TestCase):
         now = [0.0]
 
         def busy():
+            """Stand in for a lock attempt that is always busy."""
             raise OSError("busy")
 
         with (

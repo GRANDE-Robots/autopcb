@@ -1,4 +1,8 @@
-"""Private copies carry the reviewed policy and refuse inputs that change mid-run."""
+"""test_private_copy.py: check that private copies carry the reviewed policy and refuse
+inputs that change mid-run.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,14 @@ from core.project import ProjectPaths
 
 
 class PrivateCopyTests(unittest.TestCase):
+    """Checks the policy and input rules of a private project copy."""
+
     def setUp(self):
+        """Create a temporary project with board, project and schematic files.
+
+        Sets ``project``, ``storage`` and ``policy`` (a policy file with three recovery
+        stages) and removes the folder after the test.
+        """
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
         root = Path(self.folder.name)

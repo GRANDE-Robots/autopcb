@@ -1,4 +1,8 @@
-"""Schedule every requested net in coordinated, nonconflicting batches."""
+"""test_autoroute_scheduler.py: check that every requested net is scheduled in
+coordinated, nonconflicting batches.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,10 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class SchedulerTests(unittest.TestCase):
+    """Checks batch formation and conflict handling in the net scheduler."""
+
     def api(self):
+        """Return the net scheduler module after checking that it exists."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.scheduler"))
         from pcb.net_routing import scheduler
 

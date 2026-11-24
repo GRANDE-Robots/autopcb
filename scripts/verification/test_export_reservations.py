@@ -1,4 +1,8 @@
-"""External search guards are local, physical-layer aware and temporary."""
+"""test_export_reservations.py: check that external search guards are local, layer aware
+and temporary.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -16,6 +20,8 @@ from pcb.route_optimizer import mm
 
 
 class ExportReservationTests(unittest.TestCase):
+    """Checks the temporary reservations added around an external router run."""
+
     def test_ground_margin_is_search_only_and_keeps_high_speed_reservations(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

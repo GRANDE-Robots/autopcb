@@ -1,4 +1,8 @@
-"""Check coordinate conversion for bottom-side KiCad footprint fields."""
+"""test_footprint_text.py: check coordinate conversion for bottom-side KiCad footprint
+fields.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,8 @@ import verification.test_route_optimizer as fixtures
 
 
 class FootprintTextTests(unittest.TestCase):
+    """Checks silkscreen text moves on bottom-side footprints."""
+
     def test_rotated_bottom_field_uses_native_coordinates_without_touching_source(self):
         with tempfile.TemporaryDirectory(prefix="jessie-text-test-") as directory:
             project = Path(directory)

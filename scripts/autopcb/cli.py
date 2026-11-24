@@ -33,19 +33,24 @@ class DesktopWorkspace:
         Inputs:
             requested: Workspace the user gave, or None.
         Outputs:
-            The requested folder. Otherwise the current folder, or in a frozen Windows
-            build the ``AutoPCB/Workspace`` folder under the user's local application
-            data, created when missing. Raises ValueError when that folder cannot be
-            created.
+            The requested folder. Otherwise the current folder, or in a frozen build the
+            per-user ``AutoPCB/Workspace`` folder, created when missing: under
+            ``LOCALAPPDATA`` on Windows, ``~/Library/Application Support`` on macOS and
+            ``XDG_DATA_HOME`` (default ``~/.local/share``) elsewhere. Raises ValueError
+            when that folder cannot be created.
         """
         if requested is not None:
             return requested
-        if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        if not getattr(sys, "frozen", False):
             return Path(".")
-        local = Path(
-            os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
-        )
-        workspace = local / "AutoPCB" / "Workspace"
+        home = Path.home()
+        if sys.platform == "win32":
+            data = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+        elif sys.platform == "darwin":
+            data = home / "Library" / "Application Support"
+        else:
+            data = Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share")
+        workspace = data / "AutoPCB" / "Workspace"
         try:
             workspace.mkdir(parents=True, exist_ok=True)
         except OSError as error:

@@ -187,7 +187,8 @@ class InstallerBuilder:
             output: Folder that receives the package.
             version: Project version.
         Outputs:
-            The ``autopcb_<version>_<architecture>.deb`` path, with a ``/usr/bin/autopcb`` link and a desktop entry.
+            The ``autopcb_<version>_<architecture>.deb`` path. It depends on KiCad 10 and installs a
+            ``/usr/bin/autopcb`` link, a desktop entry and its icon.
         """
         package = bundle.parent / "package"
         control = package / "DEBIAN"
@@ -197,7 +198,7 @@ class InstallerBuilder:
         ).strip()
         (control / "control").write_text(
             f"Package: autopcb\nVersion: {version}\nSection: electronics\nPriority: optional\n"
-            f"Architecture: {arch}\nMaintainer: AutoPCB\n"
+            f"Architecture: {arch}\nMaintainer: AutoPCB\nDepends: kicad (>= 10.0)\n"
             "Description: Local KiCad project design and verification application\n",
             encoding="utf-8",
         )
@@ -210,9 +211,12 @@ class InstallerBuilder:
         shortcuts.mkdir(parents=True)
         (shortcuts / "autopcb.desktop").write_text(
             "[Desktop Entry]\nType=Application\nName=AutoPCB\nExec=/usr/bin/autopcb desktop\n"
-            "Categories=Development;Electronics;\nTerminal=false\n",
+            "Icon=autopcb\nCategories=Development;Electronics;\nTerminal=false\n",
             encoding="utf-8",
         )
+        icons = package / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps"
+        icons.mkdir(parents=True)
+        shutil.copy2(ROOT / "packaging" / "autopcb.svg", icons / "autopcb.svg")
         result = output / f"autopcb_{version}_{arch}.deb"
         InstallerBuilder.run(
             "dpkg-deb", "--root-owner-group", "--build", package, result

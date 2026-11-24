@@ -1,6 +1,5 @@
 {
  "module_functions": [
-  "packaging/build_desktop.py",
   "scripts/autopcb/cli.py",
   "scripts/autopcb/design.py",
   "scripts/autopcb/desktop.py",
@@ -94,7 +93,6 @@
   "scripts/review/refresh_gallery.py",
   "scripts/review/render_views.py",
   "scripts/review/routing_progress.py",
-  "scripts/run.py",
   "scripts/sch/deduplicate_labels.py",
   "scripts/sch/layout_sections.py",
   "scripts/sch/normalize_indentation.py",
@@ -147,7 +145,6 @@
   "scripts/verification/test_track_capsule.py"
  ],
  "missing_header": [
-  "packaging/build_desktop.py",
   "scripts/autopcb/__init__.py",
   "scripts/autopcb/__main__.py",
   "scripts/autopcb/benchmark.py",
@@ -261,7 +258,6 @@
   "scripts/review/refresh_gallery.py",
   "scripts/review/render_views.py",
   "scripts/review/routing_progress.py",
-  "scripts/run.py",
   "scripts/sch/__init__.py",
   "scripts/sch/deduplicate_labels.py",
   "scripts/sch/layout_sections.py",
@@ -385,7 +381,6 @@
   "scripts/verification/test_zone_stitch.py"
  ],
  "missing_docstrings": [
-  "packaging/build_desktop.py",
   "scripts/autopcb/benchmark.py",
   "scripts/autopcb/cli.py",
   "scripts/autopcb/crowding.py",
@@ -487,7 +482,6 @@
   "scripts/review/refresh_gallery.py",
   "scripts/review/render_views.py",
   "scripts/review/routing_progress.py",
-  "scripts/run.py",
   "scripts/sch/deduplicate_labels.py",
   "scripts/sch/layout_sections.py",
   "scripts/sch/normalize_indentation.py",

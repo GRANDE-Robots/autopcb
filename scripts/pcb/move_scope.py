@@ -1,4 +1,7 @@
-"""Which footprints routing may move, as set by the placement policy."""
+"""move_scope.py: which footprints routing may move, as set by the placement policy.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -27,6 +30,14 @@ class MoveScope:
 
     @classmethod
     def from_config(cls, raw: object) -> MoveScope:
+        """Build the scope from the placement policy of a routing configuration.
+
+        Inputs:
+            raw: None for the default scope, or an object with optional sides (a list
+                of top and bottom), through_hole and locked (booleans).
+        Outputs:
+            The scope. Raises ValueError for any other field or an invalid value.
+        """
         if raw is None:
             return cls()
         if not isinstance(raw, dict) or set(raw) - {"sides", "through_hole", "locked"}:
@@ -45,6 +56,7 @@ class MoveScope:
 
     @staticmethod
     def reference(footprint: Form) -> str | None:
+        """The reference designator of a parsed footprint, or None when it has none."""
         for prop in footprint.children("property"):
             atoms = prop.atoms()
             if len(atoms) >= 3 and atoms[1].value == "Reference":
@@ -77,6 +89,7 @@ class MoveScope:
         return None
 
     def _footprints(self, text: str) -> dict[str | None, list[Form]]:
+        """The footprints parsed from the board text, grouped by reference."""
         blocks: dict[str | None, list[Form]] = {}
         for footprint in parse(text).children("footprint"):
             blocks.setdefault(self.reference(footprint), []).append(footprint)

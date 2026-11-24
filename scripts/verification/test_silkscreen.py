@@ -8,7 +8,7 @@ import unittest
 class SilkscreenTests(unittest.TestCase):
     def test_front_connector_bank_shares_a_column_without_changing_other_artwork(self):
         import pcbnew
-        from pcb.silkscreen import plan_top_text, verify_top_text_alignment
+        from pcb.silkscreen import TopLabels, SilkscreenProofs
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -39,11 +39,11 @@ class SilkscreenTests(unittest.TestCase):
                     {"side": "right", "items": [["J1", "FIRST"], ["J2", "SECOND"]]}
                 ],
             }
-            candidate, _ = plan_top_text(project, policy)
+            candidate, _ = TopLabels.plan(project, policy)
             self.assertEqual(path.read_bytes(), original)
-            verify_top_text_alignment(original, candidate)
+            SilkscreenProofs.verify_top_alignment(original, candidate)
             with self.assertRaisesRegex(RuntimeError, "changed content"):
-                verify_top_text_alignment(
+                SilkscreenProofs.verify_top_alignment(
                     original, candidate.replace(b'"BOTTOM"', b'"ALTERED"')
                 )
             path.write_bytes(candidate)
@@ -64,12 +64,12 @@ class SilkscreenTests(unittest.TestCase):
                     items[label].GetPosition().y - items[ref].GetPosition().y, 1600000
                 )
                 self.assertEqual(items[ref].GetTextAngle().AsDegrees(), 0)
-            self.assertEqual(plan_top_text(project, policy)[0], candidate)
+            self.assertEqual(TopLabels.plan(project, policy)[0], candidate)
 
     def test_stock_artwork_is_repaired_even_when_no_text_or_edge_needs_moving(self):
         import pcbnew
         from core.kicad_sexpr import parse
-        from pcb.silkscreen import plan_silkscreen, verify_silkscreen_only
+        from pcb.silkscreen import SilkscreenPlanner, SilkscreenProofs
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -104,7 +104,7 @@ class SilkscreenTests(unittest.TestCase):
             )
             library = project / "stock.kicad_mod"
             library.write_text('(footprint "Stock" ' + changed + ")")
-            candidate, _ = plan_silkscreen(
+            candidate, _ = SilkscreenPlanner.plan(
                 project,
                 {
                     "schema": 1,
@@ -112,10 +112,10 @@ class SilkscreenTests(unittest.TestCase):
                 },
             )
             self.assertNotEqual(candidate, original)
-            verify_silkscreen_only(original, candidate)
+            SilkscreenProofs.verify_only(original, candidate)
 
     def test_restoring_library_silk_keeps_custom_models_and_all_pad_geometry(self):
-        from pcb.silkscreen import restore_stock_silk, verify_silkscreen_only
+        from pcb.silkscreen import StockSilk, SilkscreenProofs
 
         old = '(fp_line (start 0 0) (end 1 0) (layer "F.SilkS") (uuid "old"))'
         new = '(fp_line (start 0 0.3) (end 1 0.3) (layer "F.SilkS") (uuid "stock"))'
@@ -129,17 +129,17 @@ class SilkscreenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             library = Path(directory) / "stock.kicad_mod"
             library.write_text('(footprint "J" ' + new + ")")
-            after = restore_stock_silk(
+            after = StockSilk.restore(
                 source.encode(), [{"reference": "J3", "path": str(library)}]
             )
-            verify_silkscreen_only(source.encode(), after)
+            SilkscreenProofs.verify_only(source.encode(), after)
             self.assertIn(model.encode(), after)
             self.assertIn(b'(uuid "old")', after)
             self.assertIn(b"(start 0 0.3)", after)
             library.write_text(
                 '(footprint "J" ' + new.replace(' (uuid "stock")', "") + ")"
             )
-            after = restore_stock_silk(
+            after = StockSilk.restore(
                 source.encode(), [{"reference": "J3", "path": str(library)}]
             )
             self.assertIn(b'(uuid "old")', after)
@@ -148,7 +148,7 @@ class SilkscreenTests(unittest.TestCase):
         self,
     ):
         import pcbnew
-        from pcb.silkscreen import plan_silkscreen, verify_silkscreen_only
+        from pcb.silkscreen import SilkscreenPlanner, SilkscreenProofs
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -184,7 +184,7 @@ class SilkscreenTests(unittest.TestCase):
             source.write_text(text)
             pcbnew.SaveBoard(str(source), pcbnew.LoadBoard(str(source)))
             original = source.read_bytes()
-            candidate, counts = plan_silkscreen(
+            candidate, counts = SilkscreenPlanner.plan(
                 project,
                 {
                     "schema": 1,
@@ -192,7 +192,7 @@ class SilkscreenTests(unittest.TestCase):
                     "remove_orphan_references": True,
                 },
             )
-            verify_silkscreen_only(original, candidate)
+            SilkscreenProofs.verify_only(original, candidate)
             source.write_bytes(candidate)
             loaded = pcbnew.LoadBoard(str(source))
             part = loaded.FindFootprintByReference("TP1")
@@ -226,7 +226,7 @@ class SilkscreenTests(unittest.TestCase):
         self,
     ):
         import pcbnew
-        from pcb.silkscreen import plan_silkscreen
+        from pcb.silkscreen import SilkscreenPlanner
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -242,7 +242,7 @@ class SilkscreenTests(unittest.TestCase):
                 f.GetBoundingBox(False, False).GetRight() for f in board.GetFootprints()
             )
             pcbnew.SaveBoard(str(source), board)
-            candidate, _ = plan_silkscreen(
+            candidate, _ = SilkscreenPlanner.plan(
                 project,
                 {
                     "schema": 1,
@@ -263,7 +263,7 @@ class SilkscreenTests(unittest.TestCase):
             self.assertGreaterEqual(moved.GetBoundingBox().GetX(), right + 500000)
 
     def test_library_artwork_follows_balanced_edge_clipping_without_changing_pads(self):
-        from pcb.silkscreen import sync_silk_libraries
+        from pcb.silkscreen import StockSilk
 
         before = b'(kicad_pcb (footprint "Stock:D_SMB" (layer "B.Cu") '
         before += b'(property "Reference" "D31") (fp_line (start -3.66 -2.15) (end 2.15 -2.15) (layer "B.SilkS"))))'
@@ -278,7 +278,7 @@ class SilkscreenTests(unittest.TestCase):
                 + ' (fp_line (start -3.66 2.15) (end 2.15 2.15) (layer "F.SilkS")))'
             )
             library.write_text(source, encoding="utf-8")
-            changes = sync_silk_libraries(
+            changes = StockSilk.sync_libraries(
                 project,
                 before,
                 after,
@@ -297,7 +297,7 @@ class SilkscreenTests(unittest.TestCase):
         self,
     ):
         import pcbnew
-        from pcb.silkscreen import plan_silkscreen, verify_silkscreen_only
+        from pcb.silkscreen import SilkscreenPlanner, SilkscreenProofs
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -317,9 +317,9 @@ class SilkscreenTests(unittest.TestCase):
                 "text_groups": [{"x_mm": 5.0, "items": [text.m_Uuid.AsString()]}],
                 "text_positions": [],
             }
-            candidate, counts = plan_silkscreen(project, policy)
+            candidate, counts = SilkscreenPlanner.plan(project, policy)
             self.assertEqual(counts["moved_texts"], 1)
-            verify_silkscreen_only(original, candidate)
+            SilkscreenProofs.verify_only(original, candidate)
             source.write_bytes(candidate)
             loaded = pcbnew.LoadBoard(str(source))
             changed = next(
@@ -330,13 +330,13 @@ class SilkscreenTests(unittest.TestCase):
                 (5_000_000, 4_000_000),
             )
             with self.assertRaisesRegex(RuntimeError, "non-silkscreen"):
-                verify_silkscreen_only(
+                SilkscreenProofs.verify_only(
                     original, candidate.replace(b'(net "SIGNAL")', b'(net "WRONG")')
                 )
 
     def test_edge_graphics_are_clamped_inside_board_without_moving_the_part(self):
         import pcbnew
-        from pcb.silkscreen import plan_silkscreen, verify_silkscreen_only
+        from pcb.silkscreen import SilkscreenPlanner, SilkscreenProofs
         from verification.test_route_optimizer import RouteOptimizerTests
 
         with tempfile.TemporaryDirectory() as directory:
@@ -353,11 +353,11 @@ class SilkscreenTests(unittest.TestCase):
             part.Add(graphic)
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
-            candidate, counts = plan_silkscreen(
+            candidate, counts = SilkscreenPlanner.plan(
                 project, {"schema": 1, "edge_margin_mm": 0.25}
             )
             self.assertEqual(counts["clipped_lines"], 1)
-            verify_silkscreen_only(original, candidate)
+            SilkscreenProofs.verify_only(original, candidate)
             source.write_bytes(candidate)
             loaded = pcbnew.LoadBoard(str(source))
             line = next(

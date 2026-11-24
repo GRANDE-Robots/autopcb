@@ -130,7 +130,7 @@ class GroupingTests(unittest.TestCase):
     def test_local_search_window_fits_cell_budget_without_changing_grid_or_endpoints(
         self,
     ):
-        fit = getattr(checkpoints, "fit_local_bounds", None)
+        fit = getattr(checkpoints.PlanGeometry, "fit_local_bounds", None)
         self.assertIsNotNone(fit, "Search windows must respect the cell budget")
         terminals = [
             {"position_mm": [24.26, 99.88]},
@@ -232,7 +232,7 @@ class GroupingTests(unittest.TestCase):
             with mock.patch.object(
                 checkpoints, "attempt", return_value={"status": "already_connected"}
             ) as run:
-                with mock.patch.object(checkpoints, "record_attempt"):
+                with mock.patch.object(checkpoints.CheckpointAttempt, "record"):
                     with contextlib.redirect_stdout(io.StringIO()):
                         status = checkpoints.main(
                             [
@@ -252,20 +252,22 @@ class GroupingTests(unittest.TestCase):
         pins = [{"position_mm": [2, 3]}, {"position_mm": [7, 4]}]
         anchor = {"position_mm": [9, 8]}
         self.assertEqual(
-            checkpoints.local_bounds([0, 0, 10, 10], pins, anchor, 2), [0, 1, 10, 10]
+            checkpoints.PlanGeometry.local_bounds([0, 0, 10, 10], pins, anchor, 2),
+            [0, 1, 10, 10],
         )
         self.assertEqual(
-            checkpoints.local_bounds([0, 0, 10, 10], pins, None, None), [0, 0, 10, 10]
+            checkpoints.PlanGeometry.local_bounds([0, 0, 10, 10], pins, None, None),
+            [0, 0, 10, 10],
         )
         with self.assertRaisesRegex(ValueError, "outside"):
-            checkpoints.local_bounds(
+            checkpoints.PlanGeometry.local_bounds(
                 [0, 0, 10, 10], [{"position_mm": [11, 0]}], None, 2
             )
 
     def test_groups_are_bounded_and_deterministic(self):
         islands = [[{"uuid": str(i), "position_mm": [i * 2, i % 2]}] for i in range(8)]
-        first = checkpoints.group_islands(islands, 3)
-        self.assertEqual(first, checkpoints.group_islands(islands, 3))
+        first = checkpoints.PlanGeometry.group_islands(islands, 3)
+        self.assertEqual(first, checkpoints.PlanGeometry.group_islands(islands, 3))
         self.assertEqual(len(first), 4)
         for item in first:
             ids = [terminal["uuid"] for terminal in item["terminals"]]
@@ -275,7 +277,9 @@ class GroupingTests(unittest.TestCase):
 
     def test_bad_limit_and_nonfinite_config_are_rejected(self):
         with self.assertRaises(ValueError):
-            checkpoints.group_islands([[{"uuid": "a", "position_mm": [0, 0]}]], 1)
+            checkpoints.PlanGeometry.group_islands(
+                [[{"uuid": "a", "position_mm": [0, 0]}]], 1
+            )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             path.write_text('{"schema": 1, "max_pins": 3, "route": {"width_mm": NaN}}')
@@ -852,7 +856,7 @@ class CheckpointTests(unittest.TestCase):
         original = path.read_bytes()
         path.write_bytes(original + b"\n")
         with self.assertRaisesRegex(RuntimeError, "changed"):
-            checkpoints.record_attempt(path, original, {"status": "example"})
+            checkpoints.CheckpointAttempt.record(path, original, {"status": "example"})
         self.assertEqual(path.read_bytes(), original + b"\n")
 
 

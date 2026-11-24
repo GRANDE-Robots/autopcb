@@ -99,10 +99,7 @@ class ReworkTests(unittest.TestCase):
 
     def test_removed_track_can_reconnect_to_an_existing_filled_plane(self):
         from pcb.net_routing.native import discover, load_board
-        from pcb.net_routing.rework import (
-            include_repair_contacts,
-            restored_connects_islands,
-        )
+        from pcb.net_routing.rework import include_repair_contacts
 
         with tempfile.TemporaryDirectory() as directory:
             source = f.NativeNetRoutingTests.make_plane_fixture(Path(directory))
@@ -135,7 +132,9 @@ class ReworkTests(unittest.TestCase):
             old_track = f.segment((5, 5), (7, 5), "In1.Cu")
             removed = RemovedCopper(tracks=((old_track, mm(0.25)),))
             augmented = include_repair_contacts(refilled, native.net, removed)
-            self.assertTrue(restored_connects_islands(augmented, f.route(old_track)))
+            self.assertTrue(
+                RemovedCopper.connects_islands(augmented, f.route(old_track))
+            )
             plane = next(
                 island
                 for island in augmented.islands
@@ -1151,7 +1150,7 @@ class ReworkTests(unittest.TestCase):
             )
 
     def test_near_angle_projections_are_exact_and_bounded(self):
-        from pcb.net_routing.rework import octilinear_projections
+        from pcb.net_routing.rework import ExactAngleProjection
         from pcb.route_optimizer import GridRouter
 
         for a, b in (
@@ -1161,7 +1160,7 @@ class ReworkTests(unittest.TestCase):
             ((0, 0), (-4, 4.000015)),
         ):
             original = f.segment(a, b)
-            choices = octilinear_projections(original)
+            choices = ExactAngleProjection.projections(original)
             self.assertTrue(choices)
             for choice in choices:
                 GridRouter._direction(choice.start, choice.end)
@@ -1169,7 +1168,7 @@ class ReworkTests(unittest.TestCase):
                 self.assertLessEqual(abs(choice.start.y - original.start.y), mm(0.05))
                 self.assertLessEqual(abs(choice.end.x - original.end.x), mm(0.05))
                 self.assertLessEqual(abs(choice.end.y - original.end.y), mm(0.05))
-        self.assertFalse(octilinear_projections(f.segment((0, 0), (4, 0.1))))
+        self.assertFalse(ExactAngleProjection.projections(f.segment((0, 0), (4, 0.1))))
 
     def test_redundant_target_copper_is_removed_and_the_open_target_still_routes(self):
         with tempfile.TemporaryDirectory() as directory:

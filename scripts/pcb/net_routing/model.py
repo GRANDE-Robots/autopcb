@@ -1,4 +1,7 @@
-"""Small immutable search records and explicit resource budgets."""
+"""model.py: small immutable search records and explicit resource budgets.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -12,16 +15,34 @@ from pcb.route_optimizer import PadCopper, Point, Route, SearchBudgetExceeded, S
 
 @dataclass(frozen=True)
 class Site:
+    """A routing access point: a position on one copper layer.
+
+    Inputs:
+        point: board position in nm.
+        layer: copper layer name.
+    """
+
     point: Point
     layer: str
 
     @property
     def key(self) -> tuple[int, int, str]:
+        """Sort key: (x, y, layer), with x and y in nm."""
         return self.point.x, self.point.y, self.layer
 
 
 @dataclass(frozen=True)
 class Island:
+    """A physically connected group of existing same-net copper.
+
+    Inputs:
+        identifier: UUID of the item the island was discovered from.
+        sites: access points on the island that routes may start or end at.
+        pad_ids: UUIDs of the pads on the island.
+        zone_anchors: (plane site, physical site) pairs; the plane site stands for
+            a point on a filled zone connected to the physical site.
+    """
+
     identifier: str
     sites: tuple[Site, ...]
     pad_ids: tuple[str, ...] = ()
@@ -30,6 +51,16 @@ class Island:
 
 @dataclass(frozen=True)
 class Net:
+    """One net's routing problem: its islands and the copper already present.
+
+    Inputs:
+        name: net name.
+        islands: the copper islands to join.
+        existing: straight existing track segments of the net.
+        pad_sites: sites that lie on pads.
+        pad_copper: pad copper rectangles that anchor track ends.
+    """
+
     name: str
     islands: tuple[Island, ...]
     existing: tuple[Segment, ...] = ()
@@ -39,6 +70,16 @@ class Net:
 
 @dataclass(frozen=True)
 class NetPlan:
+    """A chosen route for one net with the cost of changing existing copper.
+
+    Inputs:
+        net: net name.
+        route: the proposed new copper.
+        rework_cost: cost of the existing copper the plan changes.
+        restored_widths: (segment, width in nm) pairs of restored source copper.
+        source_modified: True when the restored copper was changed, not kept as it was.
+    """
+
     net: str
     route: Route
     rework_cost: float = 0.0
@@ -47,10 +88,12 @@ class NetPlan:
 
     @property
     def cost(self) -> float:
+        """Route cost plus rework cost."""
         return self.route.cost + self.rework_cost
 
     @property
     def signature(self) -> tuple:
+        """A hashable description of the plan's net, segments, via positions and restored widths."""
         return (
             self.net,
             tuple(
@@ -69,6 +112,29 @@ class NetPlan:
 
 @dataclass(frozen=True)
 class Limits:
+    """Resource limits and sampling widths of a search.
+
+    Inputs:
+        tree_beam: partial trees kept per step.
+        board_beam: partial board plans kept per step.
+        net_candidates: complete candidates kept per net.
+        path_candidates: alternative paths kept per endpoint pair.
+        connections_per_step: endpoint pairs tried per tree.
+        fallback_connections_per_step: wider endpoint sample used when the first yields no useful tree.
+        sites_per_island: access sites kept per island.
+        branch_sites: branch sites sampled on tree copper.
+        order_trials: net orders tried.
+        placement_trials: explicit placement combinations allowed.
+        path_calls: path searches allowed per batch.
+        net_path_calls: path searches allowed per net.
+        endpoint_seconds: time share for one access point, in seconds.
+        cache_entries: path results cached.
+        validation_candidates: candidates carried to validation.
+        smoothing_trials: shortcut trials per route; 0 disables smoothing.
+        seconds: search time limit, in seconds.
+        seed: seed for generated net orders.
+    """
+
     tree_beam: int = 4
     board_beam: int = 4
     net_candidates: int = 3
@@ -90,6 +156,17 @@ class Limits:
 
     @classmethod
     def from_config(cls, raw: object) -> Limits:
+        """Build limits from a configuration object.
+
+        Inputs:
+            raw: mapping of field names to values; omitted fields keep their defaults.
+                A supplied connections_per_step without fallback_connections_per_step
+                also caps the fallback sample.
+        Outputs:
+            The limits. Raises ValueError for a non-mapping, an unknown field, a
+            seconds value that is not a positive finite number, or a count that is not
+            an integer of at least 1 (0 for seed and smoothing_trials).
+        """
         if not isinstance(raw, dict) or set(raw) - {f.name for f in fields(cls)}:
             raise ValueError("Unknown search limit or search must be an object")
         values = dict(raw)
@@ -123,6 +200,21 @@ class BudgetExhausted(SearchBudgetExceeded):
 
 @dataclass
 class Budget:
+    """Counters and deadlines that bound one search, with a report of what it used.
+
+    Inputs:
+        limits: the limits to enforce.
+        started: monotonic start time, in seconds.
+        calls, expanded, cache_hits, pruned: running counts.
+        failures: counts by failure reason.
+        failure_details: up to three example messages per reason.
+        limits_hit: names of the limits reached.
+        limit_events: number of limit events recorded.
+        finished_at: monotonic time the search stopped, or None while running.
+        slice_deadline: monotonic deadline of the current time slice, or None.
+        slice_limit: name recorded when the slice deadline is reached.
+    """
+
     limits: Limits
     started: float = field(default_factory=time.monotonic)
     calls: int = 0
@@ -143,6 +235,7 @@ class Budget:
         self.limit_events += 1
 
     def check(self) -> None:
+        """Raise BudgetExhausted when the search time or the current time slice is used up."""
         if time.monotonic() - self.started >= self.limits.seconds:
             self.hit_limit("seconds")
             raise BudgetExhausted("Search time budget exhausted")
@@ -225,6 +318,12 @@ class Budget:
             self.slice_deadline, self.slice_limit = previous, previous_limit
 
     def call(self) -> None:
+        """Count one path search.
+
+        Outputs:
+            None. Raises BudgetExhausted when time is used up or the path-call limit
+            is already reached.
+        """
         self.check()
         if self.calls >= self.limits.path_calls:
             self.hit_limit("path_calls")
@@ -232,6 +331,12 @@ class Budget:
         self.calls += 1
 
     def failure(self, reason: str, detail: object | None = None) -> None:
+        """Count a failure and keep up to three distinct example messages per reason.
+
+        Inputs:
+            reason: category of the failure.
+            detail: optional description; stored as text trimmed to 400 characters.
+        """
         self.failures[reason] = self.failures.get(reason, 0) + 1
         if detail is not None:
             message = str(detail).strip()[:400]
@@ -245,6 +350,13 @@ class Budget:
             self.finished_at = time.monotonic()
 
     def report(self) -> dict:
+        """Summarize the search.
+
+        Outputs:
+            A mapping of path calls, expanded states, cache hits, pruned candidates,
+            limits hit, failures with details, elapsed seconds (rounded to ms), and
+            optimality, which is always not_proven.
+        """
         ended = self.finished_at if self.finished_at is not None else time.monotonic()
         elapsed = ended - self.started
         observed_limits = self.limits_hit | (

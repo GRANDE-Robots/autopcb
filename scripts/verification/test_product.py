@@ -17,9 +17,9 @@ from unittest import mock
 from autopcb import cli, design, jobs, qualification
 from autopcb.workspace import Workspace
 from core.paths import (
+    ProjectStorage,
     config_path,
     data_path,
-    project_storage,
     stored_result,
     support_input_name,
 )
@@ -220,7 +220,7 @@ assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
             historical.parent.mkdir(parents=True)
             historical.write_text("{}")
             with mock.patch.dict(os.environ, storage.environment(entry)):
-                self.assertEqual(project_storage(entry.parent), storage)
+                self.assertEqual(ProjectStorage.bound(entry.parent), storage)
                 self.assertEqual(
                     config_path(entry.parent, "autopcb.json"),
                     storage.config / "autopcb.json",
@@ -234,7 +234,7 @@ assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
                 self.assertEqual(
                     stored_result(entry.parent, "autoroute", "run.json"), historical
                 )
-                self.assertIsNone(project_storage(peer.parent).workspace)
+                self.assertIsNone(ProjectStorage.bound(peer.parent).workspace)
 
     def test_project_data_precedes_matching_historical_input(self):
         with tempfile.TemporaryDirectory() as folder:

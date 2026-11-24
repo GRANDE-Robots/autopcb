@@ -17,7 +17,7 @@ from core.library_campaign_cli import apply, main, prepare
 from core.library_edits import LibraryInputs, library_path, plan_library
 from core.library_validation import validate_library
 
-CLI = toolchain._executable(None)
+CLI = toolchain.kicad_cli.locate(None)
 CLI_AVAILABLE = CLI is not None and CLI.is_file()
 
 

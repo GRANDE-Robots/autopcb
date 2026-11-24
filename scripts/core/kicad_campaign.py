@@ -15,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from core.paths import project_storage
+from core.paths import ProjectStorage
 from typing import Any
 
 from core.kicad_sexpr import Form, parse, quote
@@ -387,7 +387,7 @@ class CampaignFile:
 
     def __init__(self, project: Path):
         root = project.resolve()
-        storage = project_storage(root)
+        storage = ProjectStorage.bound(root)
         self.directory = storage.campaigns.resolve()
         self.relative_root = storage.workspace or storage.legacy
         if not self.directory.is_relative_to(storage.workspace or root):

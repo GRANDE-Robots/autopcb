@@ -60,7 +60,7 @@ class PairProbeTests(unittest.TestCase):
             ),
             patch.object(
                 autoroute_cli,
-                "progress_heartbeat",
+                "ProgressHeartbeat",
                 return_value=contextlib.nullcontext(),
             ),
             contextlib.redirect_stdout(output),
@@ -86,7 +86,7 @@ class PairProbeTests(unittest.TestCase):
             ),
             patch.object(
                 autoroute_cli,
-                "progress_heartbeat",
+                "ProgressHeartbeat",
                 return_value=contextlib.nullcontext(),
             ),
             patch.object(autoroute_cli.Console, "result"),

@@ -18,7 +18,7 @@ from core.console import Console, add_output_arguments
 from typing import Iterable, Literal, TextIO
 
 from core.project import ENTRY_ENV, ProjectPaths
-from core.toolchain import _executable, native_python_candidates
+from core.toolchain import kicad_cli, native_python_candidates
 from review.refresh_gallery import ACTIVE as REVIEW_FILES
 
 SCRIPTS = Path(__file__).resolve().parent.parent
@@ -26,7 +26,7 @@ DEFAULT_PROJECT = default_project(__file__)
 
 
 def default_kicad_python() -> Path:
-    values = native_python_candidates(_executable(None))
+    values = native_python_candidates(kicad_cli.locate(None))
     return values[0] if values else Path(sys.executable)
 
 

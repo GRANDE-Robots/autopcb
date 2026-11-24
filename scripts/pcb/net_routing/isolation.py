@@ -18,9 +18,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from core.native_command import (
+    NativeCommand,
     NativeCommandError,
     NativeResourceError,
-    exit_description,
 )
 
 
@@ -165,7 +165,7 @@ def run_native(
             detail = (
                 "did not exit"
                 if process.is_alive()
-                else exit_description(process.exitcode)
+                else NativeCommand.exit_description(process.exitcode)
             )
             raise RuntimeError(
                 f"Native worker stopped unexpectedly ({detail}); the saved PCB was not changed"

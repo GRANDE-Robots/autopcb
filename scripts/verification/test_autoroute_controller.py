@@ -1991,14 +1991,14 @@ class AutoControllerTests(unittest.TestCase):
     def test_heartbeat_reports_during_a_long_search_and_stops(self):
         from queue import Queue
         from threading import current_thread
-        from pcb.net_routing.autoroute_cli import progress_heartbeat
+        from core.console import ProgressHeartbeat
 
         reports = Queue()
 
         def record(event):
             reports.put((current_thread(), event))
 
-        with progress_heartbeat(record, interval=0.01):
+        with ProgressHeartbeat(record, interval=0.01):
             worker, event = reports.get(timeout=5)
             self.assertEqual(event["event"], "heartbeat")
         self.assertFalse(worker.is_alive())

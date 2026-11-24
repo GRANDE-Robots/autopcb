@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from autopcb.native import Native
-from autopcb.qualification import REFERENCE_PROJECTS, _check_artifacts
+from autopcb.qualification import REFERENCE_PROJECTS, ExportArtifacts
 from core.project import SourceSnapshot
 
 
@@ -202,7 +202,7 @@ class DesktopWorkflowTests(unittest.TestCase):
                 self._click(window, "Export draft package")
                 manifest = json.loads(window.exports.toPlainText())
                 draft = window.workspace.export_output(project, draft=True)
-                _check_artifacts(draft, manifest)
+                ExportArtifacts.check(draft, manifest)
                 self.assertEqual(manifest["inputs"], saved.hashes)
                 self.assertEqual(manifest["status"], "draft")
                 self.assertFalse(manifest["production_approved"])

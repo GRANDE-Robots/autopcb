@@ -90,7 +90,9 @@ class WorkspaceTests(unittest.TestCase):
             ):
                 with (
                     self.subTest(status=status),
-                    mock.patch.object(cli, "_run", return_value={"status": status}),
+                    mock.patch.object(
+                        cli, "run_action", return_value={"status": status}
+                    ),
                 ):
                     self.assertEqual(cli.main(["route"]), code)
 
@@ -177,13 +179,15 @@ assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
             )
             parse = cli.parser().parse_args
             arguments = ["--workspace", folder]
-            proposal = cli._run(parse([*arguments, "propose"]))
+            proposal = cli.run_action(parse([*arguments, "propose"]))
             saved = (
                 workspace.results / "proposals" / (proposal["proposal_id"] + ".json")
             )
             self.assertEqual(json.loads(saved.read_text(encoding="utf-8")), proposal)
-            self.assertEqual(cli._run(parse([*arguments, "propose"])), proposal)
-            self.assertEqual(cli._run(parse([*arguments, "discover"]))["entries"], [])
+            self.assertEqual(cli.run_action(parse([*arguments, "propose"])), proposal)
+            self.assertEqual(
+                cli.run_action(parse([*arguments, "discover"]))["entries"], []
+            )
 
             first = workspace.project_output("Board A v1.0")
             first.mkdir()
@@ -191,7 +195,8 @@ assert os.environ["QML2_IMPORT_PATH"] == sys.argv[2]
             target.write_text("{}")
             self.assertEqual(workspace.project(None).entry, target)
             self.assertEqual(
-                cli._run(parse([*arguments, "discover"]))["entries"], [str(target)]
+                cli.run_action(parse([*arguments, "discover"]))["entries"],
+                [str(target)],
             )
             second = workspace.project_output("Board B")
             second.mkdir()
@@ -298,7 +303,7 @@ class ReferenceRoutingBudgetTests(unittest.TestCase):
             mock.patch.object(qualification, "Layout")
         ).return_value
         self.apply = self.start_patch(
-            mock.patch.object(qualification, "_exercise_apply")
+            mock.patch.object(qualification.ApplyExercise, "run")
         )
         self.verify = self.start_patch(mock.patch.object(jobs, "verify"))
         self.start_patch(
@@ -438,7 +443,7 @@ class ElectricalEvidenceTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                return jobs.review_evidence(
+                return jobs.ElectricalReview.evidence(
                     project, SourceSnapshot.capture(project), reference
                 )
 

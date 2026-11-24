@@ -1,8 +1,10 @@
-"""Serve AutoPCB to a phone or any browser that can reach this computer.
+"""serve.py: serve AutoPCB to a phone or any browser that can reach this computer.
 
 KiCad runs only on desktop systems, so a phone drives the jobs here. Every
 request needs the access token printed at startup. The default address is
 this computer only; pass --host to reach it over a LAN or Tailscale.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ PAGE = Path(__file__).with_name("serve.html")
 
 @dataclass
 class Job:
+    """One CLI action started from the page, with its status, timing and report."""
+
     action: str
     project: str
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -38,6 +42,7 @@ class Job:
     report: dict | None = None
 
     def as_dict(self) -> dict:
+        """The job as the JSON record the page shows."""
         return {
             "id": self.id,
             "action": self.action,
@@ -60,11 +65,24 @@ class JobRunner:
     }
 
     def __init__(self, workspace: Workspace, extra: tuple[str, ...] = ()):
+        """Inputs:
+        workspace: Workspace whose projects the jobs run on.
+        extra: Command-line options placed before ``--project`` in every job.
+        """
         self.workspace, self.extra = workspace, extra
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
 
     def command(self, job: Job, run_id: str | None) -> list[str]:
+        """The command line that runs a job.
+
+        Inputs:
+            job: Job to run.
+            run_id: Routing preview to apply; used by the ``apply`` action only.
+        Outputs:
+            This process's executable, running ``autopcb`` unless frozen, with the
+            workspace, extra options, project, action and the action's fixed arguments.
+        """
         arguments = [
             *self.ACTIONS[job.action],
             *((run_id,) if job.action == "apply" else ()),
@@ -83,6 +101,13 @@ class JobRunner:
         ]
 
     def _run(self, job: Job, run_id: str | None) -> None:
+        """Run a job's command to completion and store its report.
+
+        Outputs:
+            None. The report is the JSON the command printed, or the last 2000 characters
+            of its error output when it printed none. The status comes from the report and
+            is ``failed`` when it has none or the command cannot run.
+        """
         env = {
             **os.environ,
             "PYTHONPATH": os.pathsep.join(
@@ -108,6 +133,16 @@ class JobRunner:
         job.finished = time.time()
 
     def start(self, action: str, project: str, run_id: str | None = None) -> Job:
+        """Start a job on its own daemon thread.
+
+        Inputs:
+            action: One of ACTIONS.
+            project: Project entry path.
+            run_id: Routing preview to apply; required by ``apply``.
+        Outputs:
+            The running job. Raises ValueError for an unknown action or an apply without a
+            run ID, and RuntimeError when the project already has a running job.
+        """
         if action not in self.ACTIONS:
             raise ValueError(f"Unknown action: {action}")
         if action == "apply" and not run_id:
@@ -134,6 +169,12 @@ class ServeApp:
         runner: JobRunner,
         cli: Path | None = None,
     ):
+        """Inputs:
+        workspace: Workspace to serve.
+        token: Access token every request except the page must carry.
+        runner: Runs the jobs.
+        cli: KiCad CLI for board images; the discovered one when None.
+        """
         self.workspace, self.token, self.runner, self.cli = (
             workspace,
             token,
@@ -142,6 +183,12 @@ class ServeApp:
         )
 
     def authorized(self, headers, query: dict) -> bool:
+        """Say whether a request carries the access token.
+
+        Inputs:
+            headers: Request headers; the token may be an Authorization bearer value.
+            query: Parsed query string; the token may be its ``token`` value.
+        """
         supplied = (
             headers.get("Authorization", "").removeprefix("Bearer ")
             or query.get("token", [""])[0]
@@ -149,18 +196,30 @@ class ServeApp:
         return secrets.compare_digest(supplied, self.token)
 
     def projects(self) -> list[dict]:
+        """The workspace's projects as name and path."""
         return [
             {"name": entry.stem, "path": str(entry)}
             for entry in self.workspace.entries()
         ]
 
     def project(self, path: str) -> Path:
+        """Resolve a path to one of the workspace's project entries.
+
+        Outputs:
+            The resolved entry. Raises LookupError when it is not in the workspace.
+        """
         entry = Path(path).resolve()
         if entry not in self.workspace.entries():
             raise LookupError("That project is not in this workspace")
         return entry
 
     def board_svg(self, entry: Path) -> bytes:
+        """Render a project's board as an SVG image with the KiCad CLI.
+
+        Outputs:
+            The SVG bytes of the copper, silkscreen and edge layers. The CLI is given 120
+            s, and its failure is raised.
+        """
         from core.toolchain import kicad_cli
 
         with tempfile.TemporaryDirectory(prefix="autopcb-serve-") as folder:
@@ -190,6 +249,18 @@ class ServeApp:
     def handle(
         self, method: str, url: str, headers, body: bytes
     ) -> tuple[int, str, bytes]:
+        """Answer one request without any transport.
+
+        Inputs:
+            method: ``GET`` or ``POST``.
+            url: Request path and query.
+            headers: Request headers.
+            body: Request body bytes.
+        Outputs:
+            The status code, content type and body. The page is served without a token and
+            every other path needs it (401). A missing project is 404, a busy project 409
+            and a bad request 400.
+        """
         parts = urlsplit(url)
         query = parse_qs(parts.query)
         if method == "GET" and parts.path == "/":
@@ -232,6 +303,7 @@ class ServeApp:
 
     @staticmethod
     def json(status: int, payload: dict) -> tuple[int, str, bytes]:
+        """A JSON response as a (status, content type, body) triple."""
         return status, "application/json", json.dumps(payload).encode()
 
 
@@ -239,10 +311,20 @@ class Server:
     """Bind the app to an address and serve until interrupted."""
 
     def __init__(self, app: ServeApp, host: str, port: int):
+        """Bind the app to an address.
+
+        Inputs:
+            app: App that answers the requests.
+            host: Address to listen on.
+            port: Port to listen on.
+        """
         app_ref = app
 
         class Handler(BaseHTTPRequestHandler):
+            """Pass each HTTP request to the app."""
+
             def _reply(self, method: str) -> None:
+                """Pass one request to the app and send its response, never cached."""
                 length = int(self.headers.get("Content-Length") or 0)
                 status, kind, payload = app_ref.handle(
                     method, self.path, self.headers, self.rfile.read(length)
@@ -255,22 +337,27 @@ class Server:
                 self.wfile.write(payload)
 
             def do_GET(self):  # noqa: N802 - http.server naming
+                """Answer a GET request."""
                 self._reply("GET")
 
             def do_POST(self):  # noqa: N802 - http.server naming
+                """Answer a POST request."""
                 self._reply("POST")
 
             def log_message(self, *_):
+                """Keep the server quiet."""
                 pass
 
         self.app, self.http = app, ThreadingHTTPServer((host, port), Handler)
 
     @property
     def url(self) -> str:
+        """The link that opens the page with the access token."""
         host, port = self.http.server_address[:2]
         return f"http://{host}:{port}/?token={self.app.token}"
 
     def run(self) -> None:
+        """Serve until interrupted, then close the socket."""
         try:
             self.http.serve_forever()
         finally:

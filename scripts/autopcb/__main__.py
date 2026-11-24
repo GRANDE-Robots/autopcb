@@ -1,4 +1,7 @@
-"""Run the same entry point via python -m autopcb."""
+"""__main__.py: run the AutoPCB command with ``python -m autopcb``.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from autopcb.cli import main
 

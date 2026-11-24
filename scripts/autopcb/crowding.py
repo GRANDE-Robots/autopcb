@@ -1,4 +1,11 @@
-"""Crowd a board's movable parts toward one point, as a packed first placement would."""
+"""crowding.py: pack a board's movable parts toward one point.
+
+This imitates a crowded first placement. The packing runs inside KiCad's Python
+through the native worker's ``crowd`` operation. Lengths are KiCad internal units
+(nm) unless a name says mm.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -34,6 +41,14 @@ class CrowdedVariant:
 
     @staticmethod
     def envelope(footprint) -> Envelope:
+        """The smallest axis-aligned box around a footprint's courtyards.
+
+        Inputs:
+            footprint: A KiCad footprint. Its bounding box is used when it has no
+                courtyard.
+        Outputs:
+            The box as an Envelope, in nm.
+        """
         boxes = [box for _, box in _courtyard_geometry(footprint).values()] or [
             footprint.GetBoundingBox(False)
         ]
@@ -44,6 +59,12 @@ class CrowdedVariant:
 
     @staticmethod
     def overlaps(box: Envelope, others) -> bool:
+        """Say whether a box overlaps any of the other boxes.
+
+        Inputs:
+            box: Box to test.
+            others: Boxes to test against. Touching edges do not overlap.
+        """
         return any(
             box.low[0] < o.high[0]
             and o.low[0] < box.high[0]
@@ -54,6 +75,13 @@ class CrowdedVariant:
 
     @staticmethod
     def inside(box: Envelope, outline: Envelope, margin: int) -> bool:
+        """Say whether a box lies at least ``margin`` inside an outline.
+
+        Inputs:
+            box: Box to test.
+            outline: Board outline box.
+            margin: Required distance to every outline edge, in nm.
+        """
         return all(
             outline.low[axis] + margin <= box.low[axis]
             and box.high[axis] <= outline.high[axis] - margin
@@ -61,6 +89,16 @@ class CrowdedVariant:
         )
 
     def write(self) -> dict:
+        """Pack the board file with this variant's seed and save the moved parts.
+
+        The board file is rewritten through the campaign planner only when a part moved.
+        Raises RuntimeError when the new poses would add a courtyard overlap.
+
+        Outputs:
+            A record with the seed, the target point in mm, each moved part's reference,
+            old and new position in mm and rotation in degrees, and the routability
+            report of the packed board.
+        """
         import pcbnew
 
         board = pcbnew.LoadBoard(str(self.path))
@@ -94,6 +132,7 @@ class CrowdedVariant:
         )
 
         def distance(ref):
+            """Distance in nm from the centre of a part's box to the target point."""
             box = parts[ref]
             return math.hypot(
                 (box.low[0] + box.high[0]) / 2 - point[0],

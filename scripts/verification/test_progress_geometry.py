@@ -33,19 +33,19 @@ class GeometryProgressTests(unittest.TestCase):
             routing_run_seconds=123.0,
             optimization_evidence="verified run",
         )
-        fields = [item[1] for item in progress.chart_series([point])]
+        fields = [item[1] for item in progress.ProgressChart.chart_series([point])]
         self.assertIn("symmetry_score", fields)
         self.assertIn("routing_run_seconds", fields)
         self.assertNotIn("schematic_parity", fields)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plot.png"
-            progress.draw_chart([point], path)
+            progress.ProgressChart.draw([point], path)
             with Image.open(path) as image:
                 image.verify()
 
     def test_previous_history_keeps_optimization_metrics_unknown(self):
         self.assertTrue(hasattr(progress, "PREVIOUS_FIELDS"))
-        point = progress.attach_geometry(
+        point = progress.ProgressRecorder.attach_geometry(
             progress_point("a" * 64), GeometryMetrics(1, 2, 3), "source"
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,13 +61,17 @@ class GeometryProgressTests(unittest.TestCase):
             self.assertIsNone(restored.routing_run_seconds)
 
     def test_run_metrics_require_the_matching_saved_board_and_source(self):
-        self.assertTrue(hasattr(progress, "attach_run_metrics"))
+        self.assertTrue(hasattr(progress.ProgressRecorder, "attach_run_metrics"))
         point = replace(progress_point("a" * 64), source_signature="b" * 64)
         with self.assertRaisesRegex(ValueError, "source"):
-            progress.attach_run_metrics(point, "c" * 64, "b" * 64, 0.5, 10, "run")
+            progress.ProgressRecorder.attach_run_metrics(
+                point, "c" * 64, "b" * 64, 0.5, 10, "run"
+            )
         with self.assertRaisesRegex(ValueError, "evidence"):
-            progress.attach_run_metrics(point, "a" * 64, "b" * 64, 0.5, 10, "")
-        enriched = progress.attach_run_metrics(
+            progress.ProgressRecorder.attach_run_metrics(
+                point, "a" * 64, "b" * 64, 0.5, 10, ""
+            )
+        enriched = progress.ProgressRecorder.attach_run_metrics(
             point, "a" * 64, "b" * 64, 0.5, 10, "run"
         )
         self.assertEqual(
@@ -78,7 +82,8 @@ class GeometryProgressTests(unittest.TestCase):
         point = progress_point("a" * 64)
         self.assertEqual(point.schematic_parity, 0)
         self.assertNotIn(
-            "schematic_parity", [item[1] for item in progress.chart_series([point])]
+            "schematic_parity",
+            [item[1] for item in progress.ProgressChart.chart_series([point])],
         )
 
     def test_real_kicad_tracks_and_via(self):
@@ -134,7 +139,9 @@ class GeometryProgressTests(unittest.TestCase):
                 progress.pcbnew, "LoadBoard", return_value=object()
             ) as load:
                 with mock.patch.object(progress, "measure_board", return_value=metrics):
-                    result = progress.backfill(project, review, snapshots)
+                    result = progress.ProgressRecorder.backfill(
+                        project, review, snapshots
+                    )
             self.assertEqual(result["rows_updated"], 1)
             self.assertEqual(result["unmatched_hashes"], 1)
             load.assert_called_once_with(str(matched))
@@ -148,11 +155,13 @@ class GeometryProgressTests(unittest.TestCase):
                 image.verify()
 
     def test_disagreement_does_not_replace_history(self):
-        old = progress.attach_geometry(
+        old = progress.ProgressRecorder.attach_geometry(
             progress_point("a" * 64), GeometryMetrics(1.0, 2, 3), "saved"
         )
         with self.assertRaisesRegex(ValueError, "disagrees"):
-            progress.attach_geometry(old, GeometryMetrics(2.0, 2, 3), "new")
+            progress.ProgressRecorder.attach_geometry(
+                old, GeometryMetrics(2.0, 2, 3), "new"
+            )
 
 
 if __name__ == "__main__":

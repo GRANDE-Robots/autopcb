@@ -1,4 +1,9 @@
-"""A private copy of a native project with its reviewed routing inputs."""
+"""private_copy.py: a private copy of a native project with its reviewed routing inputs.
+
+The copy lets runs be compared on identical inputs without touching the sources.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,7 @@ import json
 import shutil
 from contextlib import contextmanager
 
-from autopcb.jobs import isolated
+from autopcb.jobs import IsolatedCopy
 from core.export_helpers import sha
 from core.paths import ProjectStorage
 from core.project import ProjectPaths, SourceSnapshot
@@ -27,6 +32,13 @@ class PrivateCopy:
         storage: ProjectStorage,
         snapshot: SourceSnapshot | None = None,
     ):
+        """Record the project and the reviewed inputs the routing engine reads.
+
+        Inputs:
+            project: Native project to copy.
+            storage: Storage that holds the routing policy and design evidence.
+            snapshot: Hashes of the saved sources; captured now when None.
+        """
         self.project, self.snapshot = (
             project,
             snapshot or SourceSnapshot.capture(project),
@@ -42,6 +54,7 @@ class PrivateCopy:
 
     @property
     def fingerprint(self) -> dict[str, str]:
+        """The hash of every source file and of each reviewed input, by relative path."""
         return {
             **self.snapshot.hashes,
             **{name.as_posix(): digest for name, digest in self.hashes.items()},
@@ -53,7 +66,7 @@ class PrivateCopy:
 
         ``recovery`` overrides recovery settings in the copy's policy only.
         """
-        with isolated(self.project, self.snapshot) as working:
+        with IsolatedCopy.open(self.project, self.snapshot) as working:
             for name, source in self.inputs.items():
                 target = working.root / name
                 target.parent.mkdir(parents=True, exist_ok=True)

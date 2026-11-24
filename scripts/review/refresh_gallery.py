@@ -1,8 +1,10 @@
-"""Regenerate the one active review gallery directly from one stable KiCad source pair.
+"""refresh_gallery.py: regenerate the one active review gallery directly from one stable KiCad source pair.
 
 This intentionally keeps only the canonical named PNG/PDF views, the linked
 gallery, and its byte-self-contained counterpart.  Rendering happens outside
 the Drive project; verified files replace their active counterparts atomically.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
@@ -17,13 +19,13 @@ import re
 import subprocess
 import sys
 import tempfile
-from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.export_helpers import require
 from core.paths import asset_root, library_directories, long_path
 from core.console import Console, add_output_arguments
-from review.presentation import show_gallery
+from review.presentation import ReviewDisplay
 
 PDFS = {
     "schematic.pdf",
@@ -50,199 +52,229 @@ PNGS = {
 ACTIVE = PDFS | PNGS | {"source.json", "index.html", "index_standalone.html"}
 
 
-def required_outputs(layers=None):
-    """Derive the named layer exports from the saved board's copper stack."""
-    if layers is None:
-        return set(PDFS), set(PNGS), set(ACTIVE)
-    if (
-        not isinstance(layers, list)
-        or len(layers) != len(set(layers))
-        or not {"F.Cu", "B.Cu"} <= set(layers)
-        or any(
-            not isinstance(name, str)
-            or not re.fullmatch(r"(?:F|B|In[1-9][0-9]?)\.Cu", name)
-            for name in layers
+class Digest:
+    """Hashes a file."""
+
+    def __call__(self, path: Path) -> str:
+        """Return the hex SHA-256 of the file at ``path``."""
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class AtomicWrite:
+    """Replaces a file without ever exposing a partial write."""
+
+    def __call__(self, target: Path, content: bytes) -> None:
+        """Replace one file using a temporary file in the same directory.
+
+        Inputs:
+            target: File to replace; its folder must exist.
+            content: New bytes, flushed to disk before the swap.
+        """
+        fd, name = tempfile.mkstemp(
+            prefix=".review-refresh-", suffix=".tmp", dir=target.parent
         )
-    ):
-        raise ValueError("Invalid review copper-layer inventory")
-    inner = {f"PCB_{name.split('.')[0]}" for name in layers if name.startswith("In")}
-    pdfs = {name for name in PDFS if not name.startswith("PCB_In")} | {
-        name + ".pdf" for name in inner
-    }
-    pngs = {name for name in PNGS if not name.startswith("PCB_In")} | {
-        name + ".png" for name in inner
-    }
-    return (
-        pdfs,
-        pngs,
-        pdfs | pngs | {"source.json", "index.html", "index_standalone.html"},
-    )
+        staged = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(staged, target)
+        finally:
+            if staged.exists():
+                staged.unlink()
 
 
-def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+digest = Digest()
+atomic_write = AtomicWrite()
 
 
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise RuntimeError(message)
+class ReviewGallery:
+    """What a complete review gallery holds and whether one on disk is complete and current."""
 
+    @staticmethod
+    def required_outputs(layers=None):
+        """Derive the named layer exports from the saved board's copper stack.
 
-def run(
-    command: list[str],
-    label: str,
-    env: dict[str, str],
-    *,
-    console: Console | None = None,
-) -> None:
-    with console.activity(label) if console else nullcontext():
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-        )
-    if result.returncode:
-        raise RuntimeError(
-            f"{label} failed ({result.returncode}):\n{result.stdout}\n{result.stderr}"
-        )
-
-
-def dependency_paths(project: Path) -> dict[str, Path]:
-    """Find the library and render inputs tracked by every review snapshot."""
-    root = long_path(project)
-    support = asset_root(root)
-    excluded_names = {"desktop.ini", "thumbs.db", ".ds_store"}
-    candidates = [
-        path
-        for directory in library_directories(root)
-        for path in directory.rglob("*")
-        if "__pycache__" not in path.parts
-    ]
-    candidates.extend((root / "fp-lib-table", root / "sym-lib-table"))
-    candidates.extend(
-        support / "scripts" / name
-        for name in (
-            "core/export_helpers.py",
-            "core/paths.py",
-            "review/render_views.py",
-            "review/refresh_gallery.py",
-            "review/rasterize_gallery.py",
-            "review/build_standalone_gallery.py",
-        )
-    )
-    return {
-        path.relative_to(root).as_posix(): path
-        for path in candidates
-        if path.name.lower() not in excluded_names and path.is_file()
-    }
-
-
-def verify_gallery(folder: Path, source_hashes: dict[str, str]) -> None:
-    source = json.loads((folder / "source.json").read_text(encoding="utf-8"))
-    pdfs, pngs, active = required_outputs(source.get("copper_layers"))
-    expected = active - {"index_standalone.html"}
-    actual = {path.name for path in folder.iterdir() if path.is_file()}
-    require(expected <= actual, "Fresh gallery is missing expected review views")
-    for name in pdfs:
-        data = (folder / name).read_bytes()
-        require(
-            data.startswith(b"%PDF-") and len(data) > 1024,
-            f"Invalid native PDF: {name}",
-        )
-    for name in pngs:
-        data = (folder / name).read_bytes()
-        require(
-            data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) > 1024,
-            f"Invalid PNG: {name}",
-        )
-    source = json.loads((folder / "source.json").read_text(encoding="utf-8"))
-    require(
-        source.get("sha256") == source_hashes,
-        "Fresh gallery source identity does not match live CAD",
-    )
-    index = (folder / "index.html").read_text(encoding="utf-8")
-    require(
-        index.count("<section id=") == len(pngs),
-        "Gallery view count does not match the saved copper stack",
-    )
-
-
-def gallery_is_current(
-    project: Path, folder: Path, source_hashes: dict[str, str]
-) -> bool:
-    """Verify the current set and its tracked dependencies before skipping rendering."""
-    manifest = folder / "source.json"
-    try:
-        manifest_bytes = manifest.read_bytes()
-        source = json.loads(manifest_bytes)
-        if not isinstance(source, dict) or source.get("sha256") != source_hashes:
-            return False
-        dependencies = source.get("dependency_sha256")
-        if not isinstance(dependencies, dict) or not dependencies:
-            return False
-        verify_gallery(folder, source_hashes)
-        standalone = (folder / "index_standalone.html").read_text(encoding="utf-8")
-        _, pngs, _ = required_outputs(source.get("copper_layers"))
-        if standalone.count("data:image/png;base64,") != len(pngs):
-            return False
-    except (FileNotFoundError, UnicodeError, ValueError, RuntimeError):
+        Inputs:
+            layers: Copper layer names of the saved board, or None for the
+                default two inner layers.
+        Outputs:
+            The sets of PDF names, PNG names and every active file name.
+            Raises ValueError when ``layers`` is not a list of distinct copper
+            layer names that includes ``F.Cu`` and ``B.Cu``.
+        """
+        if layers is None:
+            return set(PDFS), set(PNGS), set(ACTIVE)
         if (
-            manifest.is_file()
-            and "manifest_bytes" in locals()
-            and manifest.read_bytes() != manifest_bytes
+            not isinstance(layers, list)
+            or len(layers) != len(set(layers))
+            or not {"F.Cu", "B.Cu"} <= set(layers)
+            or any(
+                not isinstance(name, str)
+                or not re.fullmatch(r"(?:F|B|In[1-9][0-9]?)\.Cu", name)
+                for name in layers
+            )
         ):
-            raise RuntimeError(
-                "Review manifest changed during the freshness check"
-            ) from None
-        return False
+            raise ValueError("Invalid review copper-layer inventory")
+        inner = {
+            f"PCB_{name.split('.')[0]}" for name in layers if name.startswith("In")
+        }
+        pdfs = {name for name in PDFS if not name.startswith("PCB_In")} | {
+            name + ".pdf" for name in inner
+        }
+        pngs = {name for name in PNGS if not name.startswith("PCB_In")} | {
+            name + ".png" for name in inner
+        }
+        return (
+            pdfs,
+            pngs,
+            pdfs | pngs | {"source.json", "index.html", "index_standalone.html"},
+        )
 
-    root = long_path(project)
-    required_dependencies = set(dependency_paths(root))
-    if not required_dependencies <= dependencies.keys():
-        return False
-    observed = {}
-    for relative, expected in dependencies.items():
-        if not isinstance(relative, str) or not isinstance(expected, str):
+    @staticmethod
+    def dependency_paths(project: Path) -> dict[str, Path]:
+        """Find the library and render inputs tracked by every review snapshot.
+
+        Inputs:
+            project: Native project folder.
+        Outputs:
+            Files keyed by their path relative to the project.
+        """
+        root = long_path(project)
+        support = asset_root(root)
+        excluded_names = {"desktop.ini", "thumbs.db", ".ds_store"}
+        candidates = [
+            path
+            for directory in library_directories(root)
+            for path in directory.rglob("*")
+            if "__pycache__" not in path.parts
+        ]
+        candidates.extend((root / "fp-lib-table", root / "sym-lib-table"))
+        candidates.extend(
+            support / "scripts" / name
+            for name in (
+                "core/export_helpers.py",
+                "core/paths.py",
+                "review/render_views.py",
+                "review/refresh_gallery.py",
+                "review/rasterize_gallery.py",
+                "review/build_standalone_gallery.py",
+            )
+        )
+        return {
+            path.relative_to(root).as_posix(): path
+            for path in candidates
+            if path.name.lower() not in excluded_names and path.is_file()
+        }
+
+    @classmethod
+    def verify(cls, folder: Path, source_hashes: dict[str, str]) -> None:
+        """Require a freshly rendered gallery to be complete and bound to the live source.
+
+        Inputs:
+            folder: Gallery folder with ``source.json``.
+            source_hashes: SHA-256 of the board and schematic, by project path.
+        Outputs: None. Raises RuntimeError when a view is missing or invalid,
+            the gallery was built from another source, or its view count does
+            not match the saved copper stack.
+        """
+        source = json.loads((folder / "source.json").read_text(encoding="utf-8"))
+        pdfs, pngs, active = cls.required_outputs(source.get("copper_layers"))
+        expected = active - {"index_standalone.html"}
+        actual = {path.name for path in folder.iterdir() if path.is_file()}
+        require(expected <= actual, "Fresh gallery is missing expected review views")
+        for name in pdfs:
+            data = (folder / name).read_bytes()
+            require(
+                data.startswith(b"%PDF-") and len(data) > 1024,
+                f"Invalid native PDF: {name}",
+            )
+        for name in pngs:
+            data = (folder / name).read_bytes()
+            require(
+                data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) > 1024,
+                f"Invalid PNG: {name}",
+            )
+        source = json.loads((folder / "source.json").read_text(encoding="utf-8"))
+        require(
+            source.get("sha256") == source_hashes,
+            "Fresh gallery source identity does not match live CAD",
+        )
+        index = (folder / "index.html").read_text(encoding="utf-8")
+        require(
+            index.count("<section id=") == len(pngs),
+            "Gallery view count does not match the saved copper stack",
+        )
+
+    @classmethod
+    def is_current(
+        cls, project: Path, folder: Path, source_hashes: dict[str, str]
+    ) -> bool:
+        """Verify the current set and its tracked dependencies before skipping rendering.
+
+        Inputs:
+            project: Native project folder.
+            folder: Review folder with ``source.json`` and the gallery files.
+            source_hashes: SHA-256 of the board and schematic, by project path.
+        Outputs:
+            True when the gallery matches the source and every tracked
+            dependency, False when it is missing, stale or malformed. Raises
+            RuntimeError when the manifest, a dependency or the design changed
+            while the check ran, or a dependency lies outside the project.
+        """
+        manifest = folder / "source.json"
+        try:
+            manifest_bytes = manifest.read_bytes()
+            source = json.loads(manifest_bytes)
+            if not isinstance(source, dict) or source.get("sha256") != source_hashes:
+                return False
+            dependencies = source.get("dependency_sha256")
+            if not isinstance(dependencies, dict) or not dependencies:
+                return False
+            cls.verify(folder, source_hashes)
+            standalone = (folder / "index_standalone.html").read_text(encoding="utf-8")
+            _, pngs, _ = cls.required_outputs(source.get("copper_layers"))
+            if standalone.count("data:image/png;base64,") != len(pngs):
+                return False
+        except (FileNotFoundError, UnicodeError, ValueError, RuntimeError):
+            if (
+                manifest.is_file()
+                and "manifest_bytes" in locals()
+                and manifest.read_bytes() != manifest_bytes
+            ):
+                raise RuntimeError(
+                    "Review manifest changed during the freshness check"
+                ) from None
             return False
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root):
-            raise RuntimeError("Review dependency is outside the project")
-        if not path.is_file():
+
+        root = long_path(project)
+        required_dependencies = set(cls.dependency_paths(root))
+        if not required_dependencies <= dependencies.keys():
             return False
-        observed[path] = digest(path)
-    # Refuse to call an actively changing source set current or stale.
-    if (
-        manifest.read_bytes() != manifest_bytes
-        or set(dependency_paths(root)) != required_dependencies
-        or any(digest(path) != value for path, value in observed.items())
-    ):
-        raise RuntimeError("Review dependencies changed during the freshness check")
-    if any(digest(root / name) != value for name, value in source_hashes.items()):
-        raise RuntimeError("Design changed during the review freshness check")
-    return all(
-        observed[(root / relative).resolve()] == expected
-        for relative, expected in dependencies.items()
-    )
-
-
-def atomic_write(target: Path, content: bytes) -> None:
-    """Replace one file using a temporary file in the same directory."""
-    fd, name = tempfile.mkstemp(
-        prefix=".review-refresh-", suffix=".tmp", dir=target.parent
-    )
-    staged = Path(name)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(staged, target)
-    finally:
-        if staged.exists():
-            staged.unlink()
+        observed = {}
+        for relative, expected in dependencies.items():
+            if not isinstance(relative, str) or not isinstance(expected, str):
+                return False
+            path = (root / relative).resolve()
+            if not path.is_relative_to(root):
+                raise RuntimeError("Review dependency is outside the project")
+            if not path.is_file():
+                return False
+            observed[path] = digest(path)
+        # Refuse to call an actively changing source set current or stale.
+        if (
+            manifest.read_bytes() != manifest_bytes
+            or set(cls.dependency_paths(root)) != required_dependencies
+            or any(digest(path) != value for path, value in observed.items())
+        ):
+            raise RuntimeError("Review dependencies changed during the freshness check")
+        if any(digest(root / name) != value for name, value in source_hashes.items()):
+            raise RuntimeError("Design changed during the review freshness check")
+        return all(
+            observed[(root / relative).resolve()] == expected
+            for relative, expected in dependencies.items()
+        )
 
 
 @dataclass(frozen=True)
@@ -254,6 +286,14 @@ class ReviewSnapshot:
 
     @classmethod
     def capture(cls, folder: Path, names: set[str]) -> ReviewSnapshot:
+        """Read the current bytes of each named file.
+
+        Inputs:
+            folder: Review folder.
+            names: File names to preserve.
+        Outputs:
+            A snapshot that maps each name to its bytes, or None when absent.
+        """
         return cls(
             folder=folder,
             originals={
@@ -265,6 +305,7 @@ class ReviewSnapshot:
         )
 
     def verify_unchanged(self) -> None:
+        """Require every captured file to hold the bytes it had when captured."""
         for name, original in self.originals.items():
             target = self.folder / name
             current = target.read_bytes() if target.is_file() else None
@@ -273,6 +314,14 @@ class ReviewSnapshot:
             )
 
     def publish(self, fresh: Path) -> None:
+        """Replace each captured file with its fresh version, or restore all of them.
+
+        Inputs:
+            fresh: Folder that holds a new file for every captured name.
+        Outputs: None. Raises RuntimeError when a file changed since capture or
+            fails readback, and when an earlier replacement cannot be undone;
+            any other error is re-raised after the published files are restored.
+        """
         self.verify_unchanged()
         published: list[tuple[str, bytes]] = []
         try:
@@ -314,116 +363,206 @@ class ReviewSnapshot:
             raise
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project", type=Path, required=True)
-    parser.add_argument("--review", type=Path, required=True)
-    parser.add_argument(
-        "--kicad-python",
-        type=Path,
-        default=Path(r"C:\Program Files\KiCad\10.0\bin\python.exe"),
-    )
-    parser.add_argument("--python", type=Path, default=Path(sys.executable))
-    add_output_arguments(parser)
-    args = parser.parse_args(argv)
-    console = Console(json_mode=args.json, verbose=args.verbose)
-    try:
-        return refresh(args, console)
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        console.error(error)
-        return 2
+class GalleryRefresh:
+    """One refresh of the canonical review gallery of a saved project."""
 
+    def __init__(self, args: argparse.Namespace, console: Console):
+        """Hold the command-line choices and the console to report on.
 
-def refresh(args: argparse.Namespace, console: Console) -> int:
-    console.stage("1/5 | Checking saved design and review destination")
+        Inputs:
+            args: Parsed ``--project``, ``--review``, ``--kicad-python`` and
+                ``--python`` values.
+            console: Console that receives stages, the result and errors.
+        """
+        self.args = args
+        self.console = console
 
-    project = args.project.resolve()
-    review = args.review.resolve()
-    kicad_python = args.kicad_python.resolve()
-    python = args.python.resolve()
-    board = native_path(project, ".kicad_pcb")
-    schematic = native_path(project, ".kicad_sch")
-    require(
-        board.is_file() and schematic.is_file(), "Expected live v4.1 PCB and schematic"
-    )
-    require(
-        review.is_dir() and review == (project / "deliverables" / "review").resolve(),
-        "Review destination must be the canonical project review folder",
-    )
-    require(kicad_python.is_file(), "KiCad Python runtime was not found")
-    require(python.is_file(), "Raster Python runtime was not found")
+    @staticmethod
+    def run_tool(
+        command: list[str], label: str, env: dict[str, str], console: Console
+    ) -> None:
+        """Run one rendering step as a child process while the console shows its label.
 
-    require(
-        "\n\t(sheet\n" not in schematic.read_text(encoding="utf-8"),
-        "One flattened v4.1 schematic source required; found hierarchy sheets",
-    )
-    source_paths = [board, schematic]
-    # The root is the complete editable circuit, so gallery provenance binds
-    # directly to that single source rather than a hierarchy overview.
-    source_hashes = {
-        path.relative_to(project).as_posix(): digest(path) for path in source_paths
-    }
-    full_hashes = {
-        path.relative_to(project).as_posix(): digest(path)
-        for path in [
+        Inputs:
+            command: Program and arguments.
+            label: Stage text shown on the console and in the failure message.
+            env: Environment of the child process.
+            console: Console that reports the stage.
+        Outputs: None. Raises RuntimeError with the child's output when it
+            exits with a nonzero status.
+        """
+        with console.activity(label):
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+        if result.returncode:
+            raise RuntimeError(
+                f"{label} failed ({result.returncode}):\n{result.stdout}\n{result.stderr}"
+            )
+
+    @staticmethod
+    def hashes(project: Path, paths: list[Path]) -> dict[str, str]:
+        """Hash each file, keyed by its path relative to the project."""
+        return {path.relative_to(project).as_posix(): digest(path) for path in paths}
+
+    @staticmethod
+    def settings_paths(project: Path, source_paths: list[Path]) -> list[Path]:
+        """The board and schematic plus the project settings and design rules files."""
+        return [
             *source_paths,
             native_path(project, ".kicad_pro"),
             native_path(project, ".kicad_dru"),
         ]
-    }
-    if gallery_is_current(project, review, source_hashes):
+
+    def refresh(self) -> int:
+        """Check the saved design and refresh the review files unless they are current.
+
+        Outputs:
+            0 after reporting either an unchanged or a refreshed gallery.
+            Raises RuntimeError or ValueError when the project, destination or
+            runtimes are not usable, a render fails, or the design, its
+            settings or a tracked dependency changes during rendering.
+        """
+        args, console = self.args, self.console
+        console.stage("1/5 | Checking saved design and review destination")
+
+        project = args.project.resolve()
+        review = args.review.resolve()
+        kicad_python = args.kicad_python.resolve()
+        python = args.python.resolve()
+        board = native_path(project, ".kicad_pcb")
+        schematic = native_path(project, ".kicad_sch")
         require(
-            full_hashes
-            == {
-                path.relative_to(project).as_posix(): digest(path)
-                for path in [
-                    *source_paths,
-                    native_path(project, ".kicad_pro"),
-                    native_path(project, ".kicad_dru"),
-                ]
-            },
-            "Native project settings changed during the review freshness check",
+            board.is_file() and schematic.is_file(),
+            "Expected live v4.1 PCB and schematic",
         )
+        require(
+            review.is_dir()
+            and review == (project / "deliverables" / "review").resolve(),
+            "Review destination must be the canonical project review folder",
+        )
+        require(kicad_python.is_file(), "KiCad Python runtime was not found")
+        require(python.is_file(), "Raster Python runtime was not found")
+
+        require(
+            "\n\t(sheet\n" not in schematic.read_text(encoding="utf-8"),
+            "One flattened v4.1 schematic source required; found hierarchy sheets",
+        )
+        source_paths = [board, schematic]
+        # The root is the complete editable circuit, so gallery provenance binds
+        # directly to that single source rather than a hierarchy overview.
+        source_hashes = self.hashes(project, source_paths)
+        full_hashes = self.hashes(project, self.settings_paths(project, source_paths))
+        if ReviewGallery.is_current(project, review, source_hashes):
+            require(
+                full_hashes
+                == self.hashes(project, self.settings_paths(project, source_paths)),
+                "Native project settings changed during the review freshness check",
+            )
+            console.result(
+                {
+                    "status": "unchanged",
+                    "review": str(review),
+                    "pdfs_refreshed": 0,
+                    "pngs_refreshed": 0,
+                },
+                ReviewDisplay.gallery,
+            )
+            return 0
+        tool_dir = asset_root(project) / "scripts" / "review"
+        require(
+            all(
+                (tool_dir / name).is_file()
+                for name in (
+                    "render_views.py",
+                    "rasterize_gallery.py",
+                    "build_standalone_gallery.py",
+                )
+            ),
+            "Required review-render modules are missing",
+        )
+        tool_env = os.environ.copy()
+        existing_pythonpath = tool_env.get("PYTHONPATH", "")
+        tool_env["PYTHONPATH"] = str(asset_root(project) / "scripts") + (
+            os.pathsep + existing_pythonpath if existing_pythonpath else ""
+        )
+        tool_env["PYTHONDONTWRITEBYTECODE"] = "1"
+        header = (
+            (native_path(project, ".kicad_pcb"))
+            .read_text(encoding="utf-8-sig")
+            .split("(setup", 1)[0]
+        )
+        layers = re.findall(r'\(\d+\s+"((?:F|B|In[0-9]+)\.Cu)"\s', header)
+        pdfs, pngs, active = ReviewGallery.required_outputs(layers)
+        original_review = ReviewSnapshot.capture(review, active)
+
+        with tempfile.TemporaryDirectory(prefix="v41-live-review-") as work:
+            gallery = self.render(project, kicad_python, python, Path(work), tool_env)
+            console.stage(
+                "5/5 | Verifying exports and publishing the current review set"
+            )
+            ReviewGallery.verify(gallery, source_hashes)
+            require(
+                (gallery / "index_standalone.html")
+                .read_text(encoding="utf-8")
+                .count("data:image/png;base64,")
+                == len(pngs),
+                "Standalone gallery view count does not match the saved copper stack",
+            )
+            require(
+                source_hashes == self.hashes(project, source_paths),
+                "Live PCB or schematic changed during rendering; refusing mixed review output",
+            )
+
+            require(
+                full_hashes
+                == self.hashes(project, self.settings_paths(project, source_paths)),
+                "Native project settings changed during rendering; refusing mixed review output",
+            )
+            self.check_dependencies(project, gallery)
+            original_review.publish(gallery)
+            # The delivery identity may contain reviewed claims; do not rewrite it.
+
         console.result(
             {
-                "status": "unchanged",
                 "review": str(review),
-                "pdfs_refreshed": 0,
-                "pngs_refreshed": 0,
+                "pdfs_refreshed": len(pdfs),
+                "pngs_refreshed": len(pngs),
+                "view_count": len(pngs),
+                "source_sha256": source_hashes,
+                "standalone_embedded": True,
+                "redundant_snapshot_created": False,
             },
-            show_gallery,
+            ReviewDisplay.gallery,
         )
         return 0
-    tool_dir = asset_root(project) / "scripts" / "review"
-    require(
-        all(
-            (tool_dir / name).is_file()
-            for name in (
-                "render_views.py",
-                "rasterize_gallery.py",
-                "build_standalone_gallery.py",
-            )
-        ),
-        "Required review-render modules are missing",
-    )
-    tool_env = os.environ.copy()
-    existing_pythonpath = tool_env.get("PYTHONPATH", "")
-    tool_env["PYTHONPATH"] = str(asset_root(project) / "scripts") + (
-        os.pathsep + existing_pythonpath if existing_pythonpath else ""
-    )
-    tool_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    header = (
-        (native_path(project, ".kicad_pcb"))
-        .read_text(encoding="utf-8-sig")
-        .split("(setup", 1)[0]
-    )
-    layers = re.findall(r'\(\d+\s+"((?:F|B|In[0-9]+)\.Cu)"\s', header)
-    pdfs, pngs, active = required_outputs(layers)
-    original_review = ReviewSnapshot.capture(review, active)
 
-    with tempfile.TemporaryDirectory(prefix="v41-live-review-") as work:
-        root = Path(work)
-        run(
+    def render(
+        self,
+        project: Path,
+        kicad_python: Path,
+        python: Path,
+        root: Path,
+        tool_env: dict[str, str],
+    ) -> Path:
+        """Render the native views, rasterize them and build the standalone gallery.
+
+        Inputs:
+            project: Native project folder.
+            kicad_python: Python runtime that can import ``pcbnew``.
+            python: Python runtime that rasterizes the PDFs.
+            root: Empty working folder.
+            tool_env: Environment for the child processes.
+        Outputs:
+            The new gallery folder inside ``root``.
+        """
+        console = self.console
+        self.run_tool(
             [
                 str(kicad_python),
                 "-B",
@@ -436,16 +575,16 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
             ],
             "2/5 | Rendering native PDFs and 3D views",
             tool_env,
-            console=console,
+            console,
         )
         gallery = root / "gallery"
-        run(
+        self.run_tool(
             [str(python), "-B", "-m", "review.rasterize_gallery", str(gallery)],
             "3/5 | Creating PNGs and gallery",
             tool_env,
-            console=console,
+            console,
         )
-        run(
+        self.run_tool(
             [
                 str(python),
                 "-B",
@@ -463,42 +602,23 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
             ],
             "4/5 | Building standalone gallery",
             tool_env,
-            console=console,
+            console,
         )
-        console.stage("5/5 | Verifying exports and publishing the current review set")
-        verify_gallery(gallery, source_hashes)
-        require(
-            (gallery / "index_standalone.html")
-            .read_text(encoding="utf-8")
-            .count("data:image/png;base64,")
-            == len(pngs),
-            "Standalone gallery view count does not match the saved copper stack",
-        )
-        require(
-            source_hashes
-            == {
-                path.relative_to(project).as_posix(): digest(path)
-                for path in source_paths
-            },
-            "Live PCB or schematic changed during rendering; refusing mixed review output",
-        )
+        return gallery
 
-        require(
-            full_hashes
-            == {
-                path.relative_to(project).as_posix(): digest(path)
-                for path in [
-                    *source_paths,
-                    native_path(project, ".kicad_pro"),
-                    native_path(project, ".kicad_dru"),
-                ]
-            },
-            "Native project settings changed during rendering; refusing mixed review output",
-        )
+    @staticmethod
+    def check_dependencies(project: Path, gallery: Path) -> None:
+        """Require the tracked dependencies to be unchanged since the render started.
+
+        Inputs:
+            project: Native project folder.
+            gallery: Fresh gallery whose ``source.json`` recorded the hashes.
+        Outputs: None. Raises RuntimeError when the inventory or any file differs.
+        """
         dependencies = json.loads(
             (gallery / "source.json").read_text(encoding="utf-8")
         )["dependency_sha256"]
-        current_dependencies = dependency_paths(project)
+        current_dependencies = ReviewGallery.dependency_paths(project)
         require(
             current_dependencies.keys() == dependencies.keys(),
             "Review dependency inventory changed during rendering",
@@ -512,23 +632,40 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
                 and digest(dependency) == expected,
                 "Review dependency changed during rendering: " + relative,
             )
-        original_review.publish(gallery)
-        # The delivery identity may contain reviewed claims; do not rewrite it.
 
-    console.result(
-        {
-            "review": str(review),
-            "pdfs_refreshed": len(pdfs),
-            "pngs_refreshed": len(pngs),
-            "view_count": len(pngs),
-            "source_sha256": source_hashes,
-            "standalone_embedded": True,
-            "redundant_snapshot_created": False,
-        },
-        show_gallery,
-    )
-    return 0
 
+class RefreshGalleryCommand:
+    """Command-line entry: refresh the canonical review gallery."""
+
+    def __call__(self, argv: list[str] | None = None) -> int:
+        """Parse the command line and refresh the gallery.
+
+        Inputs:
+            argv: Command-line arguments; the process arguments when None.
+        Outputs:
+            Exit status 0 on success, 2 after reporting an operating-system,
+            value, runtime or subprocess error.
+        """
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--project", type=Path, required=True)
+        parser.add_argument("--review", type=Path, required=True)
+        parser.add_argument(
+            "--kicad-python",
+            type=Path,
+            default=Path(r"C:\Program Files\KiCad\10.0\bin\python.exe"),
+        )
+        parser.add_argument("--python", type=Path, default=Path(sys.executable))
+        add_output_arguments(parser)
+        args = parser.parse_args(argv)
+        console = Console(json_mode=args.json, verbose=args.verbose)
+        try:
+            return GalleryRefresh(args, console).refresh()
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            console.error(error)
+            return 2
+
+
+main = RefreshGalleryCommand()
 
 if __name__ == "__main__":
     raise SystemExit(main())

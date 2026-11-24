@@ -134,7 +134,9 @@ class ReleaseGuardTests(unittest.TestCase):
             root = Path(directory)
             project, manufacturing, gallery = self.attachment_fixture(root)
             output = root / "attachment.zip"
-            build_technical_attachment.build(project, manufacturing, gallery, output)
+            build_technical_attachment.TechnicalAttachment(
+                project, manufacturing, gallery, output
+            ).build()
             self.assertTrue(output.is_file())
             self.assertFalse((root / "attachment_inputs").exists())
 
@@ -145,7 +147,9 @@ class ReleaseGuardTests(unittest.TestCase):
                 root, input_folder="data"
             )
             output = root / "attachment.zip"
-            build_technical_attachment.build(project, manufacturing, gallery, output)
+            build_technical_attachment.TechnicalAttachment(
+                project, manufacturing, gallery, output
+            ).build()
             with zipfile.ZipFile(output) as archive:
                 self.assertIn("data/STACKUP_CURRENT.json", archive.namelist())
                 self.assertIn(
@@ -163,9 +167,9 @@ class ReleaseGuardTests(unittest.TestCase):
             receipt = root / "attachment.receipt.json"
             receipt.write_text("unrelated receipt", encoding="utf-8")
             with self.assertRaises((RuntimeError, FileExistsError)):
-                build_technical_attachment.build(
+                build_technical_attachment.TechnicalAttachment(
                     project, manufacturing, gallery, output
-                )
+                ).build()
             self.assertEqual(receipt.read_text(encoding="utf-8"), "unrelated receipt")
             self.assertFalse(output.exists())
 
@@ -186,9 +190,9 @@ class ReleaseGuardTests(unittest.TestCase):
                 side_effect=concurrently_create,
             ):
                 with self.assertRaises((RuntimeError, FileExistsError)):
-                    build_technical_attachment.build(
+                    build_technical_attachment.TechnicalAttachment(
                         project, manufacturing, gallery, output
-                    )
+                    ).build()
             self.assertEqual(output.read_bytes(), b"another file")
 
     def test_independent_audit_preserves_existing_report(self):
@@ -256,9 +260,9 @@ class ReleaseGuardTests(unittest.TestCase):
             project = self.held_project(root)
             output = root / "new" / "attachment.zip"
             with self.assertRaisesRegex(RuntimeError, "on hold"):
-                build_technical_attachment.build(
+                build_technical_attachment.TechnicalAttachment(
                     project, root / "generated", root / "views", output
-                )
+                ).build()
             self.assertFalse(output.parent.exists())
 
     @unittest.skipUnless(

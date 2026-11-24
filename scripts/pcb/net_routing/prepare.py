@@ -157,11 +157,11 @@ def summarize_drc(
 
 
 def _review_current(project: Path, source_hashes: dict[str, str]) -> bool:
-    from review.refresh_gallery import verify_gallery
+    from review.refresh_gallery import ReviewGallery
 
     review = project / "deliverables" / "review"
     try:
-        verify_gallery(review, source_hashes)
+        ReviewGallery.verify(review, source_hashes)
         standalone = review / "index_standalone.html"
         progress = review / "routing_progress.png"
         data = json.loads((review / "source.json").read_text(encoding="utf-8"))

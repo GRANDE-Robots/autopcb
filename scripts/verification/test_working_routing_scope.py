@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from pcb.checkpoints import read_config
 from pcb.net_routing.protection import unqualified_working_nets
 from pcb.net_routing.controller import encode_checkpoint, rebind_exact_saved_checkpoint
-from review.refresh_gallery import required_outputs
+from review.refresh_gallery import ReviewGallery
 
 
 class WorkingScopeTests(unittest.TestCase):
@@ -112,7 +112,7 @@ class WorkingScopeTests(unittest.TestCase):
 
     def test_six_layer_gallery_requires_both_added_layer_views(self):
         layers = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"]
-        pdfs, pngs, active = required_outputs(layers)
+        pdfs, pngs, active = ReviewGallery.required_outputs(layers)
         self.assertEqual((len(pdfs), len(pngs)), (9, 13))
         self.assertTrue(
             {"PCB_In3.pdf", "PCB_In4.pdf", "PCB_In3.png", "PCB_In4.png"} <= active

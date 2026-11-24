@@ -1,4 +1,10 @@
-"""Delegate routing to the existing preview runner and guarded board publisher."""
+"""layout.py: preview, compare and apply routing for one native project.
+
+Previews run the existing autoroute command in KiCad's Python. A stored preview
+is compared with the saved board, and saved only through the guarded publisher.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,7 @@ import tempfile
 
 from autopcb.jobs import inspect, write_json
 from autopcb.native import Native, engine_path
-from autopcb.policy import routing_policy
+from autopcb.policy import RoutingPolicy
 from core.paths import ProjectStorage
 from core.project import ENTRY_ENV, ProjectPaths
 
@@ -26,6 +32,7 @@ class Budget:
     memory_gib: float
 
     def as_dict(self) -> dict:
+        """The budget as report fields: rounds, seconds_per_batch and memory_gib."""
         return {
             "rounds": self.rounds,
             "seconds_per_batch": self.seconds,
@@ -42,11 +49,24 @@ class Layout:
         project: ProjectPaths,
         storage: ProjectStorage | None = None,
     ):
+        """Bind the toolchain, project and storage.
+
+        Inputs:
+            native: KiCad toolchain that runs the jobs.
+            project: Native project to route.
+            storage: Where the policy and results live; the project's own storage when None.
+        """
         self.native, self.project = native, project
         self.storage = storage or ProjectStorage(project.root)
 
     @staticmethod
     def check_id(run_id: str) -> str:
+        """Check the ID of a saved routing preview.
+
+        Outputs:
+            The ID unchanged. Raises ValueError unless it is 32 lowercase hexadecimal
+            characters.
+        """
         if not re.fullmatch("[0-9a-f]{32}", run_id):
             raise ValueError("Expected the 32-character ID of a saved routing preview")
         return run_id
@@ -71,7 +91,7 @@ class Layout:
             rules = (
                 settings.get("board", {}).get("design_settings", {}).get("rules", {})
             )
-            values = routing_policy(
+            values = RoutingPolicy.compile(
                 geometry["copper_layers"], defaults=defaults, minima=rules
             )
         write_json(target, values)
@@ -84,6 +104,17 @@ class Layout:
         }
 
     def _invoke(self, module: str, arguments: list[str]) -> dict:
+        """Run a routing module in KiCad's Python and read its JSON result.
+
+        Inputs:
+            module: Dotted module name, run with ``-m`` from the engine folder.
+            arguments: Arguments placed after ``--project``; ``--json`` is appended.
+        Outputs:
+            The JSON object the module printed. Raises RuntimeError with the last line of
+            its error output when it printed nothing, and with its error output when the
+            result is not an object or the exit status is not 0 or 2. An interrupt
+            terminates the child and is raised again.
+        """
         source_root = engine_path()
         env = {
             **os.environ,
@@ -153,6 +184,20 @@ class Layout:
         allow_placement: bool = False,
         renew: str | None = None,
     ) -> dict:
+        """Run a bounded routing preview and keep it as a source-bound run.
+
+        Inputs:
+            rounds: Search rounds after which the run pauses.
+            seconds: Search time of one batch, in seconds.
+            memory_gib: Memory limit in GiB; the router's default when None.
+            resume: ID of a source-matched run to resume.
+            allow_placement: Let the router move parts; otherwise placement is kept.
+            renew: ID of a preview to recheck and rebuild in a new run.
+        Outputs:
+            The router's result plus kind ``layout_preview`` and the path of the run
+            record. Raises ValueError when the project has no routing policy or an ID is
+            malformed, and RuntimeError when the router did not retain a run ID.
+        """
         if not self.storage.config_file("autopcb.json").is_file():
             raise ValueError(
                 "Create and review the project routing policy before running layout."
@@ -179,6 +224,12 @@ class Layout:
         }
 
     def compare(self, run_id: str) -> dict:
+        """Read the saved board and a stored preview side by side.
+
+        Outputs:
+            A ``layout_compare`` report with the geometry of the saved board (before) and
+            of the preview (after). Raises ValueError for a malformed run ID.
+        """
         self.check_id(run_id)
         with tempfile.TemporaryDirectory(prefix="autopcb-compare-") as working:
             target = Path(working) / "comparison.json"
@@ -200,6 +251,12 @@ class Layout:
         }
 
     def apply(self, run_id: str) -> dict:
+        """Save a stored preview through the guarded publisher.
+
+        Outputs:
+            A ``layout_apply`` report with production_approved False. Raises RuntimeError
+            with the publisher's message when the preview was not saved as work in progress.
+        """
         self.check_id(run_id)
         with tempfile.TemporaryDirectory(prefix="autopcb-apply-result-") as folder:
             output = Path(folder) / "applied.json"

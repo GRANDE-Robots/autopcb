@@ -38,10 +38,10 @@ class RoutingProgressTests(unittest.TestCase):
             ),
         ]
         self.assertEqual(
-            progress.latest_scope_change(points, 2),
+            progress.ProgressPace.latest_scope_change(points, 2),
             (1, "IMU power and data moved off carrier"),
         )
-        self.assertIsNone(progress.latest_scope_change(points[:1], None))
+        self.assertIsNone(progress.ProgressPace.latest_scope_change(points[:1], None))
 
     def test_design_rebase_breaks_plot_lines_and_marks_scope(self):
         points = [
@@ -52,10 +52,11 @@ class RoutingProgressTests(unittest.TestCase):
             ),
             point("2026-11-04T09:01:00-08:00", 139, "c"),
         ]
-        helper = getattr(progress, "_series_runs", None)
+        helper = getattr(progress.ProgressChart, "series_runs", None)
         self.assertTrue(callable(helper), "scope-aware plot segmentation is missing")
         self.assertEqual(
-            progress.latest_scope_change(points, 2), (1, "Imported v4.2 baseline")
+            progress.ProgressPace.latest_scope_change(points, 2),
+            (1, "Imported v4.2 baseline"),
         )
         self.assertEqual(
             helper([(0, 186), (1, 140), (2, 139)], {1, 2}),
@@ -68,8 +69,10 @@ class RoutingProgressTests(unittest.TestCase):
             point("2026-10-29T10:00:00-07:00", 262, "b"),
             point("2026-10-29T10:02:00-07:00", 250, "c"),
         ]
-        self.assertEqual(progress.latest_preview_pace(points, 1), (12, 120.0, 6.0))
-        self.assertIsNone(progress.latest_preview_pace(points[:2], 1))
+        self.assertEqual(
+            progress.ProgressPace.latest_preview_pace(points, 1), (12, 120.0, 6.0)
+        )
+        self.assertIsNone(progress.ProgressPace.latest_preview_pace(points[:2], 1))
 
     def test_recorded_run_pace_excludes_idle_time_and_requires_a_valid_counter(self):
         points = [
@@ -81,11 +84,13 @@ class RoutingProgressTests(unittest.TestCase):
                 point("2026-10-29T10:32:00-07:00", 250, "c"), routing_run_seconds=130
             ),
         ]
-        self.assertEqual(progress.latest_recorded_run_pace(points, 1), (12, 30, 24.0))
+        self.assertEqual(
+            progress.ProgressPace.latest_recorded_run_pace(points, 1), (12, 30, 24.0)
+        )
         points[-1] = progress.replace(points[-1], routing_run_seconds=90)
-        self.assertIsNone(progress.latest_recorded_run_pace(points, 1))
+        self.assertIsNone(progress.ProgressPace.latest_recorded_run_pace(points, 1))
         points[-1] = progress.replace(points[-1], routing_run_seconds=None)
-        self.assertIsNone(progress.latest_recorded_run_pace(points, 1))
+        self.assertIsNone(progress.ProgressPace.latest_recorded_run_pace(points, 1))
 
     def test_stalled_preview_reports_zero_rate_instead_of_hiding_speed(self):
         points = [
@@ -97,8 +102,12 @@ class RoutingProgressTests(unittest.TestCase):
                 point("2026-10-29T10:02:00-07:00", 215, "b"), routing_run_seconds=60
             ),
         ]
-        self.assertEqual(progress.latest_preview_pace(points, 1), (0, 120.0, 0.0))
-        self.assertEqual(progress.latest_recorded_run_pace(points, 1), (0, 60.0, 0.0))
+        self.assertEqual(
+            progress.ProgressPace.latest_preview_pace(points, 1), (0, 120.0, 0.0)
+        )
+        self.assertEqual(
+            progress.ProgressPace.latest_recorded_run_pace(points, 1), (0, 60.0, 0.0)
+        )
 
     def test_preview_is_separate_and_disappears_when_sources_change(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,11 +126,13 @@ class RoutingProgressTests(unittest.TestCase):
             progress.publish_preview(
                 root, {"v4.1.kicad_pcb": digest}, "test", [asdict(preview)]
             )
-            points, boundary = progress.review_points([saved], review)
+            points, boundary = progress.PreviewSeries.review_points([saved], review)
             self.assertEqual((points[-1].open_connections, boundary), (281, 1))
             self.assertEqual((review / progress.CSV_NAME).read_bytes(), history)
             board.write_bytes(b"edited board")
-            self.assertEqual(progress.review_points([saved], review), ([saved], None))
+            self.assertEqual(
+                progress.PreviewSeries.review_points([saved], review), ([saved], None)
+            )
             with self.assertRaisesRegex(RuntimeError, "changed"):
                 progress.publish_preview(
                     root, {"v4.1.kicad_pcb": digest}, "test", [asdict(preview)]
@@ -145,7 +156,7 @@ class RoutingProgressTests(unittest.TestCase):
                     progress, "_fingerprint", return_value=([], {}, "ignored")
                 ),
             ):
-                result = progress.record(
+                result = progress.ProgressRecorder.record(
                     project, review, Path("kicad-python"), "Check", run_metrics=metrics
                 )
                 self.assertEqual(result["status"], "recorded")
@@ -158,7 +169,7 @@ class RoutingProgressTests(unittest.TestCase):
                     "c" * 64, "b" * 64, 1.5, 120.0, "run evidence"
                 )
                 with self.assertRaisesRegex(ValueError, "source"):
-                    progress.record(
+                    progress.ProgressRecorder.record(
                         project,
                         review,
                         Path("kicad-python"),
@@ -175,13 +186,21 @@ class RoutingProgressTests(unittest.TestCase):
             "ignored_checks": [],
             "included_severities": ["error", "warning"],
         }
-        self.assertEqual(progress.summarize_report(report), (2, 1, 1, 0))
+        self.assertEqual(
+            progress.SavedBoardCheck.summarize_report(report), (2, 1, 1, 0)
+        )
         with self.assertRaisesRegex(ValueError, "ignored"):
-            progress.summarize_report({**report, "ignored_checks": ["clearance"]})
+            progress.SavedBoardCheck.summarize_report(
+                {**report, "ignored_checks": ["clearance"]}
+            )
         with self.assertRaisesRegex(ValueError, "both errors and warnings"):
-            progress.summarize_report({**report, "included_severities": ["warning"]})
+            progress.SavedBoardCheck.summarize_report(
+                {**report, "included_severities": ["warning"]}
+            )
         with self.assertRaisesRegex(ValueError, "unconnected"):
-            progress.summarize_report({**report, "unconnected_items": None})
+            progress.SavedBoardCheck.summarize_report(
+                {**report, "unconnected_items": None}
+            )
 
     def test_history_round_trip_and_timestamp_guard(self):
         points = [
@@ -209,7 +228,7 @@ class RoutingProgressTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "progress.png"
-            progress.draw_chart(points, path)
+            progress.ProgressChart.draw(points, path)
             with Image.open(path) as image:
                 self.assertEqual(image.size, (1600, 820))
                 image.verify()
@@ -228,7 +247,9 @@ class RoutingProgressTests(unittest.TestCase):
                     progress, "_fingerprint", return_value=([], {}, "ignored")
                 ),
             ):
-                first = progress.record(project, review, Path("kicad-python"), "Check")
+                first = progress.ProgressRecorder.record(
+                    project, review, Path("kicad-python"), "Check"
+                )
                 table = review / progress.CSV_NAME
                 plot = review / progress.PNG_NAME
                 before = (
@@ -237,7 +258,9 @@ class RoutingProgressTests(unittest.TestCase):
                     table.stat().st_mtime_ns,
                     plot.stat().st_mtime_ns,
                 )
-                second = progress.record(project, review, Path("kicad-python"), "Check")
+                second = progress.ProgressRecorder.record(
+                    project, review, Path("kicad-python"), "Check"
+                )
                 after = (
                     table.read_bytes(),
                     plot.read_bytes(),
@@ -264,7 +287,9 @@ class RoutingProgressTests(unittest.TestCase):
                 ),
             ):
                 with self.assertRaisesRegex(RuntimeError, "changed"):
-                    progress.record(project, review, Path("kicad-python"), "Check")
+                    progress.ProgressRecorder.record(
+                        project, review, Path("kicad-python"), "Check"
+                    )
             self.assertEqual(table.read_bytes(), b"existing data")
             self.assertFalse((review / progress.PNG_NAME).exists())
 

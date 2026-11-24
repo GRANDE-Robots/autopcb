@@ -1,4 +1,10 @@
-"""Capability-checked, process-isolated KiCad adapter."""
+"""native.py: capability-checked, process-isolated adapter to KiCad.
+
+``Native`` pairs a KiCad CLI with a Python whose ``pcbnew`` has the same
+version, runs CLI commands and runs the native worker in that Python.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,23 +20,39 @@ from core.paths import ProjectStorage
 from core.toolchain import kicad_cli, native_python_candidates
 
 
-def engine_path() -> Path:
-    bundle = getattr(sys, "_MEIPASS", None)
-    return Path(bundle) / "engine" if bundle else Path(__file__).resolve().parents[1]
+class EnginePath:
+    """Locates the folder that holds the AutoPCB packages."""
+
+    def __call__(self) -> Path:
+        """The ``engine`` folder of a frozen bundle, else the ``scripts`` folder."""
+        bundle = getattr(sys, "_MEIPASS", None)
+        return (
+            Path(bundle) / "engine" if bundle else Path(__file__).resolve().parents[1]
+        )
 
 
-def _version(text: str) -> str:
-    match = re.search(r"\b(\d+\.\d+\.\d+)\b", text)
-    if match is None:
-        raise ValueError(f"Could not identify KiCad version: {text.strip()}")
-    return match[1]
+engine_path = EnginePath()
 
 
 @dataclass(frozen=True)
 class Native:
+    """A KiCad CLI and a Python with the same version of ``pcbnew``."""
+
     cli: Path
     python: Path
     version: str
+
+    @staticmethod
+    def _version(text: str) -> str:
+        """The first ``major.minor.patch`` version in a tool's output.
+
+        Outputs:
+            The version text. Raises ValueError when the output has none.
+        """
+        match = re.search(r"\b(\d+\.\d+\.\d+)\b", text)
+        if match is None:
+            raise ValueError(f"Could not identify KiCad version: {text.strip()}")
+        return match[1]
 
     @staticmethod
     def prepare_windows_cli() -> None:
@@ -61,8 +83,18 @@ class Native:
 
     @classmethod
     def discover(cls, *, cli: Path | None = None, python: Path | None = None) -> Native:
+        """Find a KiCad CLI and a Python whose ``pcbnew`` matches its version.
+
+        Inputs:
+            cli: KiCad CLI to use; the discovered one when None.
+            python: Python to use; the candidates beside the CLI when None.
+        Outputs:
+            The matched toolchain. Raises RuntimeError when no candidate Python
+            reports the CLI's ``pcbnew`` version, and ValueError when the CLI
+            reports no version.
+        """
         executable = kicad_cli(cli)
-        version = _version(
+        version = cls._version(
             run_checked(
                 [str(executable), "version"], operation="KiCad version", timeout=10
             ).stdout
@@ -84,7 +116,7 @@ class Native:
                     operation="KiCad Python probe",
                     timeout=10,
                 )
-                if _version(output.stdout) == version:
+                if cls._version(output.stdout) == version:
                     return cls(executable, candidate, version)
             except (RuntimeError, ValueError):
                 continue
@@ -95,6 +127,15 @@ class Native:
     def call(
         self, *args: str | Path, output: Path | None = None, timeout: float = 180
     ) -> None:
+        """Run one KiCad CLI command.
+
+        Inputs:
+            args: Arguments after the executable.
+            output: File the command must create, which must not exist beforehand.
+            timeout: Seconds before the command is abandoned.
+        Outputs:
+            None. Raises RuntimeError when the command fails or leaves no output.
+        """
         run_checked(
             [str(self.cli), *map(str, args)],
             operation="KiCad " + " ".join(map(str, args[:3])),
@@ -110,6 +151,18 @@ class Native:
         timeout: float = 180,
         storage: ProjectStorage | None = None,
     ):
+        """Run one native worker operation in KiCad's Python.
+
+        Inputs:
+            operation: Worker operation, such as ``inspect`` or ``generate``.
+            args: Board, record and optional argument files the operation reads.
+            output: File the operation must create, which must not exist beforehand.
+            timeout: Seconds before the worker is abandoned.
+            storage: Project storage whose environment variables the worker gets.
+        Outputs:
+            The completed process. Raises RuntimeError when the worker fails or
+            leaves no output.
+        """
         root = engine_path()
         command = (
             "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); "
@@ -139,6 +192,12 @@ class Native:
         )
 
     def footprints(self) -> Path:
+        """The folder of KiCad's standard footprint libraries.
+
+        Outputs:
+            ``KICAD10_FOOTPRINT_DIR`` when set, else the first standard install
+            location that exists. Raises RuntimeError when none is found.
+        """
         configured = os.environ.get("KICAD10_FOOTPRINT_DIR")
         candidates = (
             [Path(configured)]
@@ -161,6 +220,16 @@ class Native:
         )
 
     def report(self, args: tuple[str, ...], source: Path, output: Path) -> dict:
+        """Run a KiCad CLI check that writes a JSON report and read the report.
+
+        Inputs:
+            args: Command words, such as ``("pcb", "drc")``.
+            source: Schematic or board to check.
+            output: New report file.
+        Outputs:
+            The report. Raises RuntimeError when the command fails or the report
+            is not a JSON object.
+        """
         self.call(
             *args,
             "--format",
@@ -177,6 +246,7 @@ class Native:
         return data
 
     def status(self) -> dict:
+        """The toolchain as report fields: KiCad version, CLI, Python and platform."""
         return {
             "kicad_version": self.version,
             "kicad_cli": str(self.cli),

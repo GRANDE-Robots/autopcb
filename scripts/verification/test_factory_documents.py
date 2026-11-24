@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from core.export_helpers import sha, writecsv, writejson
-from release.generate_factory_documents import generate as generate_factory_docs
+from release.generate_factory_documents import FactoryDocuments
 
 
 class FactoryDocumentTests(unittest.TestCase):
@@ -153,7 +153,7 @@ class FactoryDocumentTests(unittest.TestCase):
         return p, out, m
 
     def generate(self, p, out):
-        generate_factory_docs(p, out)
+        FactoryDocuments.generate(p, out)
 
     def test_dynamic_counts_zero_fills_and_owner_stock(self):
         with tempfile.TemporaryDirectory() as d:

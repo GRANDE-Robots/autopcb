@@ -11,11 +11,7 @@ import pcbnew
 
 from pcb.net_routing.batch import preview_round
 from pcb.net_routing.model import Site
-from pcb.net_routing.obstructions import (
-    diagnose,
-    local_escape_witnesses,
-    obstruction_hits,
-)
+from pcb.net_routing.obstructions import ObstructionScan, diagnose
 from pcb.net_routing.recovery import RecoveryPolicy
 from pcb.net_routing.relocation import placement_requests
 from pcb.net_routing.reroute import Obstruction
@@ -63,7 +59,7 @@ class ObstructionHitsTests(unittest.TestCase):
         )
         soft = {"same": (same,), "other": (other,)}
         self.assertEqual(
-            obstruction_hits(route, soft, Profile(), "TARGET", mm(0.6), mm(0.2)),
+            ObstructionScan.hits(route, soft, Profile(), "TARGET", mm(0.6), mm(0.2)),
             {"other"},
         )
 
@@ -87,7 +83,7 @@ class ObstructionHitsTests(unittest.TestCase):
             "via",
         )
         self.assertEqual(
-            obstruction_hits(
+            ObstructionScan.hits(
                 route,
                 {"track": (same_copper,), "via": (same_via,)},
                 Profile(),
@@ -130,10 +126,7 @@ def add_multinet_component(board):
 
 class RelocationTests(unittest.TestCase):
     def test_protected_anchor_candidates_leave_protected_pad_and_copper_untouched(self):
-        from pcb.net_routing.relocation import (
-            protected_anchor_pose,
-            protected_anchor_requests,
-        )
+        from pcb.net_routing.relocation import AnchorRequests, protected_anchor_pose
 
         with tempfile.TemporaryDirectory() as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
@@ -171,7 +164,7 @@ class RelocationTests(unittest.TestCase):
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
             )
-            candidates, _ = protected_anchor_requests(
+            candidates, _ = AnchorRequests.protected(
                 board,
                 request,
                 policy,
@@ -190,7 +183,7 @@ class RelocationTests(unittest.TestCase):
             }
             self.assertIn(signal_track.m_Uuid.AsString(), removed)
             self.assertNotIn(protected_track.m_Uuid.AsString(), removed)
-            omitted, _ = protected_anchor_requests(
+            omitted, _ = AnchorRequests.protected(
                 board,
                 request,
                 {**policy, "exclude_nets": ["PROTECTED"]},
@@ -300,7 +293,7 @@ class RelocationTests(unittest.TestCase):
             self.assertIsNone(ground_anchor_pose(part, {"GND"}))
 
     def test_ground_anchor_candidates_preserve_protected_copper(self):
-        from pcb.net_routing.relocation import ground_anchor_requests
+        from pcb.net_routing.relocation import AnchorRequests
 
         with tempfile.TemporaryDirectory() as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
@@ -326,7 +319,7 @@ class RelocationTests(unittest.TestCase):
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 Site(Point.from_mm((8, 5)), "F.Cu"),
             )
-            candidates, descriptions = ground_anchor_requests(
+            candidates, descriptions = AnchorRequests.ground(
                 board,
                 request,
                 policy,
@@ -351,7 +344,7 @@ class RelocationTests(unittest.TestCase):
                 Site(Point.from_mm((9, 7)), "F.Cu"),
                 Site(Point.from_mm((9.5, 7.5)), "F.Cu"),
             )
-            farther, _ = ground_anchor_requests(
+            farther, _ = AnchorRequests.ground(
                 board,
                 request,
                 policy,
@@ -362,7 +355,7 @@ class RelocationTests(unittest.TestCase):
             self.assertTrue(
                 farther, "A same-net part must not disappear outside sampled endpoints"
             )
-            rejected, _ = ground_anchor_requests(
+            rejected, _ = AnchorRequests.ground(
                 board,
                 request,
                 policy,
@@ -376,7 +369,7 @@ class RelocationTests(unittest.TestCase):
             board.Add(group)
             group.AddItem(part)
             pcbnew.SaveBoard(str(source), board)
-            singleton, _ = ground_anchor_requests(
+            singleton, _ = AnchorRequests.ground(
                 board,
                 request,
                 policy,
@@ -387,7 +380,7 @@ class RelocationTests(unittest.TestCase):
             self.assertTrue(singleton)
             group.AddItem(board.FindFootprintByReference("J1"))
             pcbnew.SaveBoard(str(source), board)
-            multiple, _ = ground_anchor_requests(
+            multiple, _ = AnchorRequests.ground(
                 board,
                 request,
                 policy,
@@ -436,7 +429,7 @@ class RelocationTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), before)
 
     def test_singleton_group_guard_rejects_nested_locked_or_shared_items(self):
-        from pcb.net_routing.relocation import singleton_group_members
+        from pcb.net_routing.relocation import SingletonFootprintGroups
 
         source = """(kicad_pcb
           (group "safe" (uuid "safe-group") (members "safe-part"))
@@ -445,7 +438,9 @@ class RelocationTests(unittest.TestCase):
           (group "locked" (locked yes) (uuid "locked-group") (members "locked-part"))
           (group "shared-a" (uuid "shared-a") (members "shared-part"))
           (group "shared-b" (uuid "shared-b") (members "shared-part")))"""
-        self.assertEqual(singleton_group_members(source), frozenset({"safe-part"}))
+        self.assertEqual(
+            SingletonFootprintGroups.members(source), frozenset({"safe-part"})
+        )
 
     def test_local_escape_finds_only_copper_trapping_the_pad(self):
         def box(x1, y1, x2, y2, net):
@@ -483,7 +478,7 @@ class RelocationTests(unittest.TestCase):
             via_drill=mm(0.3),
         )
         anchor = Site(Point.from_mm((2, 2)), "F.Cu")
-        witnesses = local_escape_witnesses(
+        witnesses = ObstructionScan.escape_witnesses(
             GridRouter(**settings, obstacles=(pad,)),
             anchor,
             {"ring": ring, "far": (far,)},
@@ -496,7 +491,7 @@ class RelocationTests(unittest.TestCase):
         # Copper that is not eligible for removal remains a hard obstacle.
         blocked = GridRouter(**settings, obstacles=(pad, *ring))
         self.assertFalse(
-            local_escape_witnesses(
+            ObstructionScan.escape_witnesses(
                 blocked, anchor, {"far": (far,)}, {"far": 1.0}, lambda: None
             )
         )
@@ -587,7 +582,7 @@ class RelocationTests(unittest.TestCase):
             mm(0.3),
             obstacles=(pad,),
         )
-        witnesses = local_escape_witnesses(
+        witnesses = ObstructionScan.escape_witnesses(
             model,
             Site(Point.from_mm((2, 2)), "F.Cu"),
             {"inner": (inner,), "own": (own,)},
@@ -626,7 +621,7 @@ class RelocationTests(unittest.TestCase):
             raise SearchBudgetExceeded("diagnostic expired")
 
         with self.assertRaises(SearchBudgetExceeded):
-            local_escape_witnesses(
+            ObstructionScan.escape_witnesses(
                 model,
                 Site(Point.from_mm((2, 2)), "F.Cu"),
                 soft,
@@ -1199,7 +1194,7 @@ class RelocationTests(unittest.TestCase):
             self.assertIn({"R50", "R52"}, pairs)
 
     def test_removing_obstruction_also_repairs_newly_exposed_track_ends(self):
-        from pcb.net_routing.relocation import _extend_exposed_copper
+        from pcb.net_routing.relocation import PlacementRepair
 
         with tempfile.TemporaryDirectory(prefix="autopcb-exposed-ends-") as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
@@ -1212,7 +1207,9 @@ class RelocationTests(unittest.TestCase):
             removals = {
                 "SIGNAL": [{"kind": "segment", "uuid": middle.m_Uuid.AsString()}]
             }
-            extra = _extend_exposed_copper(board, removals, (), set(), max_items=8)
+            extra = PlacementRepair.extend_exposed_copper(
+                board, removals, (), set(), max_items=8
+            )
             self.assertEqual(
                 {item.m_Uuid.AsString() for item in extra},
                 {first.m_Uuid.AsString(), last.m_Uuid.AsString()},
@@ -1250,7 +1247,7 @@ class RelocationTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
 
     def test_exposed_end_repair_stops_at_a_surviving_branch(self):
-        from pcb.net_routing.relocation import _extend_exposed_copper
+        from pcb.net_routing.relocation import PlacementRepair
 
         with tempfile.TemporaryDirectory(prefix="autopcb-exposed-branch-") as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
@@ -1258,7 +1255,7 @@ class RelocationTests(unittest.TestCase):
             removed = track(board, "SIGNAL", (2, 3), (4, 3), bottom=True)
             track(board, "SIGNAL", (4, 3), (6, 3), bottom=True)
             track(board, "SIGNAL", (4, 3), (4, 5), bottom=True)
-            extra = _extend_exposed_copper(
+            extra = PlacementRepair.extend_exposed_copper(
                 board,
                 {"SIGNAL": [{"kind": "segment", "uuid": removed.m_Uuid.AsString()}]},
                 (),
@@ -1268,10 +1265,7 @@ class RelocationTests(unittest.TestCase):
             self.assertEqual(extra, ())
 
     def test_exposed_end_repair_does_not_skip_locks_or_item_limits(self):
-        from pcb.net_routing.relocation import (
-            UnsupportedPlacement,
-            _extend_exposed_copper,
-        )
+        from pcb.net_routing.relocation import PlacementRepair, UnsupportedPlacement
 
         with tempfile.TemporaryDirectory(prefix="autopcb-exposed-limits-") as folder:
             source = boards.RouteOptimizerTests.make_board(Path(folder))
@@ -1285,12 +1279,16 @@ class RelocationTests(unittest.TestCase):
                 "SIGNAL": [{"kind": "segment", "uuid": middle.m_Uuid.AsString()}]
             }
             with self.assertRaisesRegex(UnsupportedPlacement, "item limit"):
-                _extend_exposed_copper(board, removals, (), set(), max_items=1)
+                PlacementRepair.extend_exposed_copper(
+                    board, removals, (), set(), max_items=1
+                )
             first.SetLocked(True)
             with self.assertRaisesRegex(
                 UnsupportedPlacement, "cannot be safely rerouted"
             ):
-                _extend_exposed_copper(board, removals, (), set(), max_items=8)
+                PlacementRepair.extend_exposed_copper(
+                    board, removals, (), set(), max_items=8
+                )
             self.assertEqual(len(tuple(board.GetTracks())), 3)
 
     def test_placement_copper_limit_is_independent_of_basic_ripup(self):

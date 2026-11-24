@@ -12,7 +12,7 @@ from pcb.net_routing.backend import route_payload
 from pcb.net_routing.model import Budget, BudgetExhausted, Limits
 from pcb.net_routing.recovery import RecoveryPolicy, next_stage, renew_queue
 from pcb.net_routing.rules import Courtyard, RoutingRules, read_rules
-from pcb.net_routing.runner import _split_failed
+from pcb.net_routing.runner import RoundQueue
 from pcb.net_routing.schedule import search_orders
 from pcb.route_cli import campaign_changes
 from pcb.route_optimizer import GridRouter, Obstacle, Point, Segment, mm
@@ -1053,7 +1053,7 @@ class RetryConsistencyTests(unittest.TestCase):
             ],
         }
         queue = []
-        _split_failed(
+        RoundQueue.split_failed(
             queue, [request], {"SIGNAL": 2, "NEXT": 2}, {"attempts": [attempt]}
         )
         self.assertEqual(queue[0][0]["nets"][0]["name"], "NEXT")
@@ -1082,7 +1082,7 @@ class RetryConsistencyTests(unittest.TestCase):
             ],
         }
         queue = []
-        _split_failed(
+        RoundQueue.split_failed(
             queue, [request], {"SIGNAL": 2, "NEXT": 2}, {"attempts": [attempt]}
         )
         retries = {batch[0]["nets"][0]["name"]: batch[0] for batch in queue}

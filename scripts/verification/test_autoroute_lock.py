@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pcb.net_routing.runner import _acquire_lock, _exclusive
+from pcb.net_routing.runner import RunLock, _exclusive
 
 
 class LockWaitTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class LockWaitTests(unittest.TestCase):
             patch("pcb.net_routing.runner.time.monotonic", side_effect=lambda: now[0]),
             patch("pcb.net_routing.runner.time.sleep", side_effect=advance),
         ):
-            _acquire_lock(acquire, wait_seconds=1.0, progress=messages.append)
+            RunLock.acquire(acquire, wait_seconds=1.0, progress=messages.append)
         self.assertEqual(len(attempts), 3)
         self.assertEqual(len(messages), 1)
 
@@ -47,12 +47,12 @@ class LockWaitTests(unittest.TestCase):
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "Another AutoPCB run is active"):
-                _acquire_lock(busy, wait_seconds=0.2)
+                RunLock.acquire(busy, wait_seconds=0.2)
 
     def test_invalid_wait_is_rejected(self):
         for value in (-1, float("inf"), True):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                _acquire_lock(lambda: None, wait_seconds=value)
+                RunLock.acquire(lambda: None, wait_seconds=value)
 
     def test_independent_processes_take_turns_on_the_real_lock(self):
         with tempfile.TemporaryDirectory() as temporary:

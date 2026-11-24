@@ -23,7 +23,7 @@ class RenewalTests(unittest.TestCase):
             path.write_text(json.dumps(committed), encoding="utf-8")
             working = json.loads(json.dumps(committed))
             with self.assertRaisesRegex(ValueError, "unexpected rule failure"):
-                with runner._record_failures(path, working):
+                with runner.RunState.record_failures(path, working):
                     working["queue"].pop(0)
                     working["checkpoint"] = {"candidate": "unverified"}
                     raise ValueError("unexpected rule failure")

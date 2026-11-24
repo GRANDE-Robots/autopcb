@@ -81,7 +81,7 @@ class AutoControllerTests(unittest.TestCase):
 
         board = object()
         with (
-            patch.object(runner, "_board", return_value=board),
+            patch.object(runner.NativePreview, "board", return_value=board),
             patch.object(
                 runner, "unqualified_working_nets", return_value={"POWER", "ENCODER"}
             ),
@@ -89,7 +89,7 @@ class AutoControllerTests(unittest.TestCase):
                 runner, "compile_reroutes", return_value={}
             ) as compile_reroutes,
         ):
-            runner._compile_reroutes_native(Path("."), {"nets": []}, {}, ("USB",))
+            runner.NativePreview.reroutes(Path("."), {"nets": []}, {}, ("USB",))
         self.assertEqual(
             set(compile_reroutes.call_args.args[3]), {"POWER", "ENCODER", "USB"}
         )
@@ -111,15 +111,15 @@ class AutoControllerTests(unittest.TestCase):
             ],
         }
         self.assertEqual(
-            runner._unfinished_combined_batches(requests, result), [requests[1]]
+            runner.RoundQueue.unfinished_combined(requests, result), [requests[1]]
         )
         with self.assertRaisesRegex(RuntimeError, "attempt"):
-            runner._unfinished_combined_batches(requests, {**result, "attempts": []})
+            runner.RoundQueue.unfinished_combined(requests, {**result, "attempts": []})
 
     def test_parallel_repair_alternatives_include_distinct_kinds(self):
         from pcb.net_routing import runner
 
-        choose = getattr(runner, "_parallel_repair_alternatives", None)
+        choose = getattr(runner.PreviewJudge, "repair_alternatives", None)
         self.assertTrue(callable(choose), "Repair alternatives should use both workers")
         copper1 = {"nets": [{"name": "A"}], "rip_up": {"A": [{"uuid": "one"}]}}
         copper2 = {"nets": [{"name": "A"}], "rip_up": {"A": [{"uuid": "two"}]}}
@@ -132,7 +132,7 @@ class AutoControllerTests(unittest.TestCase):
     def test_parallel_repair_selection_prefers_the_best_validated_improvement(self):
         from pcb.net_routing import runner
 
-        select = getattr(runner, "_select_alternative_result", None)
+        select = getattr(runner.PreviewJudge, "select_alternative", None)
         self.assertTrue(
             callable(select), "Independent repair previews need a coordinator"
         )
@@ -155,7 +155,7 @@ class AutoControllerTests(unittest.TestCase):
         self.assertIs(select([rejected, worse, bad_style, best], 279), best)
 
     def test_parallel_selection_does_not_hide_a_usable_neutral_alternative(self):
-        from pcb.net_routing.runner import _select_alternative_result
+        from pcb.net_routing.runner import PreviewJudge
 
         checked = {
             "status": "validated_preview",
@@ -168,14 +168,14 @@ class AutoControllerTests(unittest.TestCase):
             },
         }
         bad = {**checked, "new_style_issues": ("staircases",)}
-        self.assertIs(_select_alternative_result([bad, checked], 10), checked)
+        self.assertIs(PreviewJudge.select_alternative([bad, checked], 10), checked)
 
     def test_parallel_searches_finish_before_sequential_native_validation(self):
         from unittest.mock import patch
         from pathlib import Path
         from pcb.net_routing import runner
 
-        search = getattr(runner, "_search_alternatives_native", None)
+        search = getattr(runner.NativePreview, "search_alternatives", None)
         self.assertTrue(
             callable(search), "Search and native validation need separate phases"
         )
@@ -196,18 +196,20 @@ class AutoControllerTests(unittest.TestCase):
 
         with (
             patch.object(
-                runner, "_search_alternatives_native", side_effect=fake_search
+                runner.NativePreview, "search_alternatives", side_effect=fake_search
             ),
             patch.object(runner, "run_native", side_effect=fake_validate),
         ):
-            result = runner._preview_alternatives_native(Path("."), requests, 2, ())
+            result = runner.NativePreview.preview_alternatives(
+                Path("."), requests, 2, ()
+            )
         self.assertEqual(calls, ["search", "validate A", "validate B"])
         self.assertEqual(len(result), 2)
 
     def test_single_net_retries_can_share_workers_on_isolated_boards(self):
         from pcb.net_routing import runner
 
-        take = getattr(runner, "_parallel_ordinary_requests", None)
+        take = getattr(runner.RoundQueue, "pair_ordinary", None)
         self.assertTrue(callable(take), "Independent retries should use both workers")
         primary = [{"nets": [{"name": "A"}], "recovery_stage": 1}]
         duplicate = [{"nets": [{"name": "A"}], "recovery_stage": 2}]
@@ -224,7 +226,7 @@ class AutoControllerTests(unittest.TestCase):
     def test_untried_targets_get_a_turn_before_repeated_repairs(self):
         from pcb.net_routing import runner
 
-        selector = getattr(runner, "_pop_fair_round", None)
+        selector = getattr(runner.RoundQueue, "pop_fair", None)
         self.assertTrue(
             callable(selector), "The running queue needs a fair target selector"
         )
@@ -246,21 +248,21 @@ class AutoControllerTests(unittest.TestCase):
         self.assertEqual(selector(queue, attempts, priorities), retry)
 
     def test_fair_scheduler_prefers_simpler_searches_at_equal_priority(self):
-        from pcb.net_routing.runner import _pop_fair_round
+        from pcb.net_routing.runner import RoundQueue
 
         repair = [{"nets": [{"name": "REPAIR"}], "recovery_stage": 4}]
         wide = [{"nets": [{"name": "WIDE"}], "recovery_stage": 2}]
         local = [{"nets": [{"name": "LOCAL"}], "recovery_stage": 0}]
         queue = [repair, wide, local]
-        self.assertEqual(_pop_fair_round(queue, {}, {}), local)
-        self.assertEqual(_pop_fair_round(queue, {}, {}), wide)
-        self.assertEqual(_pop_fair_round(queue, {}, {}), repair)
+        self.assertEqual(RoundQueue.pop_fair(queue, {}, {}), local)
+        self.assertEqual(RoundQueue.pop_fair(queue, {}, {}), wide)
+        self.assertEqual(RoundQueue.pop_fair(queue, {}, {}), repair)
         priority_repair = [{"nets": [{"name": "TIMING"}], "recovery_stage": 4}]
         queue = [local, priority_repair]
-        self.assertEqual(_pop_fair_round(queue, {}, {"TIMING": 0}), priority_repair)
+        self.assertEqual(RoundQueue.pop_fair(queue, {}, {"TIMING": 0}), priority_repair)
 
     def test_fair_scheduler_keeps_parallel_work_and_ignores_repair_neighbors(self):
-        from pcb.net_routing.runner import _pop_fair_round, _round_targets
+        from pcb.net_routing.runner import RoundQueue
 
         repair = [
             {
@@ -271,11 +273,13 @@ class AutoControllerTests(unittest.TestCase):
         parallel = [{"nets": [{"name": "DRIVER"}]}, {"nets": [{"name": "OTHER"}]}]
         timing = [{"nets": [{"name": "TIMING"}]}]
         queue = [repair, parallel, timing]
-        self.assertEqual(_round_targets(repair), ("CAMERA",))
-        self.assertEqual(_round_targets(parallel), ("DRIVER", "OTHER"))
-        self.assertEqual(_pop_fair_round(queue, {}, {"TIMING": 0, "DRIVER": 2}), timing)
+        self.assertEqual(RoundQueue.targets(repair), ("CAMERA",))
+        self.assertEqual(RoundQueue.targets(parallel), ("DRIVER", "OTHER"))
         self.assertEqual(
-            _pop_fair_round(queue, {}, {"TIMING": 0, "DRIVER": 2}), parallel
+            RoundQueue.pop_fair(queue, {}, {"TIMING": 0, "DRIVER": 2}), timing
+        )
+        self.assertEqual(
+            RoundQueue.pop_fair(queue, {}, {"TIMING": 0, "DRIVER": 2}), parallel
         )
         self.assertEqual(queue, [repair])
 
@@ -538,7 +542,7 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     searched.append(args[1][0]["nets"][0]["name"])
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -606,7 +610,7 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     searched.append(args[1][0]["nets"][0]["name"])
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -666,7 +670,7 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     searched.append(args[1])
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -756,9 +760,9 @@ class AutoControllerTests(unittest.TestCase):
             progress = []
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
-                if function is runner._compile_reroutes_native:
+                if function is runner.NativePreview.reroutes:
                     marker = args[1]
                     self.assertNotIn("early_rework", marker)
                     copper = {
@@ -774,7 +778,9 @@ class AutoControllerTests(unittest.TestCase):
                         "candidates": [],
                         "blockers": [],
                     }
-                if function is getattr(runner, "_preview_alternatives_native", None):
+                if function is getattr(
+                    runner.NativePreview, "preview_alternatives", None
+                ):
                     dispatched.extend(args[1])
                     return [
                         {"status": "no_candidate_found", "attempts": []}
@@ -848,9 +854,9 @@ class AutoControllerTests(unittest.TestCase):
             dispatched = []
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
-                if function is runner._preview_ordinary_native:
+                if function is runner.NativePreview.preview_ordinary:
                     dispatched.extend(args[1])
                     alternatives = [
                         {"status": "no_candidate_found", "attempts": []}
@@ -935,7 +941,7 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
 
@@ -1017,7 +1023,7 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
 
@@ -1086,7 +1092,7 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
 
@@ -1165,7 +1171,7 @@ class AutoControllerTests(unittest.TestCase):
             original_native, original_search = runner.run_native, batch._search
 
             def seed_native(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
 
@@ -1198,7 +1204,7 @@ class AutoControllerTests(unittest.TestCase):
                 return original_search(args)
 
             def local_preview(function, *args, **kwargs):
-                if function is runner._preview_round_native:
+                if function is runner.NativePreview.preview_round:
                     return function(*args, **kwargs)
                 return original_native(function, *args, **kwargs)
 
@@ -1220,22 +1226,22 @@ class AutoControllerTests(unittest.TestCase):
             self.assertEqual(schematic.read_bytes(), sch_before)
 
     def test_memory_ceiling_uses_half_available_with_six_gib_cap(self):
-        from pcb.net_routing.resources import memory_ceiling
+        from pcb.net_routing.resources import MemoryBudget
 
         gib = 1024**3
-        self.assertEqual(memory_ceiling(20 * gib), 6 * gib)
-        self.assertEqual(memory_ceiling(4 * gib), 2 * gib)
+        self.assertEqual(MemoryBudget.ceiling(20 * gib), 6 * gib)
+        self.assertEqual(MemoryBudget.ceiling(4 * gib), 2 * gib)
         for value in (0, -1, None, True):
             with self.assertRaises(ValueError):
-                memory_ceiling(value)
+                MemoryBudget.ceiling(value)
 
     def test_job_limit_rounds_down_to_an_operating_system_page(self):
-        from pcb.net_routing.resources import job_memory_ceiling
+        from pcb.net_routing.resources import MemoryBudget
 
-        self.assertEqual(job_memory_ceiling(2 * 4097, 4096), 4096)
-        self.assertEqual(job_memory_ceiling(2 * 8192, 4096), 8192)
+        self.assertEqual(MemoryBudget.job_ceiling(2 * 4097, 4096), 4096)
+        self.assertEqual(MemoryBudget.job_ceiling(2 * 8192, 4096), 8192)
         with self.assertRaises(ValueError):
-            job_memory_ceiling(1000, 4096)
+            MemoryBudget.job_ceiling(1000, 4096)
 
     def test_reference_repairs_follow_unfinished_connectivity_sections(self):
         from pcb.net_routing.runner import insert_reference_repairs
@@ -1262,7 +1268,7 @@ class AutoControllerTests(unittest.TestCase):
         self.assertEqual(plan["island_counts"]["REPAIR"], 2)
 
     def test_splitting_a_repair_batch_keeps_only_the_matching_removals(self):
-        from pcb.net_routing.runner import _split_failed
+        from pcb.net_routing.runner import RoundQueue
 
         request = {
             "nets": [{"name": "A"}, {"name": "B"}],
@@ -1272,29 +1278,33 @@ class AutoControllerTests(unittest.TestCase):
             },
         }
         queue = []
-        _split_failed(queue, [request], {"A": 2, "B": 2})
+        RoundQueue.split_failed(queue, [request], {"A": 2, "B": 2})
         self.assertEqual(set(queue[0][0]["rip_up"]), {"A"})
         self.assertEqual(set(queue[1][0]["rip_up"]), {"B"})
 
     def test_failed_checkpoint_tries_distinct_island_combinations_then_stops(self):
-        from pcb.net_routing.runner import _split_failed
+        from pcb.net_routing.runner import RoundQueue
         from pcb.net_routing.recovery import RecoveryPolicy
 
         queue = []
         request = {"nets": [{"name": "BUS"}], "checkpoint_offset": 0}
-        _split_failed(queue, [request], {"BUS": 5}, recovery=RecoveryPolicy(stages=0))
+        RoundQueue.split_failed(
+            queue, [request], {"BUS": 5}, recovery=RecoveryPolicy(stages=0)
+        )
         self.assertEqual(queue[0][0]["checkpoint_offset"], 1)
         next_request = queue.pop(0)[0]
-        _split_failed(
+        RoundQueue.split_failed(
             queue, [next_request], {"BUS": 5}, recovery=RecoveryPolicy(stages=0)
         )
         self.assertEqual(queue[0][0]["checkpoint_offset"], 2)
         last_request = queue.pop(0)[0]
-        _split_failed(
+        RoundQueue.split_failed(
             queue, [last_request], {"BUS": 5}, recovery=RecoveryPolicy(stages=0)
         )
         self.assertEqual(queue, [])
-        _split_failed(queue, [request], {"BUS": 2}, recovery=RecoveryPolicy(stages=0))
+        RoundQueue.split_failed(
+            queue, [request], {"BUS": 2}, recovery=RecoveryPolicy(stages=0)
+        )
         self.assertEqual(queue, [])
 
     def test_unchanged_net_evidence_requires_all_copper_and_pads_to_match(self):
@@ -1694,31 +1704,31 @@ class AutoControllerTests(unittest.TestCase):
     def test_reference_repair_is_progress_only_when_coverage_improves_without_new_opens(
         self,
     ):
-        from pcb.net_routing.runner import is_preview_improvement
+        from pcb.net_routing.runner import PreviewJudge
 
-        self.assertTrue(is_preview_improvement(10, 9, {}))
+        self.assertTrue(PreviewJudge.is_improvement(10, 9, {}))
         self.assertTrue(
-            is_preview_improvement(
+            PreviewJudge.is_improvement(
                 10, 10, {"status": "unverified", "comparable_missing_samples": [9, 3]}
             )
         )
         self.assertFalse(
-            is_preview_improvement(
+            PreviewJudge.is_improvement(
                 10, 11, {"status": "unverified", "comparable_missing_samples": [9, 0]}
             )
         )
         self.assertFalse(
-            is_preview_improvement(
+            PreviewJudge.is_improvement(
                 10, 10, {"status": "degraded", "comparable_missing_samples": [9, 3]}
             )
         )
         self.assertFalse(
-            is_preview_improvement(
+            PreviewJudge.is_improvement(
                 10, 9, {"status": "degraded", "comparable_missing_samples": [9, 3]}
             )
         )
         self.assertFalse(
-            is_preview_improvement(
+            PreviewJudge.is_improvement(
                 10, 10, {"status": "unverified", "comparable_missing_samples": None}
             )
         )
@@ -1871,14 +1881,14 @@ class AutoControllerTests(unittest.TestCase):
         import json
         import tempfile
         from pathlib import Path
-        from pcb.net_routing.runner import _record_failures
+        from pcb.net_routing.runner import RunState
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "state.json"
             state = {"status": "running", "queue": ["pending"]}
             target.write_text(json.dumps(state), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "example"):
-                with _record_failures(target, state):
+                with RunState.record_failures(target, state):
                     state["queue"].clear()
                     raise RuntimeError("example")
             saved = json.loads(target.read_text())
@@ -1931,7 +1941,7 @@ class AutoControllerTests(unittest.TestCase):
                 self.assertEqual(read_status(root, run_id)["status"], "running")
 
     def test_resume_recommendation_requires_renewal_when_tools_change(self):
-        from pcb.net_routing.runner import resume_action
+        from pcb.net_routing.runner import RunStatus
 
         checkpoint = {
             "inputs": {"board": "original"},
@@ -1939,15 +1949,21 @@ class AutoControllerTests(unittest.TestCase):
             "tools": {"planner": "old"},
         }
         self.assertEqual(
-            resume_action(checkpoint, {"board": "original"}, "p", {"planner": "new"}),
+            RunStatus.resume_action(
+                checkpoint, {"board": "original"}, "p", {"planner": "new"}
+            ),
             "renew",
         )
         self.assertEqual(
-            resume_action(checkpoint, {"board": "changed"}, "p", {"planner": "new"}),
+            RunStatus.resume_action(
+                checkpoint, {"board": "changed"}, "p", {"planner": "new"}
+            ),
             "restart",
         )
         self.assertEqual(
-            resume_action(checkpoint, {"board": "original"}, "p", {"planner": "old"}),
+            RunStatus.resume_action(
+                checkpoint, {"board": "original"}, "p", {"planner": "old"}
+            ),
             "resume",
         )
 

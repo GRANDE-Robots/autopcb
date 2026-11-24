@@ -1,9 +1,11 @@
-"""Compile saved routing dimensions for search and copper materialization.
+"""rules.py: compile saved routing dimensions for search and copper materialization.
 
 This is deliberately a supported subset of KiCad's rule language, not a DRC
 replacement. Unsupported expressions stop planning. New, ungrouped copper
 does not inherit coordinate-specific or group-specific legacy exceptions.
 Native DRC remains the independent acceptance gate for every candidate.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
@@ -41,65 +43,235 @@ _COORDINATE_FIELDS = {"Origin_X", "Origin_Y", "Start_X", "Start_Y", "End_X", "En
 _METHODS = {"intersectsCourtyard", "memberOfGroup"}
 
 
-def _expression(source: str):
-    def substitute(match):
-        value = match.group()
-        if value[0] in "'\"":
-            return value
-        if value in {"&&", "||", "!", "!="}:
-            return {"&&": " and ", "||": " or ", "!": " not ", "!=": "!="}[value]
-        return str(
-            mm(value[:-2]) if value.endswith("mm") else round(float(value[:-3]) * 25400)
-        )
+class RuleReader:
+    """Reads the supported track-width and clearance rules of a saved KiCad design-rule
+    file."""
 
-    tree = ast.parse(_TOKEN.sub(substitute, source).strip(), mode="eval")
-    allowed = (
-        ast.Expression,
-        ast.BoolOp,
-        ast.And,
-        ast.Or,
-        ast.UnaryOp,
-        ast.Not,
-        ast.USub,
-        ast.UAdd,
-        ast.Compare,
-        ast.Eq,
-        ast.NotEq,
-        ast.Lt,
-        ast.LtE,
-        ast.Gt,
-        ast.GtE,
-        ast.Constant,
-        ast.Name,
-        ast.Attribute,
-        ast.Load,
-        ast.Call,
-    )
-    for node in ast.walk(tree):
-        if not isinstance(node, allowed):
-            raise ValueError(f"Unsupported rule expression: {type(node).__name__}")
-        if isinstance(node, ast.Name) and node.id not in {"A", "B"}:
-            raise ValueError(f"Unsupported rule name: {node.id}")
-        if isinstance(node, ast.Attribute) and (
-            not isinstance(node.value, ast.Name)
-            or node.value.id not in {"A", "B"}
-            or node.attr not in _FIELDS | _METHODS | _COORDINATE_FIELDS
-        ):
-            raise ValueError(f"Unsupported rule attribute: {node.attr}")
-        if isinstance(node, ast.Call) and (
-            not isinstance(node.func, ast.Attribute)
-            or node.func.attr not in _METHODS
-            or len(node.args) != 1
-            or node.keywords
-            or not isinstance(node.args[0], ast.Constant)
-            or not isinstance(node.args[0].value, str)
-        ):
-            raise ValueError("Unsupported rule function")
-    return tree, compile(tree, "<saved KiCad condition>", "eval")
+    def __call__(self, path: Path) -> tuple[DimensionRule, ...]:
+        """Read the dimension rules of a rules file.
+
+        Inputs:
+            path: .kicad_dru file; a missing file gives no rules.
+        Outputs:
+            The supported track_width and clearance rules, last rule first because
+            KiCad lets the last matching rule win; rules that test coordinates are
+            skipped. Raises ValueError for an unsupported version, condition,
+            layer selector or dimension, or a negative dimension.
+        """
+        if not path.is_file():
+            return ()
+        # A comment marker inside a quoted condition/name is ordinary text.
+        source = re.sub(
+            r'"(?:\\.|[^"\\])*"|#[^\r\n]*',
+            lambda m: "" if m.group().startswith("#") else m.group(),
+            path.read_text(encoding="utf-8-sig"),
+        )
+        document = parse("(rules\n" + source + "\n)")
+        versions = document.children("version")
+        if len(versions) != 1 or versions[0].atoms()[1].value != "1":
+            raise ValueError("Unsupported saved KiCad design-rule version")
+        result = []
+        for form in document.children("rule"):
+            constraints = [
+                c
+                for c in form.children("constraint")
+                if c.atoms()[1].value in {"track_width", "clearance"}
+            ]
+            if not constraints:
+                continue
+            name = form.atoms()[1].value
+            conditions = form.children("condition")
+            condition = conditions[0].atoms()[1].value if conditions else "True"
+            try:
+                tree, expression = self._expression(condition)
+            except (SyntaxError, ValueError) as error:
+                raise ValueError(f"Saved rule {name!r}: {error}") from error
+            # Existing-item exceptions are never widened to a new route or group.
+            attributes = {
+                node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+            }
+
+            def requires_named_net(node):
+                """Whether a condition can hold only when the net name equals a literal
+                string."""
+                if isinstance(node, ast.Expression):
+                    return requires_named_net(node.body)
+                if isinstance(node, ast.BoolOp):
+                    values = [requires_named_net(part) for part in node.values]
+                    return any(values) if isinstance(node.op, ast.And) else all(values)
+                if (
+                    isinstance(node, ast.Compare)
+                    and len(node.ops) == 1
+                    and isinstance(node.ops[0], ast.Eq)
+                ):
+                    sides = (node.left, node.comparators[0])
+                    return any(
+                        isinstance(a, ast.Attribute)
+                        and a.attr == "NetName"
+                        and isinstance(b, ast.Constant)
+                        and isinstance(b.value, str)
+                        for a, b in (sides, sides[::-1])
+                    )
+                return False
+
+            def courtyard_calls(node):
+                """Every intersectsCourtyard call within a syntax node."""
+                return [
+                    part
+                    for part in ast.walk(node)
+                    if isinstance(part, ast.Call)
+                    and isinstance(part.func, ast.Attribute)
+                    and part.func.attr == "intersectsCourtyard"
+                ]
+
+            references = frozenset(call.args[0].value for call in courtyard_calls(tree))
+            if any(
+                re.match(r"^\$\{class:", value, flags=re.IGNORECASE)
+                for value in references
+            ):
+                raise ValueError(
+                    f"Saved rule {name!r}: component-class courtyard selectors are not supported"
+                )
+            nonmonotonic = any(
+                (
+                    (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not))
+                    or isinstance(node, ast.Compare)
+                )
+                and bool(courtyard_calls(node))
+                for node in ast.walk(tree)
+            )
+            if attributes & _COORDINATE_FIELDS:
+                continue
+            layer = form.children("layer")
+            selected = layer[0].atoms()[1].value if layer else "*.Cu"
+            layers = {
+                "outer": {"F.Cu", "B.Cu"},
+                "inner": set(COPPER_LAYERS) - {"F.Cu", "B.Cu"},
+                "*.Cu": set(COPPER_LAYERS),
+            }.get(selected, {selected})
+            if not layers <= set(COPPER_LAYERS):
+                raise ValueError(f"Unsupported layer selector in saved rule {name!r}")
+            for constraint in constraints:
+                bounds = {}
+                for bound in constraint.children():
+                    if bound.name not in {"min", "max", "opt"}:
+                        raise ValueError(
+                            f"Unsupported dimension in saved rule {name!r}"
+                        )
+                    value = bound.atoms()[1].value
+                    if value.endswith("mm"):
+                        dimension = mm(value[:-2])
+                    elif value.endswith("mil"):
+                        dimension = round(float(value[:-3]) * 25400)
+                    else:
+                        dimension = mm(value)
+                    if dimension < 0:
+                        raise ValueError(f"Negative dimension in saved rule {name!r}")
+                    bounds[bound.name] = dimension
+                result.append(
+                    DimensionRule(
+                        name,
+                        constraint.atoms()[1].value,
+                        bounds.get("min"),
+                        bounds.get("max"),
+                        expression,
+                        frozenset(layers),
+                        "intersectsCourtyard" in attributes,
+                        references,
+                        nonmonotonic,
+                        "memberOfGroup" in attributes,
+                        requires_named_net(tree),
+                    )
+                )
+        return tuple(reversed(result))  # KiCad: the last matching custom rule wins.
+
+    @staticmethod
+    def _expression(source: str):
+        """Compile a KiCad rule condition to a restricted Python expression.
+
+        Inputs:
+            source: the condition text.
+        Outputs:
+            (syntax tree, compiled code). Raises SyntaxError for malformed text and
+            ValueError for any name, attribute, function or node type outside the
+            supported subset.
+        """
+
+        def substitute(match):
+            """Translate one token: quoted strings stay, operators become Python
+            operators and mm or mil quantities become integers in nm."""
+            value = match.group()
+            if value[0] in "'\"":
+                return value
+            if value in {"&&", "||", "!", "!="}:
+                return {"&&": " and ", "||": " or ", "!": " not ", "!=": "!="}[value]
+            return str(
+                mm(value[:-2])
+                if value.endswith("mm")
+                else round(float(value[:-3]) * 25400)
+            )
+
+        tree = ast.parse(_TOKEN.sub(substitute, source).strip(), mode="eval")
+        allowed = (
+            ast.Expression,
+            ast.BoolOp,
+            ast.And,
+            ast.Or,
+            ast.UnaryOp,
+            ast.Not,
+            ast.USub,
+            ast.UAdd,
+            ast.Compare,
+            ast.Eq,
+            ast.NotEq,
+            ast.Lt,
+            ast.LtE,
+            ast.Gt,
+            ast.GtE,
+            ast.Constant,
+            ast.Name,
+            ast.Attribute,
+            ast.Load,
+            ast.Call,
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, allowed):
+                raise ValueError(f"Unsupported rule expression: {type(node).__name__}")
+            if isinstance(node, ast.Name) and node.id not in {"A", "B"}:
+                raise ValueError(f"Unsupported rule name: {node.id}")
+            if isinstance(node, ast.Attribute) and (
+                not isinstance(node.value, ast.Name)
+                or node.value.id not in {"A", "B"}
+                or node.attr not in _FIELDS | _METHODS | _COORDINATE_FIELDS
+            ):
+                raise ValueError(f"Unsupported rule attribute: {node.attr}")
+            if isinstance(node, ast.Call) and (
+                not isinstance(node.func, ast.Attribute)
+                or node.func.attr not in _METHODS
+                or len(node.args) != 1
+                or node.keywords
+                or not isinstance(node.args[0], ast.Constant)
+                or not isinstance(node.args[0].value, str)
+            ):
+                raise ValueError("Unsupported rule function")
+        return tree, compile(tree, "<saved KiCad condition>", "eval")
+
+
+read_rules = RuleReader()
 
 
 @dataclass(frozen=True)
 class RuleItem:
+    """The fields of one item, A or B, that a rule condition may test.
+
+    Inputs:
+        Type: Track, Pad, Via or Keepout.
+        Layer: copper layer name.
+        NetName: net name.
+        NetClass: net class name.
+        courtyards: selectors of the courtyards the item intersects.
+    """
+
     Type: str
     Layer: str
     NetName: str
@@ -107,14 +279,32 @@ class RuleItem:
     courtyards: frozenset[str] = frozenset()
 
     def intersectsCourtyard(self, reference: str) -> bool:
+        """Whether the item intersects the courtyard selected by reference."""
         return reference in self.courtyards
 
     def memberOfGroup(self, name: str) -> bool:
+        """Always False: new copper is never a member of a saved group."""
         return False
 
 
 @dataclass(frozen=True)
 class DimensionRule:
+    """One saved track_width or clearance rule.
+
+    Inputs:
+        name: rule name.
+        kind: track_width or clearance.
+        minimum: minimum bound in nm, or None.
+        maximum: maximum bound in nm, or None.
+        expression: the compiled condition.
+        layers: copper layers the rule applies to.
+        local: the condition uses intersectsCourtyard.
+        courtyard_refs: courtyard selectors named by the condition.
+        nonmonotonic_local: the condition negates or compares a courtyard test.
+        uncertain_group: the condition uses memberOfGroup.
+        net_specific: the condition holds only for a literal net name.
+    """
+
     name: str
     kind: str
     minimum: int | None
@@ -128,136 +318,25 @@ class DimensionRule:
     net_specific: bool = False
 
     def matches(self, first: RuleItem, second: RuleItem) -> bool:
+        """Whether the rule applies to the first item's layer and its condition holds
+        with A as first and B as second."""
         return first.Layer in self.layers and bool(
             eval(self.expression, {"__builtins__": {}}, {"A": first, "B": second})
         )
 
 
-def read_rules(path: Path) -> tuple[DimensionRule, ...]:
-    if not path.is_file():
-        return ()
-    # A comment marker inside a quoted condition/name is ordinary text.
-    source = re.sub(
-        r'"(?:\\.|[^"\\])*"|#[^\r\n]*',
-        lambda m: "" if m.group().startswith("#") else m.group(),
-        path.read_text(encoding="utf-8-sig"),
-    )
-    document = parse("(rules\n" + source + "\n)")
-    versions = document.children("version")
-    if len(versions) != 1 or versions[0].atoms()[1].value != "1":
-        raise ValueError("Unsupported saved KiCad design-rule version")
-    result = []
-    for form in document.children("rule"):
-        constraints = [
-            c
-            for c in form.children("constraint")
-            if c.atoms()[1].value in {"track_width", "clearance"}
-        ]
-        if not constraints:
-            continue
-        name = form.atoms()[1].value
-        conditions = form.children("condition")
-        condition = conditions[0].atoms()[1].value if conditions else "True"
-        try:
-            tree, expression = _expression(condition)
-        except (SyntaxError, ValueError) as error:
-            raise ValueError(f"Saved rule {name!r}: {error}") from error
-        # Existing-item exceptions are never widened to a new route or group.
-        attributes = {
-            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
-        }
-
-        def requires_named_net(node):
-            if isinstance(node, ast.Expression):
-                return requires_named_net(node.body)
-            if isinstance(node, ast.BoolOp):
-                values = [requires_named_net(part) for part in node.values]
-                return any(values) if isinstance(node.op, ast.And) else all(values)
-            if (
-                isinstance(node, ast.Compare)
-                and len(node.ops) == 1
-                and isinstance(node.ops[0], ast.Eq)
-            ):
-                sides = (node.left, node.comparators[0])
-                return any(
-                    isinstance(a, ast.Attribute)
-                    and a.attr == "NetName"
-                    and isinstance(b, ast.Constant)
-                    and isinstance(b.value, str)
-                    for a, b in (sides, sides[::-1])
-                )
-            return False
-
-        def courtyard_calls(node):
-            return [
-                part
-                for part in ast.walk(node)
-                if isinstance(part, ast.Call)
-                and isinstance(part.func, ast.Attribute)
-                and part.func.attr == "intersectsCourtyard"
-            ]
-
-        references = frozenset(call.args[0].value for call in courtyard_calls(tree))
-        if any(
-            re.match(r"^\$\{class:", value, flags=re.IGNORECASE) for value in references
-        ):
-            raise ValueError(
-                f"Saved rule {name!r}: component-class courtyard selectors are not supported"
-            )
-        nonmonotonic = any(
-            (
-                (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not))
-                or isinstance(node, ast.Compare)
-            )
-            and bool(courtyard_calls(node))
-            for node in ast.walk(tree)
-        )
-        if attributes & _COORDINATE_FIELDS:
-            continue
-        layer = form.children("layer")
-        selected = layer[0].atoms()[1].value if layer else "*.Cu"
-        layers = {
-            "outer": {"F.Cu", "B.Cu"},
-            "inner": set(COPPER_LAYERS) - {"F.Cu", "B.Cu"},
-            "*.Cu": set(COPPER_LAYERS),
-        }.get(selected, {selected})
-        if not layers <= set(COPPER_LAYERS):
-            raise ValueError(f"Unsupported layer selector in saved rule {name!r}")
-        for constraint in constraints:
-            bounds = {}
-            for bound in constraint.children():
-                if bound.name not in {"min", "max", "opt"}:
-                    raise ValueError(f"Unsupported dimension in saved rule {name!r}")
-                value = bound.atoms()[1].value
-                if value.endswith("mm"):
-                    dimension = mm(value[:-2])
-                elif value.endswith("mil"):
-                    dimension = round(float(value[:-3]) * 25400)
-                else:
-                    dimension = mm(value)
-                if dimension < 0:
-                    raise ValueError(f"Negative dimension in saved rule {name!r}")
-                bounds[bound.name] = dimension
-            result.append(
-                DimensionRule(
-                    name,
-                    constraint.atoms()[1].value,
-                    bounds.get("min"),
-                    bounds.get("max"),
-                    expression,
-                    frozenset(layers),
-                    "intersectsCourtyard" in attributes,
-                    references,
-                    nonmonotonic,
-                    "memberOfGroup" in attributes,
-                    requires_named_net(tree),
-                )
-            )
-    return tuple(reversed(result))  # KiCad: the last matching custom rule wins.
-
-
 @dataclass(frozen=True)
 class Courtyard:
+    """A footprint courtyard polygon on one side of the board.
+
+    Inputs:
+        reference: reference designator of the footprint.
+        layer: F.Cu for the front courtyard, B.Cu for the back.
+        polygon: outline points in nm.
+        library_id: library identifier of the footprint.
+        bounds: computed (x0, y0, x1, y1) bounding box in nm.
+    """
+
     reference: str
     layer: str
     polygon: tuple[Point, ...]
@@ -265,6 +344,7 @@ class Courtyard:
     bounds: tuple[int, int, int, int] = field(init=False)
 
     def __post_init__(self):
+        """Compute the bounding box of the polygon."""
         object.__setattr__(
             self,
             "bounds",
@@ -277,6 +357,7 @@ class Courtyard:
         )
 
     def contains(self, point: Point) -> bool:
+        """Whether a point, in nm, lies inside the polygon or on its edge."""
         x0, y0, x1, y1 = self.bounds
         if not x0 <= point.x <= x1 or not y0 <= point.y <= y1:
             return False
@@ -359,6 +440,18 @@ class RoutingRules:
         minimum_clearance,
         uncertain_courtyards=None,
     ):
+        """Hold the saved rules, courtyards and net classes of a board.
+
+        Inputs:
+            rules: the saved dimension rules.
+            courtyards: courtyard polygons of the board's footprints.
+            classes: (track width, clearance) in nm by net class name.
+            assignments: net class name by net name.
+            minimum_width: board minimum track width, in nm.
+            minimum_clearance: board minimum clearance, in nm.
+            uncertain_courtyards: selectors of footprints whose courtyards could not be
+                represented, by copper layer name.
+        """
         self.rules, self.courtyards = tuple(rules), tuple(courtyards)
         self.rule_courtyards = frozenset(
             ref for rule in self.rules for ref in rule.courtyard_refs
@@ -393,6 +486,15 @@ class RoutingRules:
 
     @classmethod
     def from_board(cls, board, rules_path: Path):
+        """Read the rules and courtyards of a native board.
+
+        Inputs:
+            board: native board.
+            rules_path: the board's .kicad_dru file.
+        Outputs:
+            The rules. Courtyards with holes or fewer than three points are treated
+            as uncertain on every copper layer.
+        """
         import pcbnew
 
         classes = {
@@ -458,6 +560,18 @@ class RoutingRules:
         width_floor: int = 0,
         clearance_floor: int = 0,
     ):
+        """Build the dimension profile of one net.
+
+        Inputs:
+            net: net name.
+            width: default track width in nm.
+            clearance: default clearance in nm.
+            width_floor: hard minimum track width in nm.
+            clearance_floor: hard minimum clearance in nm.
+        Outputs:
+            The RoutingProfile. Raises ValueError when the net's effective net class
+            is not available.
+        """
         name = self.assignments.get(net, "Default")
         if name not in self.classes:
             raise ValueError(
@@ -469,9 +583,23 @@ class RoutingRules:
 
 
 class RoutingProfile:
+    """The track widths and clearances one net must use, from board defaults and saved
+    rules."""
+
     def __init__(
         self, source, net, net_class, width, clearance, width_floor, clearance_floor
     ):
+        """Resolve the widths and clearances of one net.
+
+        Inputs:
+            source: the RoutingRules.
+            net: net name.
+            net_class: effective net class name.
+            width: default track width in nm.
+            clearance: default clearance in nm.
+            width_floor: hard minimum track width in nm.
+            clearance_floor: hard minimum clearance in nm.
+        """
         self.source, self.net, self.net_class = source, net, net_class
         self.width, self.clearance = width, clearance
         # KiCad uses Board Setup dimensions as defaults; a matching custom
@@ -541,6 +669,7 @@ class RoutingProfile:
         )
 
     def references(self, segment: Segment) -> frozenset[str]:
+        """Courtyard selectors that contain both ends and the midpoint of a segment."""
         if not self._regions[segment.layer]:
             return frozenset()
         midpoint = Point(
@@ -561,6 +690,12 @@ class RoutingProfile:
         )
 
     def width_at(self, segment: Segment) -> int:
+        """Track width, in nm, a segment must use.
+
+        Outputs:
+            The largest width any possibly matching rule requires, or the net default.
+            Raises ValueError when that width exceeds the maximum of a rule.
+        """
         definite_refs = self.references(segment)
         possible_refs = (
             definite_refs
@@ -619,6 +754,17 @@ class RoutingProfile:
     def _match_bounds(
         rule, first_low, first_high, second_low, second_high, *, unknown_group
     ):
+        """Judge whether a rule matches given certain and possible facts.
+
+        Inputs:
+            rule: the rule.
+            first_low, second_low: the items with only the courtyards known to apply.
+            first_high, second_high: the items with every courtyard that might apply.
+            unknown_group: True when group membership is unknown.
+        Outputs:
+            (possible, definite): whether the rule might match and whether it surely
+                does.
+        """
         if rule.nonmonotonic_local or (unknown_group and rule.uncertain_group):
             return True, False
         low = rule.matches(first_low, second_low) or rule.matches(second_low, first_low)
@@ -780,6 +926,16 @@ class RoutingProfile:
     def clearance_at(
         self, segment: Segment, obstacle: Obstacle, *, width: int | None = None
     ) -> int:
+        """Clearance, in nm, a segment must keep from an obstacle.
+
+        Inputs:
+            segment: the track segment.
+            obstacle: the obstacle it must clear.
+            width: track width in nm; defaults to width_at(segment).
+        Outputs:
+            The largest clearance that any possibly matching rule or the net class
+            defaults require.
+        """
         actual_width = self.width_at(segment) if width is None else width
         geometry_key = segment, actual_width
         cached = self._last_clearance_geometry
@@ -853,6 +1009,8 @@ class RoutingProfile:
     def clearance_for_track(
         self, segment: Segment, obstacle: Obstacle, width: int
     ) -> int:
+        """Clearance, in nm, for a track of a given width; clearance_at with the width
+        fixed."""
         return self.clearance_at(segment, obstacle, width=width)
 
     def pieces(self, segment: Segment) -> tuple[tuple[Segment, int], ...]:

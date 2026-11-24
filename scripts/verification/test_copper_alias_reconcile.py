@@ -2,7 +2,7 @@
 
 import unittest
 
-from pcb.net_routing.alias_reconcile import AliasGroup, replace_aliases
+from pcb.net_routing.alias_reconcile import AliasGroup, AliasReconciliation
 
 
 class CopperAliasTests(unittest.TestCase):
@@ -12,7 +12,7 @@ class CopperAliasTests(unittest.TestCase):
             b'(segment (net "Net-(R1-Pad1)")) (pad "1" (net "TARGET")))'
         )
         group = AliasGroup("Net-(R1-Pad1)", "TARGET", ("pad-1",), ("track-1",))
-        updated = replace_aliases(original, (group,))
+        updated = AliasReconciliation.replace_aliases(original, (group,))
         self.assertEqual(updated.count(b'(net "TARGET")'), 3)
         self.assertEqual(
             updated, original.replace(b'(net "Net-(R1-Pad1)")', b'(net "TARGET")')
@@ -23,15 +23,17 @@ class CopperAliasTests(unittest.TestCase):
         data = b'(kicad_pcb (pad (net "Net-(R1-Pad1)")))'
         group = AliasGroup("Net-(R1-Pad1)", "TARGET", ("pad",), ("track",))
         with self.assertRaisesRegex(ValueError, "complete"):
-            replace_aliases(data, (group,))
+            AliasReconciliation.replace_aliases(data, (group,))
         with self.assertRaises(ValueError):
-            replace_aliases(data, (AliasGroup("OTHER", "TARGET", ("pad",), ()),))
+            AliasReconciliation.replace_aliases(
+                data, (AliasGroup("OTHER", "TARGET", ("pad",), ()),)
+            )
         with self.assertRaises(ValueError):
-            replace_aliases(
+            AliasReconciliation.replace_aliases(
                 data, (AliasGroup("Net-(R1-Pad1)", "Net-(R2-Pad1)", ("pad",), ()),)
             )
         with self.assertRaises(ValueError):
-            replace_aliases(
+            AliasReconciliation.replace_aliases(
                 data,
                 (group, AliasGroup("Net-(R2-Pad1)", "TARGET", ("pad",), ("track-2",))),
             )
@@ -46,7 +48,7 @@ class CopperAliasTests(unittest.TestCase):
             b'(segment (start 0 0) (end 1 0) (width .2) (layer "B.Cu") '
             b'(net "Net-(R1-Pad2)") (uuid "track")))'
         )
-        normalized = replace_aliases(
+        normalized = AliasReconciliation.replace_aliases(
             data, (AliasGroup("Net-(R1-Pad2)", "CONTROL", ("alias-pad",), ("track",)),)
         )
         self.assertNotIn("power-pad", stable_connection_items(data, normalized))

@@ -17,12 +17,9 @@ from pcb.net_routing import zone_stitch
 from pcb.net_routing.zone_stitch import (
     StitchDimensions,
     StitchProof,
-    candidate_paths,
-    candidate_sites,
+    StitchGeometry,
     StitchAllowance,
-    _island_matches,
-    verified_pad_limits,
-    via_clear_of_planned,
+    StitchAllowances,
 )
 
 
@@ -100,20 +97,20 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             pad.SetNetCode(net.GetNetCode())
             footprint.Add(pad)
             board.Add(footprint)
-        useless = zone_stitch._new_via(
+        useless = zone_stitch.StitchBoard.new_via(
             board,
             net,
             (mm(10), mm(10)),
             StitchDimensions(200000, 200000, 600000, 300000, 250000),
         )
-        self.assertFalse(zone_stitch._join_if_improved(board, [useless]))
+        self.assertFalse(zone_stitch.StitchBoard.join_if_improved(board, [useless]))
         self.assertEqual(len(list(board.GetTracks())), 0)
         trace = zone_stitch.Trace(
             "GND", "F.Cu", mm(0.2), (mm(2), mm(2)), (mm(5), mm(2))
         )
         self.assertTrue(
-            zone_stitch._join_if_improved(
-                board, zone_stitch._native_tracks(board, net, (trace,))
+            zone_stitch.StitchBoard.join_if_improved(
+                board, zone_stitch.StitchBoard.native_tracks(board, net, (trace,))
             )
         )
         self.assertEqual(board.GetConnectivity().GetUnconnectedCount(False), 0)
@@ -138,8 +135,8 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         allowance = StitchAllowance(2400000, frozenset({"pad-a"}))
         with (
             mock.patch.object(
-                zone_stitch,
-                "_dimensions",
+                zone_stitch.StitchBoard,
+                "dimensions",
                 return_value=StitchDimensions(500000, 200000, 800000, 400000, 250000),
             ),
             mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
@@ -153,7 +150,7 @@ class ZoneStitchGeometryTests(unittest.TestCase):
                 zone_stitch, "native_shortcut_obstacles", return_value=()
             ),
         ):
-            result = zone_stitch.propose(
+            result = zone_stitch.ZoneStitchSearch.propose(
                 board,
                 {"unconnected_items": [{"items": [{"uuid": "zone"}]}]},
                 b"{}",
@@ -164,10 +161,16 @@ class ZoneStitchGeometryTests(unittest.TestCase):
 
     def test_island_proof_must_cover_all_current_contributors(self):
         allowed = StitchAllowance(2_000_000, frozenset({"pad-a", "pad-b", "track"}))
-        self.assertTrue(_island_matches(allowed, ("track", "pad-a", "pad-b")))
-        self.assertFalse(_island_matches(allowed, ("pad-a", "track")))
-        self.assertFalse(_island_matches(allowed, ("pad-a", "pad-b", "track", "via")))
-        self.assertFalse(_island_matches(2_000_000, ("pad-a", "pad-b", "track")))
+        self.assertTrue(
+            StitchAllowances.island_matches(allowed, ("track", "pad-a", "pad-b"))
+        )
+        self.assertFalse(StitchAllowances.island_matches(allowed, ("pad-a", "track")))
+        self.assertFalse(
+            StitchAllowances.island_matches(allowed, ("pad-a", "pad-b", "track", "via"))
+        )
+        self.assertFalse(
+            StitchAllowances.island_matches(2_000_000, ("pad-a", "pad-b", "track"))
+        )
 
     def test_proposal_rejects_a_pad_whose_island_has_an_extra_connection(self):
         board, pad, rules = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
@@ -183,7 +186,9 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         report = {"unconnected_items": [{"items": [{"uuid": "pad-a"}]}]}
         dimensions = StitchDimensions(500_000, 200_000, 800_000, 400_000, 250_000)
         with (
-            mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
+            mock.patch.object(
+                zone_stitch.StitchBoard, "dimensions", return_value=dimensions
+            ),
             mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
             mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
             mock.patch.object(
@@ -195,7 +200,7 @@ class ZoneStitchGeometryTests(unittest.TestCase):
                 zone_stitch, "native_shortcut_obstacles", return_value=()
             ),
         ):
-            result = zone_stitch.propose(
+            result = zone_stitch.ZoneStitchSearch.propose(
                 board,
                 report,
                 b"{}",
@@ -221,7 +226,9 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         dimensions = StitchDimensions(500_000, 200_000, 800_000, 400_000, 250_000)
         allowance = StitchAllowance(2_000_000, frozenset({"pad-a", "track-a"}))
         with (
-            mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
+            mock.patch.object(
+                zone_stitch.StitchBoard, "dimensions", return_value=dimensions
+            ),
             mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
             mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
             mock.patch.object(
@@ -233,17 +240,19 @@ class ZoneStitchGeometryTests(unittest.TestCase):
                 zone_stitch, "native_shortcut_obstacles", return_value=()
             ),
         ):
-            result = zone_stitch.propose(
+            result = zone_stitch.ZoneStitchSearch.propose(
                 board, report, b"{}", rules, eligible={"pad-a": allowance}
             )
-            unqualified = zone_stitch.propose(board, report, b"{}", rules, eligible={})
+            unqualified = zone_stitch.ZoneStitchSearch.propose(
+                board, report, b"{}", rules, eligible={}
+            )
         self.assertEqual(result["open_pads"], 1)
         self.assertEqual(result["unassessed_pads"], 0)
         self.assertEqual(unqualified["open_pads"], 0)
         board.Add.assert_not_called()
 
     def test_candidate_sites_are_octilinear_and_outside_the_pad(self):
-        sites = candidate_sites(
+        sites = StitchGeometry.candidate_sites(
             (1_000_000, 2_000_000), (500_000, 1_500_000, 1_500_000, 2_500_000), 800_000
         )
         self.assertEqual(len(sites), 8)
@@ -254,13 +263,19 @@ class ZoneStitchGeometryTests(unittest.TestCase):
 
     def test_planned_vias_obey_both_copper_and_drill_spacing(self):
         dimensions = StitchDimensions(500_000, 200_000, 800_000, 400_000, 250_000)
-        self.assertFalse(via_clear_of_planned((900_000, 0), [(0, 0)], dimensions))
-        self.assertTrue(via_clear_of_planned((1_000_000, 0), [(0, 0)], dimensions))
+        self.assertFalse(
+            StitchGeometry.via_clear_of_planned((900_000, 0), [(0, 0)], dimensions)
+        )
+        self.assertTrue(
+            StitchGeometry.via_clear_of_planned((1_000_000, 0), [(0, 0)], dimensions)
+        )
         drill_limited = StitchDimensions(100_000, 0, 400_000, 300_000, 700_000)
-        self.assertFalse(via_clear_of_planned((900_000, 0), [(0, 0)], drill_limited))
+        self.assertFalse(
+            StitchGeometry.via_clear_of_planned((900_000, 0), [(0, 0)], drill_limited)
+        )
 
     def test_extended_paths_have_only_valid_chamfers_and_reach_beyond_the_pad(self):
-        paths = candidate_paths(
+        paths = StitchGeometry.candidate_paths(
             (0, 0),
             (-100_000, -100_000, 100_000, 100_000),
             400_000,
@@ -324,7 +339,7 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             )
 
             def assess(proofs, source=board_hash):
-                return verified_pad_limits(
+                return StitchAllowances.verified_pad_limits(
                     project, proofs, dimensions, board_sha256=source
                 )
 

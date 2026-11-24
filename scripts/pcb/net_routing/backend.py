@@ -1,4 +1,7 @@
-"""Reuse the bounded path router with cached geometry and whole-net screens."""
+"""backend.py: reuse the bounded path router with cached geometry and whole-net screens.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -30,21 +33,17 @@ from pcb.route_optimizer import (
 from pcb.net_routing.geometry import (
     OffAngleContactGeometryError,
     RouteGeometryError,
+    SegmentLine,
     StaircaseGeometryError,
-    _supported_line,
     aggregate,
     on_segment,
     unique_segments,
 )
 from pcb.net_routing.model import Budget, BudgetExhausted, Net, NetPlan, Site
 from pcb.net_routing.native import NativeNet
-from pcb.net_routing.rework import (
-    RemovedCopper,
-    octilinear_projections,
-    restored_connects_islands,
-)
+from pcb.net_routing.rework import ExactAngleProjection, RemovedCopper
 from pcb.net_routing.smoothing import (
-    chain_endpoints,
+    RouteChains,
     simplify_route,
     simplify_terminal_branches,
 )
@@ -55,6 +54,12 @@ class _ContextDiversionRequested(Exception):
     """Give a bounded detour a chance before rejected paths consume the slice."""
 
     def __init__(self, expanded: int):
+        """Carry the nodes expanded before the diversion was requested.
+
+        Inputs:
+            expanded: search nodes expanded before the request, kept as the expanded
+                attribute.
+        """
         self.expanded = expanded
 
 
@@ -62,63 +67,123 @@ class _ContextAlternativesRequested(Exception):
     """Give alternative endpoint headings a turn before the full retry."""
 
 
-def route_payload(
-    route: Route,
-    net: str,
-    width: int,
-    size: int,
-    drill: int,
-    profile=None,
-    segment_dimensions=None,
-) -> dict:
-    dimensions = segment_dimensions or (profile.pieces if profile else None)
-    return {
-        "net": net,
-        "length_mm": route.length_mm,
-        "bends": route.bends,
-        "via_count": len(route.vias),
-        "cost": route.cost,
-        "segments": [
-            {
-                "from_mm": s.start.as_mm(),
-                "to_mm": s.end.as_mm(),
-                "layer": s.layer,
-                "width_mm": to_mm(segment_width),
-            }
-            for segment in route.segments
-            for s, segment_width in (
-                dimensions(segment) if dimensions else ((segment, width),)
-            )
-        ],
-        "vias": [
-            {"at_mm": v.at.as_mm(), "size_mm": to_mm(size), "drill_mm": to_mm(drill)}
-            for v in route.vias
-        ],
-    }
+class RoutePayload:
+    """Builds the request payload that describes a route as rectangular obstacles for
+    later nets."""
 
+    def __call__(
+        self,
+        route: Route,
+        net: str,
+        width: int,
+        size: int,
+        drill: int,
+        profile=None,
+        segment_dimensions=None,
+    ) -> dict:
+        """Describe a route as a payload of segments and vias.
 
-def plan_dimensions(plan: NetPlan, settings):
-    """Preserve the exact width of restored source copper after junction splits."""
-    if not plan.restored_widths:
-        return settings.profile.pieces if settings.profile else None
-
-    def dimensions(segment):
-        widths = {
-            width
-            for original, width in plan.restored_widths
-            if original.layer == segment.layer
-            and on_segment(segment.start, original)
-            and on_segment(segment.end, original)
+        Inputs:
+            route: the route to describe.
+            net: net name.
+            width: track width in nm, used when no per-segment dimensions apply.
+            size: via diameter in nm.
+            drill: via drill in nm.
+            profile: optional rule profile whose pieces give each segment's widths.
+            segment_dimensions: optional callable returning (piece, width) pairs for a
+                segment; it takes precedence over the profile.
+        Outputs:
+            A mapping of net, length in mm, bends, via count, cost, segments (from and
+            to in mm, layer, width in mm) and vias (position, size and drill in mm).
+        """
+        dimensions = segment_dimensions or (profile.pieces if profile else None)
+        return {
+            "net": net,
+            "length_mm": route.length_mm,
+            "bends": route.bends,
+            "via_count": len(route.vias),
+            "cost": route.cost,
+            "segments": [
+                {
+                    "from_mm": s.start.as_mm(),
+                    "to_mm": s.end.as_mm(),
+                    "layer": s.layer,
+                    "width_mm": to_mm(segment_width),
+                }
+                for segment in route.segments
+                for s, segment_width in (
+                    dimensions(segment) if dimensions else ((segment, width),)
+                )
+            ],
+            "vias": [
+                {
+                    "at_mm": v.at.as_mm(),
+                    "size_mm": to_mm(size),
+                    "drill_mm": to_mm(drill),
+                }
+                for v in route.vias
+            ],
         }
-        if len(widths) != 1:
-            raise ValueError("Restored copper has ambiguous source widths")
-        return ((segment, widths.pop()),)
 
-    return dimensions
+
+route_payload = RoutePayload()
+
+
+class PlanDimensions:
+    """Chooses how a plan's segments are split into widths."""
+
+    def __call__(self, plan: NetPlan, settings):
+        """Preserve the exact width of restored source copper after junction splits.
+
+        Inputs:
+            plan: the net plan.
+            settings: the net's Settings.
+        Outputs:
+            The profile's pieces function (or None) when the plan has no restored
+            widths; otherwise a function that gives each segment its restored
+            source width and raises ValueError when that width is ambiguous.
+        """
+        if not plan.restored_widths:
+            return settings.profile.pieces if settings.profile else None
+
+        def dimensions(segment):
+            """The (segment, width) pair for a segment that lies on restored copper.
+
+            Outputs:
+                A one-element tuple with the segment and the width of the restored
+                copper
+                it lies on. Raises ValueError when it lies on copper of several widths.
+            """
+            widths = {
+                width
+                for original, width in plan.restored_widths
+                if original.layer == segment.layer
+                and on_segment(segment.start, original)
+                and on_segment(segment.end, original)
+            }
+            if len(widths) != 1:
+                raise ValueError("Restored copper has ambiguous source widths")
+            return ((segment, widths.pop()),)
+
+        return dimensions
+
+
+plan_dimensions = PlanDimensions()
 
 
 @dataclass
 class Settings:
+    """Search settings of one net, derived from its request and the saved board.
+
+    Inputs:
+        raw: the net's request settings (dimensions in mm, layers, weights, limits).
+        native: the net's native copper.
+        copper: copper thickness in nm by copper layer name.
+        board_bounds: corners of the board outline's bounding box, in nm, or None.
+        edge_clearance: copper-to-edge clearance in nm.
+        saved_rules: saved routing rules that give dimension profiles, or None.
+    """
+
     raw: dict
     native: NativeNet
     copper: dict[str, int]
@@ -127,6 +192,17 @@ class Settings:
     saved_rules: object = None
 
     def __post_init__(self):
+        """Validate the request and compute the grid, dimensions, layers, costs and
+        profile.
+
+        Outputs:
+            None; sets the grid bounds (clipped to the board edge), step, width,
+            clearance,
+            via size and drill in nm, layers, weights, penalties, extra obstacles,
+            electrical constraints and rule profile. Raises ValueError for unknown or
+            invalid fields, layers that are not distinct known copper layers, or
+            electrical limits without whole_net_upper_bound.
+        """
         _fields(
             self.raw, SHARED_FIELDS | {"obstacles", "current_model"}, "net settings"
         )
@@ -232,6 +308,13 @@ class Settings:
         proposed_vias: frozenset[Point] = frozenset(),
         budget: Budget | None = None,
     ) -> GridRouter:
+        """Build a grid router over this net's settings.
+
+        Inputs:
+            obstacles: obstacles from the board and from other nets' plans.
+            proposed_vias: via positions the net may reuse as through vias.
+            budget: optional budget whose check bounds the search time.
+        """
         c = self.constraints
         headings = {
             name: i
@@ -239,6 +322,13 @@ class Settings:
         }
 
         def directions(field):
+            """Convert a field of compass headings to a set of heading numbers, or None
+            when absent.
+
+            Inputs:
+                field: name of the request field. Raises ValueError unless it is a
+                    nonempty list of headings.
+            """
             names = self.raw.get(field)
             if names is None:
                 return None
@@ -290,6 +380,14 @@ class Settings:
         )
 
     def assessment(self, route: Route) -> dict:
+        """Screen a route against the supplied electrical limits.
+
+        Outputs:
+            A mapping describing the screen, or a not_assessed status when no limits
+            were supplied. Raises ValueError when existing arcs are present, and
+            ElectricalConstraintViolation when the whole-net conservative voltage drop
+            or another limit is exceeded.
+        """
         c = self.constraints
         if c is None:
             return {"status": "not_assessed", "reason": "No electrical limits supplied"}
@@ -359,11 +457,19 @@ class NativeBackend:
         obstacles: tuple[Obstacle, ...],
         budget: Budget,
     ):
+        """Create the backend for one batch of nets.
+
+        Inputs:
+            settings: Settings by net name.
+            obstacles: board obstacles shared by every net.
+            budget: the search budget.
+        """
         self.settings, self.obstacles, self.budget = settings, obstacles, budget
         self.cache: OrderedDict[tuple, tuple[Route, ...]] = OrderedDict()
         self.routers: OrderedDict[tuple, GridRouter] = OrderedDict()
 
     def combine(self, net: Net, routes: tuple[Route, ...]) -> Route:
+        """Merge routes of one net into one measured route using the net's settings."""
         return self._combine(
             net, routes, forbid_staircase=self.settings[net.name].forbid_staircase
         )
@@ -376,6 +482,17 @@ class NativeBackend:
         forbid_staircase: bool,
         legacy_contacts: frozenset[Site] = frozenset(),
     ) -> Route:
+        """Merge routes of one net into one measured route.
+
+        Inputs:
+            net: the net.
+            routes: routes to merge.
+            forbid_staircase: reject staircases involving added copper.
+            legacy_contacts: sites on existing copper exempt from the bend rule.
+        Outputs:
+            The merged route. Raises RouteGeometryError subclasses when it breaks a
+            rule.
+        """
         s = self.settings[net.name]
         return aggregate(
             routes,
@@ -397,7 +514,7 @@ class NativeBackend:
         self, net: Net, prior: tuple[NetPlan, ...], route: Route
     ) -> Route | None:
         """Search a bounded window around an unbranched removed copper chain."""
-        ends = chain_endpoints(route)
+        ends = RouteChains.endpoints(route)
         if ends is None or not route.segments:
             return None
         setting = self.settings[net.name]
@@ -456,7 +573,7 @@ class NativeBackend:
                 try:
                     self.budget.call()
                     candidate, _ = self._path(router, net, empty, *ends)
-                    if restored_connects_islands(net, candidate):
+                    if RemovedCopper.connects_islands(net, candidate):
                         return self.combine(net, (candidate,))
                 except SearchLimitReached:
                     self.budget.hit_limit("path_expansions")
@@ -559,6 +676,8 @@ class NativeBackend:
             return None
 
         def reject(reason):
+            """Record a restore_seed failure unless quiet, and decline the plan; always
+            returns None."""
             if not _quiet:
                 self.budget.failure("restore_seed", f"{net.name}: {reason}")
             return None
@@ -568,7 +687,8 @@ class NativeBackend:
         if removed.off_angle_tracks:
             choices = [
                 tuple(
-                    (projected, width) for projected in octilinear_projections(segment)
+                    (projected, width)
+                    for projected in ExactAngleProjection.projections(segment)
                 )
                 for segment, width in removed.off_angle_tracks
             ]
@@ -612,7 +732,7 @@ class NativeBackend:
         vias = tuple(Via(via.point, "F.Cu", "B.Cu") for via in removed.vias)
         reused_vias = ()
         raw = Route(segments, vias, (), 0.0, 0, 0.0, 0)
-        if not restored_connects_islands(net, raw):
+        if not RemovedCopper.connects_islands(net, raw):
             return reject("removed pieces do not connect every selected island")
         try:
             repaired = False
@@ -629,10 +749,12 @@ class NativeBackend:
                     )
                     if (
                         candidate.segments == raw.segments
-                        or not restored_connects_islands(net, candidate)
+                        or not RemovedCopper.connects_islands(net, candidate)
                     ):
                         candidate = self.local_repair(net, prior, raw)
-                if candidate is not None and restored_connects_islands(net, candidate):
+                if candidate is not None and RemovedCopper.connects_islands(
+                    net, candidate
+                ):
                     measured = self.combine(net, (candidate,))
                     segments = candidate.segments
                     vias = candidate.vias
@@ -723,6 +845,8 @@ class NativeBackend:
                 pieces = tuple(removed.tracks)
 
             def nearby(a, b, obstacle, margin):
+                """Whether a segment, grown by a margin in nm, can reach the obstacle's
+                bounding box."""
                 return not (
                     max(a.x, b.x) + margin + 1 < obstacle.lower.x
                     or min(a.x, b.x) - margin - 1 > obstacle.upper.x
@@ -842,7 +966,7 @@ class NativeBackend:
             for segment in segments:
                 if segment.layer != site.layer or not on_segment(site.point, segment):
                     continue
-                if legacy and not _supported_line(segment):
+                if legacy and not SegmentLine.supported(segment):
                     raise NoGridRoute(
                         "Endpoint touches off-angle existing copper; "
                         "try another access point or reroute that copper"
@@ -943,6 +1067,14 @@ class NativeBackend:
         accepted_context = False
 
         def compatible(candidate):
+            """Whether a candidate path combines with the tree without a geometry error.
+
+            Outputs:
+                False after recording the failure, the rejected route and any staircase
+                witnesses; True otherwise. Raises _ContextDiversionRequested when three
+                distinct rejected routes call for a bounded detour before any path was
+                accepted.
+            """
             nonlocal accepted_context, rejected_context
             try:
                 self.combine(net, (tree, candidate))
@@ -984,6 +1116,8 @@ class NativeBackend:
             # A context-sensitive search can exhaust or hit its limit after
             # rejecting every path it materialized. Try a few different
             # endpoint headings; the same geometry checks still apply.
+            """Queue different endpoint headings derived from rejected routes, up to
+            seven alternatives in all."""
             while rejected_routes and len(alternatives) < 7:
                 candidate = rejected_routes.pop(0)
                 for alternative in self.alternative_headings(
@@ -993,6 +1127,13 @@ class NativeBackend:
                         alternatives.append(alternative)
 
         def try_detours():
+            """Retry the search while forbidding paths through one conflict point at a
+            time.
+
+            Outputs:
+                A (route, True) pair for the first detour that combines with the tree,
+                otherwise None. The router's edge clearance is restored afterwards.
+            """
             nonlocal detours_tried, expanded, limited
             detours_tried = True
             original_clearance = router.edge_clear
@@ -1012,6 +1153,8 @@ class NativeBackend:
                     def clear_without_point(
                         first, last, check_layer, *, blocked_layer=layer, blocked=point
                     ):
+                        """Edge clearance that also rejects any edge passing through the
+                        blocked point on its layer."""
                         if check_layer == blocked_layer and on_segment(
                             blocked, Segment(first, last, check_layer)
                         ):
@@ -1121,6 +1264,8 @@ class NativeBackend:
         )
 
     def accept(self, net: Net, route: Route) -> bool:
+        """Whether a route passes the electrical screen; a failure is recorded in the
+        budget."""
         try:
             self.settings[net.name].assessment(route)
             return True
@@ -1140,7 +1285,7 @@ class NativeBackend:
         trials = self.budget.limits.smoothing_trials
         if not route.segments:
             return route
-        ends = chain_endpoints(route) if trials else None
+        ends = RouteChains.endpoints(route) if trials else None
         if not trials or "seconds" in self.budget.limits_hit:
             return route
         settings = self.settings[net.name]
@@ -1204,6 +1349,12 @@ class NativeBackend:
     def envelopes(
         self, plans: tuple[NetPlan, ...], current: Settings
     ) -> tuple[Obstacle, ...]:
+        """Obstacles that represent other nets' plans, for the current net's settings.
+
+        Inputs:
+            plans: plans of other nets.
+            current: settings of the net being routed.
+        """
         result = []
         for plan in plans:
             s = self.settings[plan.net]
@@ -1227,6 +1378,15 @@ class NativeBackend:
     def _plane_via_clear(
         net: Net, point: Point, setting: Settings, obstacles: tuple[Obstacle, ...]
     ) -> bool:
+        """Whether a through via at a point keeps its clearance from every obstacle and
+        stays inside the grid.
+
+        Inputs:
+            net: the net owning the via.
+            point: via position in nm.
+            setting: the net's settings.
+            obstacles: obstacles to keep clear of.
+        """
         margin = math.ceil(setting.size / 2) + setting.clearance
         if not (
             setting.lower.x + margin <= point.x <= setting.upper.x - margin
@@ -1346,6 +1506,18 @@ class NativeBackend:
     def paths(
         self, net: Net, prior: tuple[NetPlan, ...], tree: Route, start: Site, end: Site
     ) -> tuple[Route, ...]:
+        """Candidate routes between two access sites, cached by search context.
+
+        Inputs:
+            net: the net being routed.
+            prior: plans already chosen for other nets.
+            tree: the net's copper routed so far.
+            start, end: access sites to join.
+        Outputs:
+            Up to path_candidates routes sorted by cost; empty when an endpoint is on a
+            layer the net may not use. Results are cached only when no search limit was
+            hit.
+        """
         self.budget.check()
         settings = self.settings[net.name]
         if start.layer not in settings.layers or end.layer not in settings.layers:

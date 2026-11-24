@@ -34,7 +34,7 @@ class CheckpointRoutingTests(unittest.TestCase):
         )
 
     def test_nearest_access_pair_matches_exhaustive_search(self):
-        from pcb.net_routing.checkpoint import _distance, _nearest
+        from pcb.net_routing.checkpoint import CheckpointChooser
 
         rng = random.Random(20261029)
         layers = ("F.Cu", "B.Cu", "In1.Cu", "In2.Cu")
@@ -49,17 +49,21 @@ class CheckpointRoutingTests(unittest.TestCase):
             a = Island("a", tuple(make_site() for _ in range(48)))
             b = Island("b", tuple(make_site() for _ in range(48)))
             expected = min(
-                ((_distance(x, y), x.key, y.key) for x in a.sites for y in b.sites)
+                (
+                    (CheckpointChooser.distance(x, y), x.key, y.key)
+                    for x in a.sites
+                    for y in b.sites
+                )
             )
-            actual = _nearest(a, b)
+            actual = CheckpointChooser.nearest(a, b)
             self.assertEqual(actual[:3], expected)
 
     def test_checkpoint_selects_small_different_subsets(self):
-        from pcb.net_routing.checkpoint import select_checkpoint
+        from pcb.net_routing.checkpoint import CheckpointChooser
 
         net = Net("N", tuple(Island(str(i), (point(i * 2, 0),)) for i in range(5)))
-        first, anchors = select_checkpoint(net, maximum=2, offset=0)
-        second, _ = select_checkpoint(net, maximum=2, offset=1)
+        first, anchors = CheckpointChooser.select(net, maximum=2, offset=0)
+        second, _ = CheckpointChooser.select(net, maximum=2, offset=1)
         self.assertEqual(len(first.islands), 2)
         self.assertEqual(len(anchors), 2)
         self.assertNotEqual(first.islands, second.islands)

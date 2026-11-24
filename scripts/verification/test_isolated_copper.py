@@ -7,12 +7,12 @@ from unittest.mock import patch
 import pcbnew
 
 from pcb.net_routing.isolated_copper import (
+    IsolatedFragments,
     isolated_dangling_fragments,
     isolated_fragments,
-    same_net_bounding_overlap,
     verify_isolated_protected_removals,
 )
-from pcb.net_routing.working_save import verify_working_net_copper
+from pcb.net_routing.working_save import WorkingQualification
 
 
 class IsolatedCopperTests(unittest.TestCase):
@@ -128,10 +128,10 @@ class IsolatedCopperTests(unittest.TestCase):
     def test_same_net_copper_overlap_is_conservatively_detected(self):
         tiny = self.track()
         nearby = self.track(x=190_000, length=1_000_000)
-        self.assertTrue(same_net_bounding_overlap(tiny, [nearby]))
+        self.assertTrue(IsolatedFragments.same_net_bounding_overlap(tiny, [nearby]))
         self.assertNotIn(tiny.m_Uuid.AsString(), isolated_fragments(self.board, set()))
         nearby.SetLayer(pcbnew.F_Cu)
-        self.assertFalse(same_net_bounding_overlap(tiny, [nearby]))
+        self.assertFalse(IsolatedFragments.same_net_bounding_overlap(tiny, [nearby]))
 
     def test_protected_gate_allows_only_the_proven_removal(self):
         tiny = self.track()
@@ -152,8 +152,10 @@ class IsolatedCopperTests(unittest.TestCase):
             return_value={"SIG"},
         ):
             with self.assertRaisesRegex(RuntimeError, "electrical qualification"):
-                verify_working_net_copper(self.board, [record], [], ())
-            verify_working_net_copper(
+                WorkingQualification.verify_working_net_copper(
+                    self.board, [record], [], ()
+                )
+            WorkingQualification.verify_working_net_copper(
                 self.board,
                 [record],
                 [],
@@ -162,7 +164,7 @@ class IsolatedCopperTests(unittest.TestCase):
                 critical_nets=frozenset({"USB"}),
             )
             with self.assertRaisesRegex(RuntimeError, "not limited"):
-                verify_working_net_copper(
+                WorkingQualification.verify_working_net_copper(
                     self.board,
                     [record],
                     [],

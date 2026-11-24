@@ -1,4 +1,8 @@
-"""Bounded search escalation without weakening physical or electrical rules."""
+"""recovery.py: bounded search escalation without weakening physical or electrical
+rules.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,34 @@ STAGE_NAMES = ("local", "wider pairs", "finer pairs", "board detour", "copper re
 
 @dataclass(frozen=True)
 class RecoveryPolicy:
+    """Limits for escalating a failed search through wider and finer stages, copper
+    replacement and part moves.
+
+    Inputs:
+        early_rework: keep early copper-rework requests when a saved queue is renewed.
+        stages: number of widening stages, 0 to 3, before copper repair.
+        alternatives_per_stage: checkpoint choices (endpoint pairs) tried per stage, at
+            most 64.
+        defer_rounds: how far down the queue a failed net is deferred, in rounds.
+        wide_margin_mm: margin added around a net for wider windows, in mm.
+        max_cells: grid cell limit for escalated searches.
+        max_expansions: node expansion limit for escalated searches.
+        path_candidates: alternative paths kept per endpoint pair in escalated searches.
+        heuristic_weight: weight on the heuristic in escalated searches, at least 1.
+        rip_up_candidates: copper replacement candidates, at most 16.
+        rip_up_items: copper items one replacement may remove, at most 64.
+        whole_net_rip_up_items: copper items of a whole-net replacement, at most 64.
+        rip_up_nets: nets one replacement may touch, at most 8.
+        repair_islands: copper islands a repair may reconnect, 2 to 20.
+        rip_up_radius_mm: radius around an endpoint searched for removable copper, in
+            mm.
+        obstruction_trials: obstruction diagnosis searches, 0 to 16.
+        obstruction_seconds: time limit for one diagnosis, in seconds.
+        placement_candidates: part-move candidates, 0 to 32.
+        placement_nets: nets one part move may affect, at most 32.
+        placement_items: copper items one part move may remove, at most 64.
+    """
+
     early_rework: bool = False
     stages: int = 3
     alternatives_per_stage: int = 3
@@ -37,6 +69,15 @@ class RecoveryPolicy:
 
     @classmethod
     def from_config(cls, raw: object = None) -> RecoveryPolicy:
+        """Build a policy from a configuration object.
+
+        Inputs:
+            raw: None for the defaults, or a mapping of field names to values.
+        Outputs:
+            The validated policy. Raises ValueError for an unknown field, a value of
+            the wrong type, a non-finite or non-positive number where one is needed,
+            or a value above its supported maximum.
+        """
         if raw is None:
             return cls()
         if not isinstance(raw, dict) or set(raw) - {
@@ -131,239 +172,279 @@ class RecoveryPolicy:
         return result
 
 
-def search_key(request: dict) -> str:
-    """Identify an exact search request; callers bind its history to board bytes."""
-    return hashlib.sha256(
-        json.dumps(
-            request, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
-    ).hexdigest()
+class SearchKey:
+    """Fingerprints a search request."""
+
+    def __call__(self, request: dict) -> str:
+        """Identify an exact search request; callers bind its history to board bytes."""
+        return hashlib.sha256(
+            json.dumps(
+                request, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode()
+        ).hexdigest()
 
 
-def recovery_preference(request: dict) -> dict | None:
-    """Keep only a repair's purpose, never its old geometry or copper IDs."""
-    if not request.get("rip_up") and not request.get("movable"):
-        preference = request.get("recovery_preference")
-        if preference is None:
+search_key = SearchKey()
+
+
+class RecoveryPreference:
+    """Reduces a repair request to its purpose, without geometry or copper IDs."""
+
+    def __call__(self, request: dict) -> dict | None:
+        """Keep only a repair's purpose, never its old geometry or copper IDs."""
+        if not request.get("rip_up") and not request.get("movable"):
+            preference = request.get("recovery_preference")
+            if preference is None:
+                return None
+            if (
+                not isinstance(preference, dict)
+                or set(preference) != {"neighbors", "moving"}
+                or any(
+                    not isinstance(preference[key], list)
+                    or any(
+                        not isinstance(value, str) or not value
+                        for value in preference[key]
+                    )
+                    for key in ("neighbors", "moving")
+                )
+            ):
+                raise ValueError("Invalid saved recovery preference")
+            return {
+                key: sorted(set(preference[key])) for key in ("neighbors", "moving")
+            }
+        nets = request.get("nets", [])
+        moves = request.get("movable", [])
+        if (
+            not isinstance(nets, list)
+            or not nets
+            or not isinstance(moves, list)
+            or any(
+                not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                for item in nets
+            )
+            or any(
+                not isinstance(item, dict) or not isinstance(item.get("reference"), str)
+                for item in moves
+            )
+        ):
             return None
-        if (
-            not isinstance(preference, dict)
-            or set(preference) != {"neighbors", "moving"}
-            or any(
-                not isinstance(preference[key], list)
-                or any(
-                    not isinstance(value, str) or not value for value in preference[key]
-                )
-                for key in ("neighbors", "moving")
-            )
-        ):
-            raise ValueError("Invalid saved recovery preference")
-        return {key: sorted(set(preference[key])) for key in ("neighbors", "moving")}
-    nets = request.get("nets", [])
-    moves = request.get("movable", [])
-    if (
-        not isinstance(nets, list)
-        or not nets
-        or not isinstance(moves, list)
-        or any(
-            not isinstance(item, dict) or not isinstance(item.get("name"), str)
-            for item in nets
+        return {
+            "neighbors": sorted({item["name"] for item in nets[1:]}),
+            "moving": sorted({item["reference"] for item in moves}),
+        }
+
+
+recovery_preference = RecoveryPreference()
+
+
+class RecoveryPrioritizer:
+    """Orders compiled recovery requests so those matching a saved intent come first."""
+
+    def __call__(self, requests: list[dict], preference: dict | None) -> list[dict]:
+        """Match an intent to newly compiled requests; unmatched hints are harmless."""
+        if preference is None:
+            return list(requests)
+        return sorted(
+            requests, key=lambda candidate: recovery_preference(candidate) != preference
         )
-        or any(
-            not isinstance(item, dict) or not isinstance(item.get("reference"), str)
-            for item in moves
-        )
-    ):
-        return None
-    return {
-        "neighbors": sorted({item["name"] for item in nets[1:]}),
-        "moving": sorted({item["reference"] for item in moves}),
-    }
 
 
-def prioritize_recovery_requests(
-    requests: list[dict], preference: dict | None
-) -> list[dict]:
-    """Match an intent to newly compiled requests; unmatched hints are harmless."""
-    if preference is None:
-        return list(requests)
-    return sorted(
-        requests, key=lambda candidate: recovery_preference(candidate) != preference
-    )
+prioritize_recovery_requests = RecoveryPrioritizer()
 
 
-def renew_queue(fresh: list, previous: list, policy: RecoveryPolicy) -> list:
-    """Recompile pending recovery stages without replaying saved copper edits.
+class QueueRenewal:
+    """Rebuilds a saved recovery queue from freshly compiled requests."""
 
-    Net names, queue order, escalation levels and a geometry-free repair
-    preference survive a code renewal. Geometry, dimensions, search options
-    and removal UUIDs come from the new planner.
-    """
-    frontier = {}
-    early_frontier = {}
-    ordinal = 0
-    for round_ in previous:
-        for request in round_:
-            # Legacy records may contain obsolete request schemas. They carry
-            # no usable frontier; fresh coverage still includes those nets.
-            if (
-                not isinstance(request, dict)
-                or not isinstance(request.get("nets"), list)
-                or any(
-                    not isinstance(net, dict) or not isinstance(net.get("name"), str)
-                    for net in request["nets"]
+    def __call__(self, fresh: list, previous: list, policy: RecoveryPolicy) -> list:
+        """Recompile pending recovery stages without replaying saved copper edits.
+
+        Net names, queue order, escalation levels and a geometry-free repair
+        preference survive a code renewal. Geometry, dimensions, search options
+        and removal UUIDs come from the new planner.
+        """
+        frontier = {}
+        early_frontier = {}
+        ordinal = 0
+        for round_ in previous:
+            for request in round_:
+                # Legacy records may contain obsolete request schemas. They carry
+                # no usable frontier; fresh coverage still includes those nets.
+                if (
+                    not isinstance(request, dict)
+                    or not isinstance(request.get("nets"), list)
+                    or any(
+                        not isinstance(net, dict)
+                        or not isinstance(net.get("name"), str)
+                        for net in request["nets"]
+                    )
+                ):
+                    continue
+                stage = request.get("recovery_stage", 0)
+                if (
+                    not isinstance(stage, int)
+                    or isinstance(stage, bool)
+                    or not 0 <= stage <= 4
+                ):
+                    raise ValueError("Invalid saved recovery stage")
+                early = request.get("early_rework", False)
+                if not isinstance(early, bool) or (early and stage != 4):
+                    raise ValueError("Invalid saved early rework marker")
+                # Repair neighbors are subordinate to the first unresolved target.
+                nets = (
+                    request["nets"][:1]
+                    if request.get("rip_up") or request.get("movable")
+                    else request["nets"]
                 )
-            ):
-                continue
-            stage = request.get("recovery_stage", 0)
-            if (
-                not isinstance(stage, int)
-                or isinstance(stage, bool)
-                or not 0 <= stage <= 4
-            ):
-                raise ValueError("Invalid saved recovery stage")
-            early = request.get("early_rework", False)
-            if not isinstance(early, bool) or (early and stage != 4):
-                raise ValueError("Invalid saved early rework marker")
-            # Repair neighbors are subordinate to the first unresolved target.
-            nets = (
-                request["nets"][:1]
-                if request.get("rip_up") or request.get("movable")
-                else request["nets"]
-            )
-            for net in nets:
-                name = net["name"]
-                if early:
-                    if policy.early_rework:
-                        early_frontier.setdefault(
-                            name, (ordinal, recovery_preference(request))
-                        )
+                for net in nets:
+                    name = net["name"]
+                    if early:
+                        if policy.early_rework:
+                            early_frontier.setdefault(
+                                name, (ordinal, recovery_preference(request))
+                            )
+                        ordinal += 1
+                        continue
+                    old_stage, old_order, preference = frontier.get(
+                        name, (0, ordinal, None)
+                    )
+                    if name not in frontier or stage > old_stage:
+                        preference = recovery_preference(request)
+                    frontier[name] = (max(stage, old_stage), old_order, preference)
                     ordinal += 1
-                    continue
-                old_stage, old_order, preference = frontier.get(
-                    name, (0, ordinal, None)
-                )
-                if name not in frontier or stage > old_stage:
-                    preference = recovery_preference(request)
-                frontier[name] = (max(stage, old_stage), old_order, preference)
-                ordinal += 1
-    pending = []
-    for round_ in fresh:
-        ordinary_requests, ordinary_orders = [], []
-        for request in round_:
-            ordinary = []
-            for net in request["nets"]:
-                if net["name"] in early_frontier:
-                    early_order, early_preference = early_frontier[net["name"]]
-                    marker = deepcopy(request)
-                    marker.update(
-                        nets=[deepcopy(net)],
-                        checkpoint_offset=0,
-                        recovery_stage=4,
-                        early_rework=True,
+        pending = []
+        for round_ in fresh:
+            ordinary_requests, ordinary_orders = [], []
+            for request in round_:
+                ordinary = []
+                for net in request["nets"]:
+                    if net["name"] in early_frontier:
+                        early_order, early_preference = early_frontier[net["name"]]
+                        marker = deepcopy(request)
+                        marker.update(
+                            nets=[deepcopy(net)],
+                            checkpoint_offset=0,
+                            recovery_stage=4,
+                            early_rework=True,
+                        )
+                        for key in (
+                            "orders",
+                            "rip_up",
+                            "movable",
+                            "recovery_preference",
+                        ):
+                            marker.pop(key, None)
+                        if early_preference is not None:
+                            marker["recovery_preference"] = early_preference
+                        pending.append((early_order, [marker]))
+                    stage, order, preference = frontier.get(
+                        net["name"], (0, ordinal, None)
                     )
-                    for key in ("orders", "rip_up", "movable", "recovery_preference"):
-                        marker.pop(key, None)
-                    if early_preference is not None:
-                        marker["recovery_preference"] = early_preference
-                    pending.append((early_order, [marker]))
-                stage, order, preference = frontier.get(net["name"], (0, ordinal, None))
-                if not stage:
-                    ordinary.append(net)
-                    continue
-                rebuilt = deepcopy(request)
-                rebuilt["nets"] = [deepcopy(net)]
-                rebuilt["checkpoint_offset"] = 0
-                while rebuilt.get("recovery_stage", 0) < stage:
-                    advanced = next_stage(rebuilt, policy)
-                    if advanced is None:
-                        break
-                    rebuilt = advanced
-                if rebuilt.get("recovery_stage") == 4 and preference is not None:
-                    rebuilt["recovery_preference"] = preference
-                pending.append((order, [rebuilt]))
-            if ordinary:
-                rebuilt = deepcopy(request)
-                rebuilt["nets"] = ordinary
-                ordinary_requests.append(rebuilt)
-                ordinary_orders.append(
-                    min(
-                        frontier.get(n["name"], (0, ordinal, None))[1] for n in ordinary
+                    if not stage:
+                        ordinary.append(net)
+                        continue
+                    rebuilt = deepcopy(request)
+                    rebuilt["nets"] = [deepcopy(net)]
+                    rebuilt["checkpoint_offset"] = 0
+                    while rebuilt.get("recovery_stage", 0) < stage:
+                        advanced = next_stage(rebuilt, policy)
+                        if advanced is None:
+                            break
+                        rebuilt = advanced
+                    if rebuilt.get("recovery_stage") == 4 and preference is not None:
+                        rebuilt["recovery_preference"] = preference
+                    pending.append((order, [rebuilt]))
+                if ordinary:
+                    rebuilt = deepcopy(request)
+                    rebuilt["nets"] = ordinary
+                    ordinary_requests.append(rebuilt)
+                    ordinary_orders.append(
+                        min(
+                            frontier.get(n["name"], (0, ordinal, None))[1]
+                            for n in ordinary
+                        )
                     )
-                )
-                ordinal += 1
-        if ordinary_requests:
-            # These windows were scheduled as independent by the fresh planner.
-            # Keep their parallelism; escalated/widened windows remain isolated.
-            pending.append((min(ordinary_orders), ordinary_requests))
-    return [round_ for _, round_ in sorted(pending, key=lambda item: item[0])]
+                    ordinal += 1
+            if ordinary_requests:
+                # These windows were scheduled as independent by the fresh planner.
+                # Keep their parallelism; escalated/widened windows remain isolated.
+                pending.append((min(ordinary_orders), ordinary_requests))
+        return [round_ for _, round_ in sorted(pending, key=lambda item: item[0])]
 
 
-def next_stage(request: dict, policy: RecoveryPolicy) -> dict | None:
-    """Prefer simpler pairs, then a finer grid, then a wider detour corridor.
+renew_queue = QueueRenewal()
 
-    Widths, clearances, vias, layer eligibility, angle rules, and time budgets
-    stay unchanged. Larger windows run alone, outside the parallel batch.
-    Rip-up repairs retain their full fragment set and therefore cannot be
-    reduced to pairs. The final marker is compiled against the current board.
-    """
-    stage = request.get("recovery_stage", 0) + 1
-    if stage > policy.stages:
-        if (
-            policy.stages
-            and (policy.rip_up_candidates or policy.placement_candidates)
-            and stage <= 4
-            and not request.get("rip_up")
-            and not request.get("movable")
-        ):
-            result = deepcopy(request)
-            result.update(recovery_stage=4, checkpoint_offset=0)
-            return result
-        return None
-    result = deepcopy(request)
-    result.update(recovery_stage=stage, checkpoint_offset=0)
-    if result.get("max_islands") is not None and not result.get("rip_up"):
-        result["max_islands"] = 2
-    result["checkpoint_margin_mm"] = max(
-        result.get("checkpoint_margin_mm", 4.0), policy.wide_margin_mm
-    )
-    result.setdefault("search", {})["path_candidates"] = max(
-        result.get("search", {}).get("path_candidates", 1), policy.path_candidates
-    )
-    shared = result["shared"]
-    for net in result["nets"]:
-        # Set effective per-net search options so durable overrides are honored.
-        net["topology_heuristic"] = True
-        net["heuristic_weight"] = max(
-            net.get("heuristic_weight", shared.get("heuristic_weight", 1.0)),
-            policy.heuristic_weight,
-        )
-        net["max_expansions"] = max(
-            net.get("max_expansions", shared.get("max_expansions", 200_000)),
-            policy.max_expansions,
-        )
-        net["max_cells"] = max(
-            net.get("max_cells", shared.get("max_cells", 250_000)), policy.max_cells
-        )
-        if stage == 2:
-            step = net.get("step_mm", shared.get("step_mm", 0.1))
-            net["step_mm"] = max(0.000001, round(step / 2, 6))
-    if stage == 3:
-        window = list(result.get("recovery_bounds_mm", shared["bounds_mm"]))
-        if (
-            len(window) != 4
-            or any(
-                not isinstance(value, (int, float))
-                or isinstance(value, bool)
-                or not math.isfinite(value)
-                for value in window
-            )
-            or window[0] >= window[2]
-            or window[1] >= window[3]
-        ):
-            raise ValueError("Recovery requires finite board bounds")
-        shared["bounds_mm"] = window
+
+class StageEscalation:
+    """Advances a search request to its next recovery stage."""
+
+    def __call__(self, request: dict, policy: RecoveryPolicy) -> dict | None:
+        """Prefer simpler pairs, then a finer grid, then a wider detour corridor.
+
+        Widths, clearances, vias, layer eligibility, angle rules, and time budgets
+        stay unchanged. Larger windows run alone, outside the parallel batch.
+        Rip-up repairs retain their full fragment set and therefore cannot be
+        reduced to pairs. The final marker is compiled against the current board.
+        """
+        stage = request.get("recovery_stage", 0) + 1
+        if stage > policy.stages:
+            if (
+                policy.stages
+                and (policy.rip_up_candidates or policy.placement_candidates)
+                and stage <= 4
+                and not request.get("rip_up")
+                and not request.get("movable")
+            ):
+                result = deepcopy(request)
+                result.update(recovery_stage=4, checkpoint_offset=0)
+                return result
+            return None
+        result = deepcopy(request)
+        result.update(recovery_stage=stage, checkpoint_offset=0)
+        if result.get("max_islands") is not None and not result.get("rip_up"):
+            result["max_islands"] = 2
         result["checkpoint_margin_mm"] = max(
-            window[2] - window[0], window[3] - window[1]
+            result.get("checkpoint_margin_mm", 4.0), policy.wide_margin_mm
         )
-    return result
+        result.setdefault("search", {})["path_candidates"] = max(
+            result.get("search", {}).get("path_candidates", 1), policy.path_candidates
+        )
+        shared = result["shared"]
+        for net in result["nets"]:
+            # Set effective per-net search options so durable overrides are honored.
+            net["topology_heuristic"] = True
+            net["heuristic_weight"] = max(
+                net.get("heuristic_weight", shared.get("heuristic_weight", 1.0)),
+                policy.heuristic_weight,
+            )
+            net["max_expansions"] = max(
+                net.get("max_expansions", shared.get("max_expansions", 200_000)),
+                policy.max_expansions,
+            )
+            net["max_cells"] = max(
+                net.get("max_cells", shared.get("max_cells", 250_000)), policy.max_cells
+            )
+            if stage == 2:
+                step = net.get("step_mm", shared.get("step_mm", 0.1))
+                net["step_mm"] = max(0.000001, round(step / 2, 6))
+        if stage == 3:
+            window = list(result.get("recovery_bounds_mm", shared["bounds_mm"]))
+            if (
+                len(window) != 4
+                or any(
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not math.isfinite(value)
+                    for value in window
+                )
+                or window[0] >= window[2]
+                or window[1] >= window[3]
+            ):
+                raise ValueError("Recovery requires finite board bounds")
+            shared["bounds_mm"] = window
+            result["checkpoint_margin_mm"] = max(
+                window[2] - window[0], window[3] - window[1]
+            )
+        return result
+
+
+next_stage = StageEscalation()

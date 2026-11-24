@@ -8,7 +8,7 @@ from core.console import Console
 from pcb.net_routing.checkpoint import search_window
 from pcb.net_routing.model import Budget, Island, Limits, Net
 from pcb.net_routing.recovery import RecoveryPolicy, next_stage, search_key
-from pcb.net_routing.runner import _split_failed, summarize_attempts
+from pcb.net_routing.runner import RoundQueue, summarize_attempts
 from pcb.route_optimizer import GridRouter, NoGridRoute, Obstacle, Point, mm
 from verification import test_net_routing as fixtures
 
@@ -56,7 +56,7 @@ class RecoveryTests(unittest.TestCase):
                 {"status": "native_validation_rejected"},
             ],
         }
-        retries = runner._rejected_checkpoint_retries(
+        retries = runner.RoundQueue.rejected_retries(
             [[request()]], previous, RecoveryPolicy()
         )
         self.assertEqual(len(retries), 1)
@@ -66,7 +66,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(rebuilt["shared"]["bounds_mm"], [-10, -10, 40, 40])
         self.assertNotIn("99", str(rebuilt))
         self.assertEqual(
-            runner._rejected_checkpoint_retries(
+            runner.RoundQueue.rejected_retries(
                 [[request()]],
                 {**previous, "outcome": "no_candidate_found"},
                 RecoveryPolicy(),
@@ -286,7 +286,7 @@ class RecoveryTests(unittest.TestCase):
         current = request()
         queue = [[{"next_net": "OTHER"}]]
         result = {"attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]}
-        _split_failed(queue, [current], {"SIGNAL": 3}, result)
+        RoundQueue.split_failed(queue, [current], {"SIGNAL": 3}, result)
         self.assertEqual(queue[0], [{"next_net": "OTHER"}])
         self.assertEqual(queue[1][0]["recovery_stage"], 1)
         self.assertEqual(queue[1][0]["checkpoint_offset"], 0)
@@ -294,7 +294,7 @@ class RecoveryTests(unittest.TestCase):
     def test_exhausted_and_unsupported_requests_do_not_spin(self):
         current = request()
         queue = []
-        _split_failed(
+        RoundQueue.split_failed(
             queue,
             [current],
             {"SIGNAL": 100},
@@ -302,7 +302,7 @@ class RecoveryTests(unittest.TestCase):
         )
         self.assertEqual(queue[0][0]["recovery_stage"], 1)
         queue = []
-        _split_failed(
+        RoundQueue.split_failed(
             queue,
             [current],
             {"SIGNAL": 100},
@@ -313,23 +313,23 @@ class RecoveryTests(unittest.TestCase):
     def test_recovery_does_not_wait_behind_the_entire_board(self):
         queue = [[{"pending": index}] for index in range(20)]
         result = {"attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]}
-        _split_failed(queue, [request()], {"SIGNAL": 3}, result)
+        RoundQueue.split_failed(queue, [request()], {"SIGNAL": 3}, result)
         self.assertEqual(queue[0], [{"pending": 0}])
         self.assertEqual(queue[1], [{"pending": 1}])
         self.assertEqual(queue[2][0]["recovery_stage"], 1)
         self.assertEqual(queue[-1], [{"pending": 19}])
 
     def test_early_rework_is_optional_and_keeps_wider_search_in_the_queue(self):
-        from pcb.net_routing.runner import _pop_fair_round
+        from pcb.net_routing.runner import RoundQueue
 
         other = [{"nets": [{"name": "OTHER"}], "recovery_stage": 0}]
         queue = [other]
         result = {"attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]}
-        _split_failed(
+        RoundQueue.split_failed(
             queue, [request()], {"SIGNAL": 3}, result, RecoveryPolicy(early_rework=True)
         )
         self.assertEqual({batch[0].get("recovery_stage") for batch in queue}, {0, 1, 4})
-        chosen = _pop_fair_round(queue, {"SIGNAL": 1}, {})
+        chosen = RoundQueue.pop_fair(queue, {"SIGNAL": 1}, {})
         self.assertEqual(chosen[0]["recovery_stage"], 4)
         self.assertTrue(chosen[0]["early_rework"])
         self.assertTrue(any(batch[0].get("recovery_stage") == 1 for batch in queue))
@@ -347,7 +347,7 @@ class RecoveryTests(unittest.TestCase):
                 result = {
                     "attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]
                 }
-                _split_failed(
+                RoundQueue.split_failed(
                     queue,
                     [failed],
                     {"SIGNAL": 2},
@@ -420,12 +420,12 @@ class RecoveryTests(unittest.TestCase):
     def test_repair_alternatives_are_interleaved_with_other_pending_nets(self):
         from pcb.net_routing import runner
 
-        self.assertTrue(hasattr(runner, "_defer_repair_alternatives"))
+        self.assertTrue(hasattr(runner.RoundQueue, "defer_alternatives"))
         queue = [[{"pending": index}] for index in range(6)]
         candidates = [
             {**request(), "candidate": index, "recovery_stage": 4} for index in range(3)
         ]
-        runner._defer_repair_alternatives(queue, candidates, defer_rounds=2)
+        runner.RoundQueue.defer_alternatives(queue, candidates, defer_rounds=2)
         self.assertEqual(
             [(item[0].get("pending"), item[0].get("candidate")) for item in queue],
             [
@@ -449,7 +449,7 @@ class RecoveryTests(unittest.TestCase):
 
         queue = [pending(name) for name in ("A", "A", "B", "B", "C")]
         alternative = {**request(), "nets": [{"name": "A"}], "candidate": "repair"}
-        runner._defer_repair_alternatives(queue, [alternative], defer_rounds=2)
+        runner.RoundQueue.defer_alternatives(queue, [alternative], defer_rounds=2)
         self.assertEqual(
             [
                 (batch[0]["nets"][0]["name"], batch[0].get("candidate"))
@@ -469,7 +469,7 @@ class RecoveryTests(unittest.TestCase):
         queue = [[{"nets": [{"name": name}]}] for name in ("A", "A", "B", "B", "C")]
         current = {**request(), "nets": [{"name": "A"}]}
         result = {"attempts": [{"checkpoints": [{"net": "A", "count": 1}]}]}
-        _split_failed(queue, [current], {"A": 2}, result)
+        RoundQueue.split_failed(queue, [current], {"A": 2}, result)
         self.assertEqual(
             [
                 (batch[0]["nets"][0]["name"], batch[0].get("recovery_stage"))
@@ -481,7 +481,7 @@ class RecoveryTests(unittest.TestCase):
     def test_board_change_recompiles_pending_repairs_without_old_geometry(self):
         from pcb.net_routing import runner
 
-        self.assertTrue(hasattr(runner, "_invalidate_compiled_repairs"))
+        self.assertTrue(hasattr(runner.RoundQueue, "invalidate_compiled"))
         first = {
             **copy.deepcopy(request()),
             "recovery_stage": 4,
@@ -494,7 +494,7 @@ class RecoveryTests(unittest.TestCase):
         second = copy.deepcopy(first)
         other = {**copy.deepcopy(first), "nets": [{"name": "OTHER"}, {"name": "GND"}]}
         queue = [[first], [{"pending": 1}], [second], [other]]
-        runner._invalidate_compiled_repairs(queue)
+        runner.RoundQueue.invalidate_compiled(queue)
         self.assertEqual(len(queue), 3)
         self.assertEqual(queue[0][0]["nets"], [{"name": "SIGNAL"}])
         self.assertEqual(queue[2][0]["nets"], [{"name": "OTHER"}])

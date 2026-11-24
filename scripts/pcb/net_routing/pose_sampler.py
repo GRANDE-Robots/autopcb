@@ -1,4 +1,8 @@
-"""Poses worth trying for parts a blocked net may move, most promising first."""
+"""pose_sampler.py: poses worth trying for parts a blocked net may move, most promising
+first.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,15 @@ from pcb.route_optimizer import mm
 
 @dataclass(frozen=True)
 class Pose:
+    """One candidate placement of the selected parts.
+
+    Inputs:
+        kind: clearing, nudge or relocation.
+        moves: (reference, x in mm, y in mm, angle in degrees) for each part.
+        displacement_mm: distance moved, in mm; for a nudge, its step.
+        rotation_deg: rotation applied, in degrees.
+    """
+
     kind: str
     moves: tuple[tuple[str, float, float, float], ...]
     displacement_mm: float
@@ -49,6 +62,14 @@ class PoseSampler:
     RELOCATION_CHECKS = 200
 
     def __init__(self, board, guide, legal):
+        """Prepare to sample poses on a board.
+
+        Inputs:
+            board: native board, for its outline and footprints.
+            guide: MoveGuide that says which corridors a pose must leave open.
+            legal: callable taking the selected parts and their moved copies and
+                returning whether the copies keep courtyards and the board edge legal.
+        """
         self.board, self.guide, self.legal = board, guide, legal
         box = board.GetBoardEdgesBoundingBox()
         self.bounds = (
@@ -79,11 +100,22 @@ class PoseSampler:
                 yield pose
 
     def inside(self, x: float, y: float) -> bool:
+        """Whether a point, in mm, lies strictly inside the board outline's bounding
+        box."""
         x0, y0, x1, y1 = self.bounds
         return x0 < x < x1 and y0 < y < y1
 
     @staticmethod
     def copies(selected, moves):
+        """Detached footprint copies of the selected parts at the given moves.
+
+        Inputs:
+            selected: (distance, reference, footprint, nets) tuples.
+            moves: (reference, x in mm, y in mm, angle in degrees) per part, in the
+                same order.
+        Outputs:
+            A list of footprint copies; the board is not changed.
+        """
         import pcbnew
 
         result = []
@@ -132,6 +164,13 @@ class PoseSampler:
         return sorted(found, key=lambda pose: pose.displacement_mm)
 
     def nudges(self, selected):
+        """Poses that offset the parts by fixed steps along each axis and turn them in
+        place.
+
+        Outputs:
+            One pose per entry of NUDGES, skipping offsets that leave the board; the
+            second of two parts moves against the first.
+        """
         for step, dx, dy, turn in self.NUDGES:
             moves = self.shifted(selected, dx * step, dy * step, turn, opposed=True)
             if moves is not None:

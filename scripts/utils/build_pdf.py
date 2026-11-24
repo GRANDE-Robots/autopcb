@@ -1,31 +1,36 @@
 #!/usr/bin/env python3
-"""Build configured Markdown documents as PDFs using local tools."""
+"""build_pdf.py: build configured Markdown documents as PDFs with local tools.
+
+Markdown becomes a print page with TeX equations as local SVG images. An
+isolated Qt WebEngine process prints it, with Chromium as the fallback. A PDF
+replaces its previous version only when no input changed during the build.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import html
-from html.parser import HTMLParser
 import importlib.util
+import json
 import os
-from pathlib import Path
-
-from core.compat import file_sha256
-from core.paths import asset_root, default_project
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 
+from core.compat import file_sha256
+from core.console import Console, add_output_arguments
+from core.paths import asset_root, default_project
 
 DEFAULT_PROJECT = default_project(__file__)
-DISPLAY_MATH = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
-INLINE_MATH = re.compile(r"(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$(?!\$)", re.DOTALL)
-PAGE_BREAK_TOKEN = "AUTOPCBPDFPAGEBREAKTOKEN"
 
 STYLE = r"""
 @page {
@@ -113,282 +118,399 @@ p > img {
 """
 
 
-def run(
-    command: list[str], *, cwd: Path | None = None
-) -> subprocess.CompletedProcess[str]:
-    """Run one local renderer command without inheriting interactive input."""
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-        timeout=120,
-    )
+class RenderTools:
+    """Finds and runs the external programs that render documents."""
 
-
-def require_tool(name: str) -> str:
-    """Return a required executable from PATH or raise an actionable error."""
-    path = shutil.which(name)
-    if not path:
-        raise RuntimeError(f"required documentation tool is unavailable: {name}")
-    return path
-
-
-def require_chrome() -> str:
-    """Resolve a Chromium renderer on Windows or a Unix-like host."""
-    for name in (
+    CHROMIUM_NAMES = (
         "google-chrome",
         "google-chrome-stable",
         "chromium",
         "chrome",
         "msedge",
-    ):
+    )
+
+    @staticmethod
+    def run(
+        command: list[str], *, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one local renderer command without inheriting interactive input.
+
+        Inputs:
+            command: Program and arguments.
+            cwd: Working directory, or None for the current one.
+        Outputs:
+            The finished process with text output. Raises
+            subprocess.TimeoutExpired after 120 s.
+        """
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+
+    @staticmethod
+    def require(name: str) -> str:
+        """Return a required executable from PATH or raise an actionable error."""
         path = shutil.which(name)
-        if path:
-            return path
-    if os.name == "nt":
-        for candidate in (
-            Path(os.environ.get("PROGRAMFILES", ""))
-            / "Google/Chrome/Application/chrome.exe",
-            Path(os.environ.get("PROGRAMFILES", ""))
-            / "Microsoft/Edge/Application/msedge.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", ""))
-            / "Microsoft/Edge/Application/msedge.exe",
-        ):
-            if candidate.is_file():
-                return str(candidate)
-    raise RuntimeError("required documentation tool is unavailable: Chromium browser")
+        if not path:
+            raise RuntimeError(f"required documentation tool is unavailable: {name}")
+        return path
 
-
-def qt_renderer_available() -> bool:
-    """Check for the optional isolated Qt renderer and PDF metadata writer."""
-    try:
-        return bool(
-            importlib.util.find_spec("PySide6.QtWebEngineCore")
-            and importlib.util.find_spec("fitz")
+    @classmethod
+    def chrome(cls) -> str:
+        """Resolve a Chromium renderer on Windows or a Unix-like host."""
+        for name in cls.CHROMIUM_NAMES:
+            path = shutil.which(name)
+            if path:
+                return path
+        if os.name == "nt":
+            for candidate in (
+                Path(os.environ.get("PROGRAMFILES", ""))
+                / "Google/Chrome/Application/chrome.exe",
+                Path(os.environ.get("PROGRAMFILES", ""))
+                / "Microsoft/Edge/Application/msedge.exe",
+                Path(os.environ.get("PROGRAMFILES(X86)", ""))
+                / "Microsoft/Edge/Application/msedge.exe",
+            ):
+                if candidate.is_file():
+                    return str(candidate)
+        raise RuntimeError(
+            "required documentation tool is unavailable: Chromium browser"
         )
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
 
-
-def protect_code(source: str) -> tuple[str, dict[str, str]]:
-    """Keep fenced, indented and inline code out of math tokenization."""
-    from markdown_it import MarkdownIt
-
-    protected: dict[str, str] = {}
-    lines = source.splitlines(keepends=True)
-    code_blocks = [
-        token.map
-        for token in MarkdownIt("commonmark").parse(source)
-        if token.type in ("fence", "code_block") and token.map is not None
-    ]
-    for start, end in reversed(code_blocks):
-        token = f"PDFCODETOKEN{len(protected):04d}END"
-        protected[token] = "".join(lines[start:end])
-        lines[start:end] = [token + "\n"]
-
-    def replace(match: re.Match[str]) -> str:
-        token = f"PDFCODETOKEN{len(protected):04d}END"
-        protected[token] = match.group(0)
-        return token
-
-    return re.sub(
-        r"(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)", replace, "".join(lines)
-    ), protected
-
-
-def protect_math(source: str) -> tuple[str, dict[str, tuple[str, bool]]]:
-    """Replace TeX spans with tokens before Markdown rendering."""
-    formulae: dict[str, tuple[str, bool]] = {}
-
-    def replace(display: bool):
-        """Create a tokenizing callback for one class of TeX expression."""
-
-        def inner(match: re.Match[str]) -> str:
-            """Store one matched formula and return its stable Markdown token."""
-            token = f"AIRSPECTMATHTOKEN{len(formulae):04d}END"
-            formulae[token] = (match.group(1).strip(), display)
-            return f"\n\n{token}\n\n" if display else token
-
-        return inner
-
-    source = DISPLAY_MATH.sub(replace(True), source)
-    return INLINE_MATH.sub(replace(False), source), formulae
-
-
-def latex_svg(
-    expression: str, display: bool, directory: Path, latex: str, dvisvgm: str
-) -> Path:
-    """Render one TeX expression to a cached, local SVG asset."""
-    digest = hashlib.sha256(f"{display}:{expression}".encode("utf-8")).hexdigest()[:20]
-    svg_path = directory / f"{digest}.svg"
-    if svg_path.exists():
-        return svg_path
-    tex_path = directory / f"{digest}.tex"
-    wrapper = (
-        r"\[\displaystyle %s\]"
-        if display
-        else r"\(\special{dvisvgm:raw <g id='math-baseline' data-y='{?y}'/>}%s\)"
-    )
-    tex_path.write_text(
-        "\n".join(
-            (
-                r"\documentclass[10pt]{article}",
-                r"\usepackage{amsmath,amssymb,bm}",
-                r"\pagestyle{empty}",
-                r"\begin{document}",
-                wrapper % expression,
-                r"\end{document}",
-                "",
+    @staticmethod
+    def qt_available() -> bool:
+        """Check for the optional isolated Qt renderer and PDF metadata writer."""
+        try:
+            return bool(
+                importlib.util.find_spec("PySide6.QtWebEngineCore")
+                and importlib.util.find_spec("fitz")
             )
-        ),
-        encoding="utf-8",
-    )
-    compiled = run(
-        [
-            latex,
-            "-no-shell-escape",
-            "-interaction=nonstopmode",
-            "-halt-on-error",
-            tex_path.name,
-        ],
-        cwd=directory,
-    )
-    if compiled.returncode:
-        raise RuntimeError(
-            f"equation render failed for {expression!r}:\n{(compiled.stdout + compiled.stderr)[-3000:]}"
-        )
-    converted = run(
-        [
-            dvisvgm,
-            "--no-fonts",
-            "--exact-bbox",
-            "--verbosity=0",
-            f"--output={svg_path}",
-            str(tex_path.with_suffix(".dvi")),
-        ],
-        cwd=directory,
-    )
-    if converted.returncode or not svg_path.exists():
-        raise RuntimeError(
-            f"equation SVG conversion failed for {expression!r}:\n{(converted.stdout + converted.stderr)[-3000:]}"
-        )
-    return svg_path
+        except (ImportError, ModuleNotFoundError, ValueError):
+            return False
 
 
-def inline_depth(svg: Path) -> float:
-    """Measure the visible SVG depth below the TeX baseline, in points."""
-    root = ElementTree.fromstring(svg.read_text(encoding="utf-8"))
-    viewbox = root.get("viewBox", "").split()
-    marker = next(
-        (item for item in root.iter() if item.get("id") == "math-baseline"), None
-    )
-    if len(viewbox) != 4 or marker is None or marker.get("data-y") is None:
-        raise RuntimeError("Inline equation has no usable TeX baseline")
-    try:
-        top, height = float(viewbox[1]), float(viewbox[3])
-        baseline = float(marker.get("data-y"))
-    except ValueError as exc:
-        raise RuntimeError("Inline equation has invalid baseline geometry") from exc
-    return top + height - baseline
+class MarkdownProtection:
+    """Hides code and TeX spans behind tokens while Markdown is rendered."""
 
+    DISPLAY_MATH = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
+    INLINE_MATH = re.compile(r"(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$(?!\$)", re.DOTALL)
 
-def render_html(source: str, work_dir: Path, source_path: Path) -> tuple[str, str]:
-    """Convert the GitHub-readable guide into a self-contained print page."""
-    try:
+    @staticmethod
+    def code(source: str) -> tuple[str, dict[str, str]]:
+        """Keep fenced, indented and inline code out of math tokenization.
+
+        Outputs:
+            The source with each code span replaced by a token, and a map from
+            token to the original text.
+        """
         from markdown_it import MarkdownIt
-    except ImportError as exc:
-        raise RuntimeError(
-            "install the documentation dependency with: python -m pip install markdown-it-py"
-        ) from exc
 
-    title_match = re.search(r"^#\s+(.+?)\s*$", source, re.MULTILINE)
-    title = title_match.group(1) if title_match else source_path.stem
-    code_safe, code_tokens = protect_code(source)
-    protected_source, formulae = protect_math(code_safe)
-    for token, original in code_tokens.items():
-        protected_source = protected_source.replace(token, original)
-    # Keep PDF pagination out of the reader-facing Markdown document.
-    protected_source = protected_source.replace("<!-- pagebreak -->", PAGE_BREAK_TOKEN)
-    body = (
-        MarkdownIt("commonmark", {"html": True, "linkify": False, "typographer": True})
-        .enable("table")
-        .render(protected_source)
-    )
-    body = body.replace(f"<p>{PAGE_BREAK_TOKEN}</p>", '<div class="page-break"></div>')
-    if formulae:
-        latex = require_tool("latex")
-        dvisvgm = require_tool("dvisvgm")
+        protected: dict[str, str] = {}
+        lines = source.splitlines(keepends=True)
+        code_blocks = [
+            token.map
+            for token in MarkdownIt("commonmark").parse(source)
+            if token.type in ("fence", "code_block") and token.map is not None
+        ]
+        for start, end in reversed(code_blocks):
+            token = f"PDFCODETOKEN{len(protected):04d}END"
+            protected[token] = "".join(lines[start:end])
+            lines[start:end] = [token + "\n"]
+
+        def replace(match: re.Match[str]) -> str:
+            """Store one inline code span and return its token."""
+            token = f"PDFCODETOKEN{len(protected):04d}END"
+            protected[token] = match.group(0)
+            return token
+
+        return re.sub(
+            r"(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)", replace, "".join(lines)
+        ), protected
+
+    @classmethod
+    def math(cls, source: str) -> tuple[str, dict[str, tuple[str, bool]]]:
+        """Replace TeX spans with tokens before Markdown rendering.
+
+        Outputs:
+            The source with each formula replaced by a token, and a map from
+            token to the expression and whether it is display math.
+        """
+        formulae: dict[str, tuple[str, bool]] = {}
+
+        def replace(display: bool):
+            """Create a tokenizing callback for one class of TeX expression."""
+
+            def inner(match: re.Match[str]) -> str:
+                """Store one matched formula and return its stable Markdown token."""
+                token = f"AIRSPECTMATHTOKEN{len(formulae):04d}END"
+                formulae[token] = (match.group(1).strip(), display)
+                return f"\n\n{token}\n\n" if display else token
+
+            return inner
+
+        source = cls.DISPLAY_MATH.sub(replace(True), source)
+        return cls.INLINE_MATH.sub(replace(False), source), formulae
+
+
+class MathSvg:
+    """Renders TeX expressions to cached local SVG files and measures them."""
+
+    @staticmethod
+    def render(
+        expression: str, display: bool, directory: Path, latex: str, dvisvgm: str
+    ) -> Path:
+        """Render one TeX expression to a cached, local SVG asset.
+
+        Inputs:
+            expression: TeX source without delimiters.
+            display: True for display math, False for inline.
+            directory: Folder for the cached files.
+            latex: Path of the LaTeX program.
+            dvisvgm: Path of the DVI to SVG converter.
+        Outputs:
+            The SVG path. Raises RuntimeError when either program fails.
+        """
+        digest = hashlib.sha256(f"{display}:{expression}".encode("utf-8")).hexdigest()[
+            :20
+        ]
+        svg_path = directory / f"{digest}.svg"
+        if svg_path.exists():
+            return svg_path
+        tex_path = directory / f"{digest}.tex"
+        wrapper = (
+            r"\[\displaystyle %s\]"
+            if display
+            else r"\(\special{dvisvgm:raw <g id='math-baseline' data-y='{?y}'/>}%s\)"
+        )
+        tex_path.write_text(
+            "\n".join(
+                (
+                    r"\documentclass[10pt]{article}",
+                    r"\usepackage{amsmath,amssymb,bm}",
+                    r"\pagestyle{empty}",
+                    r"\begin{document}",
+                    wrapper % expression,
+                    r"\end{document}",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+        compiled = RenderTools.run(
+            [
+                latex,
+                "-no-shell-escape",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                tex_path.name,
+            ],
+            cwd=directory,
+        )
+        if compiled.returncode:
+            raise RuntimeError(
+                f"equation render failed for {expression!r}:\n{(compiled.stdout + compiled.stderr)[-3000:]}"
+            )
+        converted = RenderTools.run(
+            [
+                dvisvgm,
+                "--no-fonts",
+                "--exact-bbox",
+                "--verbosity=0",
+                f"--output={svg_path}",
+                str(tex_path.with_suffix(".dvi")),
+            ],
+            cwd=directory,
+        )
+        if converted.returncode or not svg_path.exists():
+            raise RuntimeError(
+                f"equation SVG conversion failed for {expression!r}:\n{(converted.stdout + converted.stderr)[-3000:]}"
+            )
+        return svg_path
+
+    @staticmethod
+    def depth(svg: Path) -> float:
+        """Measure the visible SVG depth below the TeX baseline, in points.
+
+        Outputs:
+            Depth in points. Raises RuntimeError when the SVG has no usable
+            baseline marker.
+        """
+        root = ElementTree.fromstring(svg.read_text(encoding="utf-8"))
+        viewbox = root.get("viewBox", "").split()
+        marker = next(
+            (item for item in root.iter() if item.get("id") == "math-baseline"), None
+        )
+        if len(viewbox) != 4 or marker is None or marker.get("data-y") is None:
+            raise RuntimeError("Inline equation has no usable TeX baseline")
+        try:
+            top, height = float(viewbox[1]), float(viewbox[3])
+            baseline = float(marker.get("data-y"))
+        except ValueError as exc:
+            raise RuntimeError("Inline equation has invalid baseline geometry") from exc
+        return top + height - baseline
+
+
+class HtmlPage:
+    """Converts a Markdown guide into a self-contained print page."""
+
+    PAGE_BREAK = "AUTOPCBPDFPAGEBREAKTOKEN"
+
+    def __call__(
+        self, source: str, work_dir: Path, source_path: Path
+    ) -> tuple[str, str]:
+        """Render the GitHub-readable guide as a print page.
+
+        Inputs:
+            source: Markdown text with normalized line endings.
+            work_dir: Scratch folder; equation images go in ``math/`` below it.
+            source_path: The Markdown file, for the title and relative links.
+        Outputs:
+            The document title and the page HTML. Raises RuntimeError when
+            markdown-it-py or a TeX tool is missing.
+        """
+        try:
+            from markdown_it import MarkdownIt
+        except ImportError as exc:
+            raise RuntimeError(
+                "install the documentation dependency with: python -m pip install markdown-it-py"
+            ) from exc
+
+        title_match = re.search(r"^#\s+(.+?)\s*$", source, re.MULTILINE)
+        title = title_match.group(1) if title_match else source_path.stem
+        code_safe, code_tokens = MarkdownProtection.code(source)
+        protected_source, formulae = MarkdownProtection.math(code_safe)
+        for token, original in code_tokens.items():
+            protected_source = protected_source.replace(token, original)
+        # Keep PDF pagination out of the reader-facing Markdown document.
+        protected_source = protected_source.replace(
+            "<!-- pagebreak -->", self.PAGE_BREAK
+        )
+        body = (
+            MarkdownIt(
+                "commonmark", {"html": True, "linkify": False, "typographer": True}
+            )
+            .enable("table")
+            .render(protected_source)
+        )
+        body = body.replace(
+            f"<p>{self.PAGE_BREAK}</p>", '<div class="page-break"></div>'
+        )
+        if formulae:
+            body = self.equations(body, formulae, work_dir)
+        page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="{source_path.parent.resolve().as_uri()}/"><title>{html.escape(title)}</title>
+<style>{STYLE}</style></head><body>{body}</body></html>
+"""
+        return title, page
+
+    @staticmethod
+    def equations(
+        body: str, formulae: dict[str, tuple[str, bool]], work_dir: Path
+    ) -> str:
+        """Replace each formula token in the body with its rendered SVG image."""
+        latex = RenderTools.require("latex")
+        dvisvgm = RenderTools.require("dvisvgm")
         math_dir = work_dir / "math"
         math_dir.mkdir()
         for token, (expression, display) in formulae.items():
-            svg = latex_svg(expression, display, math_dir, latex, dvisvgm)
+            svg = MathSvg.render(expression, display, math_dir, latex, dvisvgm)
             image = f'<img src="{svg.as_uri()}" alt="{html.escape(expression, quote=True)}">'
             replacement = (
                 f'<div class="math-display">{image}</div>'
                 if display
-                else f'<span class="math-inline" style="vertical-align:{-inline_depth(svg):.4f}pt">{image}</span>'
+                else f'<span class="math-inline" style="vertical-align:{-MathSvg.depth(svg):.4f}pt">{image}</span>'
             )
             body = (
                 body.replace(f"<p>{token}</p>", replacement)
                 if display
                 else body.replace(token, replacement)
             )
-    page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<base href="{source_path.parent.resolve().as_uri()}/"><title>{html.escape(title)}</title>
-<style>{STYLE}</style></head><body>{body}</body></html>
-"""
-    return title, page
+        return body
 
 
-def validate_pdf(path: Path, expected_title: str, pdfinfo: str) -> None:
-    """Confirm a substantial US-letter PDF with the guide title."""
-    if not path.is_file() or path.stat().st_size < 10_000:
-        raise RuntimeError(f"rendered PDF is missing or unexpectedly small: {path}")
-    result = run([pdfinfo, str(path)])
-    if result.returncode or "letter" not in result.stdout.lower():
-        raise RuntimeError(f"PDF is not US-letter: {path}\n{result.stderr}")
-    title_line = next(
-        (line for line in result.stdout.splitlines() if line.startswith("Title:")), ""
-    )
-    if expected_title not in title_line:
-        raise RuntimeError(f"PDF metadata title mismatch: {title_line}")
+class PdfRenderer:
+    """Prints a staged HTML page to a validated US-letter PDF."""
 
+    @staticmethod
+    def validate(path: Path, expected_title: str, pdfinfo: str) -> None:
+        """Confirm a substantial US-letter PDF with the guide title.
 
-def render_pdf(html_path: Path, staged_pdf: Path, title: str, pdfinfo: str) -> None:
-    """Render and validate in isolation, falling back to Chromium if needed."""
-    qt_error = None
-    if qt_renderer_available():
+        Outputs: None. Raises RuntimeError when the file is missing, under
+        10 kB, not US letter, or titled differently.
+        """
+        if not path.is_file() or path.stat().st_size < 10_000:
+            raise RuntimeError(f"rendered PDF is missing or unexpectedly small: {path}")
+        result = RenderTools.run([pdfinfo, str(path)])
+        if result.returncode or "letter" not in result.stdout.lower():
+            raise RuntimeError(f"PDF is not US-letter: {path}\n{result.stderr}")
+        title_line = next(
+            (line for line in result.stdout.splitlines() if line.startswith("Title:")),
+            "",
+        )
+        if expected_title not in title_line:
+            raise RuntimeError(f"PDF metadata title mismatch: {title_line}")
+
+    def __call__(
+        self, html_path: Path, staged_pdf: Path, title: str, pdfinfo: str
+    ) -> None:
+        """Render and validate in isolation, falling back to Chromium if needed.
+
+        Inputs:
+            html_path: The staged print page.
+            staged_pdf: Where the PDF is written; removed if Qt output fails.
+            title: Expected PDF title.
+            pdfinfo: Path of the pdfinfo program.
+        Outputs: None. Raises RuntimeError when no renderer produces a valid PDF.
+        """
+        qt_error = None
+        if RenderTools.qt_available():
+            try:
+                self.qt(html_path, staged_pdf, title, pdfinfo)
+                return
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                qt_error = exc
+                staged_pdf.unlink(missing_ok=True)
+                print("Qt PDF rendering failed; trying Chromium.", file=sys.stderr)
         try:
-            rendered = run(
-                [
-                    sys.executable,
-                    "-B",
-                    str(Path(__file__).with_name("qt_pdf.py")),
-                    str(html_path),
-                    str(staged_pdf),
-                    title,
-                ]
-            )
-            if rendered.returncode:
-                raise RuntimeError((rendered.stdout + rendered.stderr)[-3000:])
-            validate_pdf(staged_pdf, title, pdfinfo)
-            return
+            self.chromium(html_path, staged_pdf, title, pdfinfo)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
-            qt_error = exc
-            staged_pdf.unlink(missing_ok=True)
-            print("Qt PDF rendering failed; trying Chromium.", file=sys.stderr)
+            if qt_error is not None:
+                raise RuntimeError(
+                    f"Both PDF renderers failed. Qt: {qt_error}\n{exc}"
+                ) from exc
+            raise
 
-    try:
-        chrome = require_chrome()
-        rendered = run(
+    def qt(self, html_path: Path, staged_pdf: Path, title: str, pdfinfo: str) -> None:
+        """Print with the isolated Qt WebEngine script and validate the result."""
+        rendered = RenderTools.run(
             [
-                chrome,
+                sys.executable,
+                "-B",
+                str(Path(__file__).with_name("qt_pdf.py")),
+                str(html_path),
+                str(staged_pdf),
+                title,
+            ]
+        )
+        if rendered.returncode:
+            raise RuntimeError((rendered.stdout + rendered.stderr)[-3000:])
+        self.validate(staged_pdf, title, pdfinfo)
+
+    def chromium(
+        self, html_path: Path, staged_pdf: Path, title: str, pdfinfo: str
+    ) -> None:
+        """Print with headless Chromium and validate the result."""
+        rendered = RenderTools.run(
+            [
+                RenderTools.chrome(),
                 "--headless=new",
                 "--disable-gpu",
                 "--allow-file-access-from-files",
@@ -404,34 +526,19 @@ def render_pdf(html_path: Path, staged_pdf: Path, title: str, pdfinfo: str) -> N
             raise RuntimeError(
                 f"Browser PDF rendering failed:\n{(rendered.stdout + rendered.stderr)[-3000:]}"
             )
-        validate_pdf(staged_pdf, title, pdfinfo)
-    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
-        if qt_error is not None:
-            raise RuntimeError(
-                f"Both PDF renderers failed. Qt: {qt_error}\n{exc}"
-            ) from exc
-        raise
+        self.validate(staged_pdf, title, pdfinfo)
 
 
-def project_path(project: Path, name: object, suffix: str) -> Path:
-    """Resolve a configured path without permitting writes outside the project."""
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("Document paths must be nonempty strings")
-    result = (project / name).resolve()
-    if not result.is_relative_to(project) or result.suffix.lower() != suffix:
-        raise ValueError(f"Expected a project-relative {suffix} path: {name}")
-    return result
+class ImageReferences(HTMLParser):
+    """Collects the image sources named by HTML tags."""
 
-
-file_hash = file_sha256
-
-
-class _ImageReferences(HTMLParser):
     def __init__(self) -> None:
+        """Start with no sources."""
         super().__init__()
         self.sources: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Record the source of an ``img`` or ``image`` tag."""
         if tag not in {"img", "image"}:
             return
         for name, value in attrs:
@@ -439,83 +546,136 @@ class _ImageReferences(HTMLParser):
                 self.sources.append(value)
 
 
-def image_dependencies(
-    source: str, source_path: Path, project: Path
-) -> tuple[Path, ...]:
-    """Require local, source-bound images, including images embedded in HTML."""
-    try:
-        from markdown_it import MarkdownIt
-    except ImportError as exc:
-        raise RuntimeError("install markdown-it-py for this Python runtime") from exc
-    pending = list(MarkdownIt("commonmark", {"html": True}).parse(source))
-    references = []
-    while pending:
-        token = pending.pop()
-        pending.extend(token.children or ())
-        if token.type == "image":
-            references.append(token.attrGet("src"))
-        elif token.type in {"html_block", "html_inline"}:
-            parser = _ImageReferences()
-            parser.feed(token.content)
-            references.extend(parser.sources)
-    assets = set()
-    for name in references:
-        if not name:
-            raise ValueError("Every image needs a source")
-        parsed = urlsplit(html.unescape(name))
-        if parsed.scheme == "data" and name.lower().startswith("data:image/"):
-            continue
-        if parsed.scheme or parsed.netloc or not parsed.path:
-            raise ValueError(f"Image must be a local project file: {name}")
-        asset = (source_path.parent / unquote(parsed.path)).resolve()
-        if not asset.is_relative_to(project) or not asset.is_file():
-            raise ValueError(f"Image is missing or outside the project: {name}")
-        assets.add(asset)
-    return tuple(sorted(assets))
+class ImageDependencies:
+    """The local images a document needs, so a build can notice when one changes."""
+
+    def __call__(
+        self, source: str, source_path: Path, project: Path
+    ) -> tuple[Path, ...]:
+        """Require local, source-bound images, including images embedded in HTML.
+
+        Inputs:
+            source: Markdown text.
+            source_path: The Markdown file; image paths are relative to its folder.
+            project: Resolved project root that every image must stay inside.
+        Outputs:
+            Sorted image paths. Inline ``data:image/`` sources are skipped.
+            Raises ValueError for a remote, missing or outside image.
+        """
+        try:
+            from markdown_it import MarkdownIt
+        except ImportError as exc:
+            raise RuntimeError(
+                "install markdown-it-py for this Python runtime"
+            ) from exc
+        pending = list(MarkdownIt("commonmark", {"html": True}).parse(source))
+        references = []
+        while pending:
+            token = pending.pop()
+            pending.extend(token.children or ())
+            if token.type == "image":
+                references.append(token.attrGet("src"))
+            elif token.type in {"html_block", "html_inline"}:
+                parser = ImageReferences()
+                parser.feed(token.content)
+                references.extend(parser.sources)
+        assets = set()
+        for name in references:
+            if not name:
+                raise ValueError("Every image needs a source")
+            parsed = urlsplit(html.unescape(name))
+            if parsed.scheme == "data" and name.lower().startswith("data:image/"):
+                continue
+            if parsed.scheme or parsed.netloc or not parsed.path:
+                raise ValueError(f"Image must be a local project file: {name}")
+            asset = (source_path.parent / unquote(parsed.path)).resolve()
+            if not asset.is_relative_to(project) or not asset.is_file():
+                raise ValueError(f"Image is missing or outside the project: {name}")
+            assets.add(asset)
+        return tuple(sorted(assets))
 
 
-def build_pdf(
-    source_path: Path,
-    output_path: Path,
-    *,
-    project: Path | None = None,
-    guards: dict[Path, str] | None = None,
-) -> None:
-    """Build one document from a stable source and atomically replace its PDF."""
-    source_bytes = source_path.read_bytes()
-    source_hash = hashlib.sha256(source_bytes).hexdigest()
-    source = source_bytes.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
-    project = (project or source_path.parent).resolve()
-    dependencies = {source_path: source_hash, **(guards or {})}
-    dependencies.update(
-        {
-            path: file_hash(path)
-            for path in image_dependencies(source, source_path, project)
-        }
-    )
-    if any(
-        not path.is_file() or file_hash(path) != digest
-        for path, digest in dependencies.items()
-    ):
-        raise RuntimeError("Documentation inputs changed while being read")
-    previous_output = file_hash(output_path) if output_path.is_file() else None
-    pdfinfo = require_tool("pdfinfo")
-    with tempfile.TemporaryDirectory(prefix="autopcb-pdf-") as temporary_name:
-        work_dir = Path(temporary_name)
-        title, page = render_html(source, work_dir, source_path)
-        html_path = work_dir / "document.html"
-        staged_pdf = work_dir / "document.pdf"
-        html_path.write_text(page, encoding="utf-8")
-        render_pdf(html_path, staged_pdf, title, pdfinfo)
+class PdfBuild:
+    """Builds one PDF from a Markdown file and publishes it only if nothing changed."""
+
+    def __init__(self) -> None:
+        """Create the page, image and PDF stages."""
+        self.page = HtmlPage()
+        self.images = ImageDependencies()
+        self.renderer = PdfRenderer()
+
+    @staticmethod
+    def file_digest(path: Path) -> str | None:
+        """Return the SHA-256 of a file, or None when it does not exist."""
+        return file_sha256(path) if path.is_file() else None
+
+    def check_inputs(self, dependencies: dict[Path, str], stage: str) -> None:
+        """Raise RuntimeError when any input file no longer has its read digest."""
         if any(
-            not path.is_file() or file_hash(path) != digest
-            for path, digest in dependencies.items()
+            self.file_digest(path) != digest for path, digest in dependencies.items()
         ):
-            raise RuntimeError("Documentation inputs changed during rendering")
-        if (
-            file_hash(output_path) if output_path.is_file() else None
-        ) != previous_output:
-            raise RuntimeError("PDF output changed during rendering")
+            raise RuntimeError(f"Documentation inputs changed {stage}")
+
+    def check_output(self, output_path: Path, previous: str | None, stage: str) -> None:
+        """Raise RuntimeError when the PDF on disk is no longer the one first seen."""
+        if self.file_digest(output_path) != previous:
+            raise RuntimeError(f"PDF output changed {stage}")
+
+    def __call__(
+        self,
+        source_path: Path,
+        output_path: Path,
+        *,
+        project: Path | None = None,
+        guards: dict[Path, str] | None = None,
+    ) -> None:
+        """Build one document from a stable source and atomically replace its PDF.
+
+        Inputs:
+            source_path: Markdown file.
+            output_path: PDF to create or replace.
+            project: Root that images must stay inside; the source's folder
+                when None.
+            guards: Extra files and the SHA-256 each must still have.
+        Outputs:
+            None. Raises RuntimeError when a renderer fails or any input or the
+            old PDF changes during the build; the old PDF is then left as it was.
+        """
+        source_bytes = source_path.read_bytes()
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        source = (
+            source_bytes.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        )
+        project = (project or source_path.parent).resolve()
+        dependencies = {source_path: source_hash, **(guards or {})}
+        dependencies.update(
+            {
+                path: file_sha256(path)
+                for path in self.images(source, source_path, project)
+            }
+        )
+        self.check_inputs(dependencies, "while being read")
+        previous_output = self.file_digest(output_path)
+        pdfinfo = RenderTools.require("pdfinfo")
+        with tempfile.TemporaryDirectory(prefix="autopcb-pdf-") as temporary_name:
+            work_dir = Path(temporary_name)
+            title, page = self.page(source, work_dir, source_path)
+            html_path = work_dir / "document.html"
+            staged_pdf = work_dir / "document.pdf"
+            html_path.write_text(page, encoding="utf-8")
+            self.renderer(html_path, staged_pdf, title, pdfinfo)
+            self.check_inputs(dependencies, "during rendering")
+            self.check_output(output_path, previous_output, "during rendering")
+            self.publish(staged_pdf, output_path, dependencies, previous_output)
+
+    def publish(
+        self,
+        staged_pdf: Path,
+        output_path: Path,
+        dependencies: dict[Path, str],
+        previous_output: str | None,
+    ) -> None:
+        """Copy the staged PDF beside its destination and swap it in atomically."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = None
         try:
@@ -528,91 +688,125 @@ def build_pdf(
                 temp_path = Path(stream.name)
                 with staged_pdf.open("rb") as rendered_pdf:
                     shutil.copyfileobj(rendered_pdf, stream)
-            if any(
-                not path.is_file() or file_hash(path) != digest
-                for path, digest in dependencies.items()
-            ):
-                raise RuntimeError("Documentation inputs changed before publication")
-            if (
-                file_hash(output_path) if output_path.is_file() else None
-            ) != previous_output:
-                raise RuntimeError("PDF output changed before publication")
+            self.check_inputs(dependencies, "before publication")
+            self.check_output(output_path, previous_output, "before publication")
             os.replace(temp_path, output_path)
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
 
 
-def main(arguments: list[str] | None = None) -> int:
-    """Build the Markdown files enumerated in config/pdf_build.json."""
-    import json
-    from core.console import Console, add_output_arguments
+class PdfConfig:
+    """The documents a project's PDF configuration lists, with a digest of the file."""
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
-    parser.add_argument(
-        "--config", type=Path, help="project-relative configuration JSON"
-    )
-    add_output_arguments(parser)
-    args = parser.parse_args(arguments)
-    console = Console(json_mode=args.json, verbose=args.verbose)
-    project = args.project.resolve()
-    config_path = project_path(
-        project,
-        str(
-            args.config
-            or (asset_root(project) / "config/pdf_build.json").relative_to(project)
-        ),
-        ".json",
-    )
-    config_bytes = config_path.read_bytes()
-    config_hash = hashlib.sha256(config_bytes).hexdigest()
-    config = json.loads(config_bytes.decode("utf-8-sig"))
-    if not isinstance(config, dict) or not {"documents"} <= config.keys() <= {
-        "documents",
-        "relative_to",
-    }:
-        raise ValueError(
-            "PDF configuration needs documents and an optional relative_to"
-        )
-    relative = config.get("relative_to", "project")
-    if relative not in ("project", "support"):
-        raise ValueError("PDF relative_to must be project or support")
-    document_root = asset_root(project) if relative == "support" else project
-    entries = config["documents"]
-    if not isinstance(entries, list) or not entries:
-        raise ValueError("PDF configuration documents must be a nonempty list")
-    documents = []
-    outputs = set()
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {"source", "output"}:
-            raise ValueError("Each PDF document needs source and output")
-        source = project_path(document_root, entry["source"], ".md")
-        output = project_path(document_root, entry["output"], ".pdf")
-        if not source.is_file():
-            raise ValueError(f"Markdown source not found: {source}")
-        if output in outputs:
-            raise ValueError(f"Duplicate PDF destination: {output}")
-        outputs.add(output)
-        documents.append((source, output))
-    for index, (source, output) in enumerate(documents, 1):
-        with console.activity(
-            f"{index}/{len(documents)} | Rendering {source.name} -> {output.name}"
-        ):
-            build_pdf(
-                source, output, project=project, guards={config_path: config_hash}
+    def __init__(self, project: Path, name: Path | str | None = None):
+        """Read and validate the configuration.
+
+        Inputs:
+            project: Resolved project root.
+            name: Project-relative configuration file; ``config/pdf_build.json``
+                under the asset root when None.
+        Outputs:
+            None. Sets ``path``, ``digest`` and ``documents``, a list of
+            (Markdown source, PDF output) pairs. Raises ValueError when the
+            file is malformed, a path leaves the project, or a destination
+            repeats.
+        """
+        default = (asset_root(project) / "config/pdf_build.json").relative_to(project)
+        self.path = self.resolve(project, str(name or default), ".json")
+        config_bytes = self.path.read_bytes()
+        self.digest = hashlib.sha256(config_bytes).hexdigest()
+        config = json.loads(config_bytes.decode("utf-8-sig"))
+        if not isinstance(config, dict) or not {"documents"} <= config.keys() <= {
+            "documents",
+            "relative_to",
+        }:
+            raise ValueError(
+                "PDF configuration needs documents and an optional relative_to"
             )
+        relative = config.get("relative_to", "project")
+        if relative not in ("project", "support"):
+            raise ValueError("PDF relative_to must be project or support")
+        root = asset_root(project) if relative == "support" else project
+        entries = config["documents"]
+        if not isinstance(entries, list) or not entries:
+            raise ValueError("PDF configuration documents must be a nonempty list")
+        self.documents: list[tuple[Path, Path]] = []
+        outputs = set()
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"source", "output"}:
+                raise ValueError("Each PDF document needs source and output")
+            source = self.resolve(root, entry["source"], ".md")
+            output = self.resolve(root, entry["output"], ".pdf")
+            if not source.is_file():
+                raise ValueError(f"Markdown source not found: {source}")
+            if output in outputs:
+                raise ValueError(f"Duplicate PDF destination: {output}")
+            outputs.add(output)
+            self.documents.append((source, output))
 
+    @staticmethod
+    def resolve(project: Path, name: object, suffix: str) -> Path:
+        """Resolve a configured path without permitting writes outside the project."""
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Document paths must be nonempty strings")
+        result = (project / name).resolve()
+        if not result.is_relative_to(project) or result.suffix.lower() != suffix:
+            raise ValueError(f"Expected a project-relative {suffix} path: {name}")
+        return result
+
+
+class PdfBuildCommand:
+    """Command-line entry: build every document the PDF configuration lists."""
+
+    def __call__(self, arguments: list[str] | None = None) -> int:
+        """Build the Markdown files enumerated in config/pdf_build.json.
+
+        Inputs:
+            arguments: Command-line arguments; the process arguments when None.
+        Outputs:
+            Exit status 0. Raises ValueError or RuntimeError when the
+            configuration or a build is rejected.
+        """
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
+        parser.add_argument(
+            "--config", type=Path, help="project-relative configuration JSON"
+        )
+        add_output_arguments(parser)
+        args = parser.parse_args(arguments)
+        console = Console(json_mode=args.json, verbose=args.verbose)
+        project = args.project.resolve()
+        config = PdfConfig(project, args.config)
+        build = PdfBuild()
+        for index, (source, output) in enumerate(config.documents, 1):
+            with console.activity(
+                f"{index}/{len(config.documents)} | Rendering {source.name} -> {output.name}"
+            ):
+                build(
+                    source,
+                    output,
+                    project=project,
+                    guards={config.path: config.digest},
+                )
+        console.result(
+            {
+                "status": "rendered",
+                "outputs": [str(output) for _, output in config.documents],
+            },
+            self.display,
+        )
+        return 0
+
+    @staticmethod
     def display(console: Console, result: dict) -> None:
+        """Print the heading and each PDF written."""
         console.heading("AutoPCB | Documentation PDFs updated")
         for name in result["outputs"]:
             console.line(name, prefix="  ")
 
-    console.result(
-        {"status": "rendered", "outputs": [str(output) for _, output in documents]},
-        display,
-    )
-    return 0
+
+main = PdfBuildCommand()
 
 
 if __name__ == "__main__":

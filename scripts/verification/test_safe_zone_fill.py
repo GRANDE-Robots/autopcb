@@ -2,7 +2,7 @@
 
 import unittest
 
-from core.safe_zone_fill import native_zone_fill_records, safe_filled_polys
+from core.safe_zone_fill import SafeZoneFill
 
 
 class Polys:
@@ -36,7 +36,7 @@ class FakeZone:
 class SafeReadbackTests(unittest.TestCase):
     def test_declared_missing_layer_is_unknown_without_accessor(self):
         z = FakeZone(False)
-        record, polys = safe_filled_polys(z, z.GetLayer())
+        record, polys = SafeZoneFill.filled_polys(z, z.GetLayer())
         self.assertEqual(record["status"], "UNKNOWN")
         self.assertIsNone(record["polygon_count"])
         self.assertEqual(z.accessor_calls, [])
@@ -44,14 +44,14 @@ class SafeReadbackTests(unittest.TestCase):
 
     def test_valid_filled_layer_is_read(self):
         z = FakeZone(True, 3)
-        record, _ = safe_filled_polys(z, 4)
+        record, _ = SafeZoneFill.filled_polys(z, 4)
         self.assertEqual(record["status"], "AVAILABLE_NONEMPTY")
         self.assertEqual(record["polygon_count"], 3)
         self.assertEqual(z.accessor_calls, [4])
 
     def test_available_empty_is_distinct_from_unknown_or_plane_pass(self):
         z = FakeZone(True, 0)
-        record, _ = safe_filled_polys(z, 4)
+        record, _ = SafeZoneFill.filled_polys(z, 4)
         self.assertEqual(record["status"], "AVAILABLE_EMPTY")
         self.assertEqual(record["polygon_count"], 0)
 
@@ -60,7 +60,7 @@ class SafeReadbackTests(unittest.TestCase):
             def GetFilledPolysList(self, layer):
                 raise AssertionError("Do not probe")
 
-        record, _ = safe_filled_polys(Unexposed(), 4)
+        record, _ = SafeZoneFill.filled_polys(Unexposed(), 4)
         self.assertEqual(record["status"], "UNKNOWN")
         self.assertIsNone(record["polygon_count"])
 
@@ -70,7 +70,7 @@ class SafeReadbackTests(unittest.TestCase):
                 raise RuntimeError("No map")
 
         z = BrokenPredicate(True)
-        record, _ = safe_filled_polys(z, 4)
+        record, _ = SafeZoneFill.filled_polys(z, 4)
         self.assertEqual(record["status"], "UNKNOWN")
         self.assertEqual(z.accessor_calls, [])
 
@@ -79,7 +79,7 @@ class SafeReadbackTests(unittest.TestCase):
             def GetFilledPolysList(self, layer):
                 raise RuntimeError("Unavailable")
 
-        record, _ = safe_filled_polys(BrokenAccessor(True), 4)
+        record, _ = SafeZoneFill.filled_polys(BrokenAccessor(True), 4)
         self.assertEqual(record["status"], "UNKNOWN")
         self.assertIsNone(record["polygon_count"])
 
@@ -88,7 +88,7 @@ class SafeReadbackTests(unittest.TestCase):
             '(kicad_pcb\n\t(zone\n\t\t(net "GND")\n\t\t(layers "F.Cu" '
             '"In1.Cu")\n\t\t(uuid "a")\n\t)\n)'
         )
-        rows = native_zone_fill_records(text)
+        rows = SafeZoneFill.native_records(text)
         self.assertEqual(rows[0]["source_status"], "UNKNOWN_NO_SAVED_FILL_RECORDS")
         self.assertEqual(rows[0]["stored_polygon_counts"], {})
 
@@ -98,7 +98,7 @@ class SafeReadbackTests(unittest.TestCase):
             '"In1.Cu")\n\t\t(uuid "a")\n\t\t(filled_polygon (layer '
             '"In1.Cu") (pts (xy 1 1) (xy 2 1) (xy 1 2)))\n\t)\n)'
         )
-        rows = native_zone_fill_records(text)
+        rows = SafeZoneFill.native_records(text)
         self.assertEqual(rows[0]["stored_polygon_counts"], {"In1.Cu": 1})
         self.assertNotIn("F.Cu", rows[0]["stored_polygon_counts"])
 

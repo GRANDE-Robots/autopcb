@@ -16,7 +16,7 @@ from typing import Any
 
 import pcbnew
 
-from core.kicad_campaign import CampaignFile, CampaignPlanner, _select, digest
+from core.kicad_campaign import CampaignFile, CampaignForms, CampaignPlanner, digest
 from core.kicad_sexpr import parse
 from pcb.route_optimizer import mm
 
@@ -63,7 +63,9 @@ def position_change(
         if not pcbnew.SaveBoard(str(serialized), board):
             raise RuntimeError("KiCad could not serialize the proposed text position")
         native = serialized.read_text(encoding="utf-8")
-        node = _select(parse(native), {"kind": "property", "uuid": identity})
+        node = CampaignForms.select(
+            parse(native), {"kind": "property", "uuid": identity}
+        )
         if len(node.atoms()) < 2 or node.atoms()[1].value != field_name:
             raise RuntimeError("KiCad serialized a different field")
         positions = node.children("at")

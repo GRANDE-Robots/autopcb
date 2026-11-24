@@ -14,7 +14,7 @@ from typing import Any
 
 import pcbnew
 
-from core.kicad_campaign import _one, _property, _select
+from core.kicad_campaign import CampaignForms
 from core.kicad_sexpr import parse
 from pcb.move_scope import MoveScope
 from pcb.route_optimizer import mm
@@ -53,7 +53,9 @@ def native_pose_change(
         rendered = candidate.read_text(encoding="utf-8")
     if hashlib.sha256(source.read_bytes()).hexdigest() != original_hash:
         raise RuntimeError("Saved board changed while generating the footprint pose")
-    result = _select(parse(rendered), {"kind": "footprint", "reference": reference})
+    result = CampaignForms.select(
+        parse(rendered), {"kind": "footprint", "reference": reference}
+    )
     return {
         "document": "pcb",
         "target": {"kind": "footprint", "reference": reference},
@@ -84,10 +86,10 @@ def verify_native_pose_change(
     form = parse(expression)
     if form.name != "footprint":
         raise ValueError("A native pose replacement must contain a footprint")
-    atoms = _property(form, "Reference").atoms()
+    atoms = CampaignForms.named_property(form, "Reference").atoms()
     if len(atoms) < 3 or atoms[2].value != target["reference"]:
         raise ValueError("A native pose replacement cannot change the reference")
-    at = _one(form.children("at"), "position").atoms()
+    at = CampaignForms.one(form.children("at"), "position").atoms()
     if len(at) not in (3, 4):
         raise ValueError("A native pose replacement needs a valid position")
     try:

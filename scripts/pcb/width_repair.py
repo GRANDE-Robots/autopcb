@@ -17,13 +17,13 @@ import tempfile
 import time
 
 from core.kicad_campaign import CampaignPlanner
+from core.compat import file_sha256
 from core.kicad_sexpr import parse
 from core.paths import asset_root, data_path
 from core.toolchain import kicad_cli
 from core.pcb_io import (
     BoardSaveGuard,
     copper_boundary,
-    file_sha256,
     quiet_duplicate_image_handlers,
     typed_copper,
 )

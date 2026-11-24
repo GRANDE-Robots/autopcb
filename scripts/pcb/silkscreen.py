@@ -18,9 +18,9 @@ from core.kicad_campaign import CampaignPlanner
 from core.kicad_sexpr import Form, parse, quote
 from core.paths import asset_root
 from core.toolchain import kicad_cli
-from core.pcb_io import BoardSaveGuard, file_sha256, quiet_duplicate_image_handlers
+from core.pcb_io import BoardSaveGuard, quiet_duplicate_image_handlers
 from pcb.route_validation import _canonical, _drc
-from core.compat import strict_zip
+from core.compat import file_sha256, strict_zip
 
 
 def nonsilkscreen(content: bytes) -> tuple:

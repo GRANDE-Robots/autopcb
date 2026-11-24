@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.project import declared_high_speed, native_path
+from core.project import ProjectProfile, native_path
 
 import json
 import re
@@ -262,7 +262,7 @@ def prepare_project(project: Path, *, progress=None) -> dict:
         reference = {"status": "missing_project_rules", "electrically_verified": False}
         if rules.is_file():
             names = {net.name for net in inventory.nets}
-            declared = declared_high_speed(project, names)
+            declared = ProjectProfile.declared_high_speed(project, names)
             critical = high_speed_nets(rules.read_bytes(), names) | (declared or set())
             reference = reference_report(board, critical)
             reference["classification_complete"] = declared is not None

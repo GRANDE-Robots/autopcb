@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Dispatch AutoPCB checks, review tools, and guarded editing utilities."""
+"""launcher.py: dispatch AutoPCB checks, review tools, and guarded editing utilities.
+
+Every action is a small module. The launcher chooses the project, the Python
+runtime and the default arguments, then runs the module as a child process, so
+the module's own help and safety checks stay in force.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -25,58 +32,84 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = default_project(__file__)
 
 
-def default_kicad_python() -> Path:
-    values = native_python_candidates(kicad_cli.locate(None))
-    return values[0] if values else Path(sys.executable)
+class DefaultKicadPython:
+    """Chooses the Python runtime for operations that need ``pcbnew``."""
+
+    def __call__(self) -> Path:
+        """The first Python runtime found beside KiCad's CLI, or this Python when none is."""
+        values = native_python_candidates(kicad_cli.locate(None))
+        return values[0] if values else Path(sys.executable)
 
 
-def _has_document_dependency(python: Path) -> bool:
-    """Check the actual interpreter used for the document tests."""
-    try:
-        result = subprocess.run(
-            [
-                str(python),
-                "-B",
-                "-c",
-                "import importlib.util, sys; sys.exit(importlib.util.find_spec('markdown_it') is None)",
-            ],
-            cwd=SCRIPTS,
-            env=subprocess_env(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-            creationflags=0x08000000 if os.name == "nt" else 0,
+class SubprocessEnvironment:
+    """Builds the environment for child processes."""
+
+    def __call__(self) -> dict[str, str]:
+        """A copy of the environment with the scripts folder first on PYTHONPATH and bytecode writing off."""
+        env = os.environ.copy()
+        old_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(SCRIPTS) + (os.pathsep + old_path if old_path else "")
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        return env
+
+
+subprocess_env = SubprocessEnvironment()
+default_kicad_python = DefaultKicadPython()
+
+
+class DocumentPython:
+    """Finds a Python that can run the PDF tests."""
+
+    @staticmethod
+    def has_dependency(python: Path) -> bool:
+        """Check the actual interpreter used for the document tests."""
+        try:
+            result = subprocess.run(
+                [
+                    str(python),
+                    "-B",
+                    "-c",
+                    "import importlib.util, sys; sys.exit(importlib.util.find_spec('markdown_it') is None)",
+                ],
+                cwd=SCRIPTS,
+                env=subprocess_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
+
+    def __call__(self, requested: Path | None) -> Path:
+        """Prefer an explicit runtime, otherwise find a usable local interpreter."""
+        if requested is not None:
+            if not requested.is_file():
+                raise ValueError(f"PDF-test Python runtime not found: {requested}")
+            candidates = [requested]
+        else:
+            candidates = [Path(sys.executable)]
+            for name in ("python", "python3"):
+                located = shutil.which(name)
+                if located:
+                    candidates.append(Path(located))
+        seen = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            if self.has_dependency(resolved):
+                return resolved
+        raise ValueError(
+            "PDF tests require a Python interpreter with markdown-it-py; "
+            "install it or select one with --document-python."
         )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0
 
 
-def resolve_document_python(requested: Path | None) -> Path:
-    """Prefer an explicit runtime, otherwise find a usable local interpreter."""
-    if requested is not None:
-        if not requested.is_file():
-            raise ValueError(f"PDF-test Python runtime not found: {requested}")
-        candidates = [requested]
-    else:
-        candidates = [Path(sys.executable)]
-        for name in ("python", "python3"):
-            located = shutil.which(name)
-            if located:
-                candidates.append(Path(located))
-    seen = set()
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved in seen or not resolved.is_file():
-            continue
-        seen.add(resolved)
-        if _has_document_dependency(resolved):
-            return resolved
-    raise ValueError(
-        "PDF tests require a Python interpreter with markdown-it-py; "
-        "install it or select one with --document-python."
-    )
+resolve_document_python = DocumentPython()
 
 
 @dataclass(frozen=True)
@@ -98,6 +131,7 @@ class ActionSpec:
     ]
 
     def __post_init__(self) -> None:
+        """Raise ValueError for an unsupported runtime or mode."""
         if self.runtime not in {"python", "kicad"}:
             raise ValueError(f"Unsupported action runtime: {self.runtime}")
         if self.mode not in {
@@ -241,138 +275,169 @@ ACTIONS = {
 }
 
 
-sha = file_sha256
+class MatchingHashes:
+    """Checks files against recorded hashes."""
 
-
-def matching_hashes(root: Path, values: object) -> bool:
-    """Accept only source-bound relative paths with matching file hashes."""
-    if not isinstance(values, dict):
-        return False
-    for name, expected in values.items():
-        if not isinstance(name, str) or not isinstance(expected, str):
+    def __call__(self, root: Path, values: object) -> bool:
+        """Accept only source-bound relative paths with matching file hashes."""
+        if not isinstance(values, dict):
             return False
-        candidate = (root / name).resolve()
-        if not candidate.is_relative_to(root) or not candidate.is_file():
-            return False
-        if sha(candidate).lower() != expected.lower():
-            return False
-    return True
+        for name, expected in values.items():
+            if not isinstance(name, str) or not isinstance(expected, str):
+                return False
+            candidate = (root / name).resolve()
+            if not candidate.is_relative_to(root) or not candidate.is_file():
+                return False
+            if file_sha256(candidate).lower() != expected.lower():
+                return False
+        return True
 
 
-def show_status(
-    project: Path, *, json_mode: bool = False, verbose: bool = False
-) -> int:
-    paths = ProjectPaths(project)
-    project = paths.root
-    sources = paths.sources
-    if not all(path.is_file() for path in (paths.board, paths.schematic)):
-        print(
-            f"Project is missing its native PCB or schematic: {project}",
-            file=sys.stderr,
-        )
-        return 2
-    hashes = {path.name: sha(path) for path in sources if path.is_file()}
-    manifest = data_path(project, "release_inputs", "INPUT_MANIFEST.json")
-    mismatches = []
-    manifest_status = "missing"
-    if manifest.is_file():
-        try:
-            record = json.loads(manifest.read_text(encoding="utf-8-sig"))
-            manifest_status = record.get("status", "not specified")
-            for name, expected in record["files"].items():
-                if not matching_hashes(manifest.parent.resolve(), {name: expected}):
-                    mismatches.append(name)
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            manifest_status = f"unreadable: {error}"
-    review = paths.review
-    view_status = "missing"
-    identity = review / "source.json"
-    if identity.is_file():
-        try:
-            record = json.loads(identity.read_text(encoding="utf-8-sig"))
-            expected = record.get("sha256", {})
-            dependencies = record.get("dependency_sha256", {})
-            files_present = all((review / name).is_file() for name in REVIEW_FILES)
-            matching_sources = (
-                isinstance(expected, dict)
-                and set(expected) == {paths.schematic.name, paths.board.name}
-                and matching_hashes(project, expected)
-            )
-            matching_dependencies = (
-                isinstance(dependencies, dict)
-                and {
-                    (asset_root(project) / "scripts/core/export_helpers.py")
-                    .relative_to(project)
-                    .as_posix(),
-                    (asset_root(project) / "scripts/review/render_views.py")
-                    .relative_to(project)
-                    .as_posix(),
-                    (asset_root(project) / "scripts/review/refresh_gallery.py")
-                    .relative_to(project)
-                    .as_posix(),
-                    (asset_root(project) / "scripts/review/rasterize_gallery.py")
-                    .relative_to(project)
-                    .as_posix(),
-                    (asset_root(project) / "scripts/review/build_standalone_gallery.py")
-                    .relative_to(project)
-                    .as_posix(),
-                }
-                <= dependencies.keys()
-                and matching_hashes(project, dependencies)
-            )
-            view_status = (
-                "current source hashes"
-                if files_present and matching_sources and matching_dependencies
-                else "missing or stale"
-            )
-        except (OSError, ValueError, TypeError):
-            view_status = "unreadable"
+matching_hashes = MatchingHashes()
 
-    def display(console: Console, record: dict) -> None:
-        console.heading("AutoPCB | Project status")
-        console.rows(
-            [
-                ("Saved KiCad files", "Present"),
-                (
-                    "Review files",
-                    "Current"
-                    if record["review_views"] == "current source hashes"
-                    else record["review_views"],
+
+class ProjectStatus:
+    """Reports the saved-source and release-input status of a project."""
+
+    def __call__(
+        self, project: Path, *, json_mode: bool = False, verbose: bool = False
+    ) -> int:
+        """Print the saved-source and release-input status of a project.
+
+        Inputs:
+            project: Project folder or KiCad file.
+            json_mode: Print the raw record as JSON.
+            verbose: Also list the project path and each mismatched release input.
+        Outputs:
+            Exit status 0, or 2 when the project lacks its native PCB or schematic.
+            The report covers source and file status only; it does not establish
+            electrical, physical or factory readiness.
+        """
+        paths = ProjectPaths(project)
+        project = paths.root
+        sources = paths.sources
+        if not all(path.is_file() for path in (paths.board, paths.schematic)):
+            print(
+                f"Project is missing its native PCB or schematic: {project}",
+                file=sys.stderr,
+            )
+            return 2
+        hashes = {path.name: file_sha256(path) for path in sources if path.is_file()}
+        manifest = data_path(project, "release_inputs", "INPUT_MANIFEST.json")
+        mismatches = []
+        manifest_status = "missing"
+        if manifest.is_file():
+            try:
+                record = json.loads(manifest.read_text(encoding="utf-8-sig"))
+                manifest_status = record.get("status", "not specified")
+                for name, expected in record["files"].items():
+                    if not matching_hashes(manifest.parent.resolve(), {name: expected}):
+                        mismatches.append(name)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                manifest_status = f"unreadable: {error}"
+        review = paths.review
+        view_status = "missing"
+        identity = review / "source.json"
+        if identity.is_file():
+            try:
+                record = json.loads(identity.read_text(encoding="utf-8-sig"))
+                expected = record.get("sha256", {})
+                dependencies = record.get("dependency_sha256", {})
+                files_present = all((review / name).is_file() for name in REVIEW_FILES)
+                matching_sources = (
+                    isinstance(expected, dict)
+                    and set(expected) == {paths.schematic.name, paths.board.name}
+                    and matching_hashes(project, expected)
+                )
+                matching_dependencies = (
+                    isinstance(dependencies, dict)
+                    and {
+                        (asset_root(project) / "scripts/core/export_helpers.py")
+                        .relative_to(project)
+                        .as_posix(),
+                        (asset_root(project) / "scripts/review/render_views.py")
+                        .relative_to(project)
+                        .as_posix(),
+                        (asset_root(project) / "scripts/review/refresh_gallery.py")
+                        .relative_to(project)
+                        .as_posix(),
+                        (asset_root(project) / "scripts/review/rasterize_gallery.py")
+                        .relative_to(project)
+                        .as_posix(),
+                        (
+                            asset_root(project)
+                            / "scripts/review/build_standalone_gallery.py"
+                        )
+                        .relative_to(project)
+                        .as_posix(),
+                    }
+                    <= dependencies.keys()
+                    and matching_hashes(project, dependencies)
+                )
+                view_status = (
+                    "current source hashes"
+                    if files_present and matching_sources and matching_dependencies
+                    else "missing or stale"
+                )
+            except (OSError, ValueError, TypeError):
+                view_status = "unreadable"
+
+        def display(console: Console, record: dict) -> None:
+            """Print the status heading and its rows."""
+            console.heading("AutoPCB | Project status")
+            console.rows(
+                [
+                    ("Saved KiCad files", "Present"),
+                    (
+                        "Review files",
+                        "Current"
+                        if record["review_views"] == "current source hashes"
+                        else record["review_views"],
+                    ),
+                    ("Manufacturing manifest", record["release_manifest_status"]),
+                    (
+                        "Release input mismatches",
+                        len(record["release_input_mismatches"]),
+                    ),
+                ]
+            )
+            if console.verbose:
+                console.line("Project: " + record["project"])
+                for name in record["release_input_mismatches"]:
+                    console.line(name, prefix="  - ")
+            console.line(record["note"])
+
+        Console(json_mode=json_mode, verbose=verbose).result(
+            {
+                "project": str(project),
+                "source_sha256": hashes,
+                "review_views": view_status,
+                "release_manifest_status": manifest_status,
+                "release_input_mismatches": mismatches,
+                "note": (
+                    "Source and file status only; electrical, physical, and "
+                    "factory readiness are not established."
                 ),
-                ("Manufacturing manifest", record["release_manifest_status"]),
-                ("Release input mismatches", len(record["release_input_mismatches"])),
-            ]
+            },
+            display,
         )
-        if console.verbose:
-            console.line("Project: " + record["project"])
-            for name in record["release_input_mismatches"]:
-                console.line(name, prefix="  - ")
-        console.line(record["note"])
+        return 0
 
-    Console(json_mode=json_mode, verbose=verbose).result(
-        {
-            "project": str(project),
-            "source_sha256": hashes,
-            "review_views": view_status,
-            "release_manifest_status": manifest_status,
-            "release_input_mismatches": mismatches,
-            "note": (
-                "Source and file status only; electrical, physical, and "
-                "factory readiness are not established."
+
+show_status = ProjectStatus()
+
+
+class LauncherParser:
+    """Builds the launcher's command line."""
+
+    def __call__(self) -> argparse.ArgumentParser:
+        """The argument parser: global options, ``status``, ``test`` and one subcommand group per action group."""
+        parser = argparse.ArgumentParser(
+            description=(
+                "AutoPCB project tools. Use an action followed by --help for its arguments."
             ),
-        },
-        display,
-    )
-    return 0
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "AutoPCB project tools. Use an action followed by --help for its arguments."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples (from scripts):
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""Examples (from scripts):
   python run.py status
   python run.py check power
   python run.py check nets
@@ -402,284 +467,326 @@ Presentation helpers default to --check. Review refresh updates the current gall
 separately reviewed DELIVERY_IDENTITY.json untouched. Factory inputs remain
 on hold until reviewed; a status check or image is not a fabrication approval.
 """,
-    )
-    parser.add_argument(
-        "--project",
-        type=Path,
-        default=DEFAULT_PROJECT,
-        help="native KiCad project file or directory",
-    )
-    parser.add_argument(
-        "--kicad-python",
-        type=Path,
-        default=default_kicad_python(),
-        help="KiCad bundled Python, used for PCB-dependent operations",
-    )
-    groups = parser.add_subparsers(dest="group", required=True)
-    status = groups.add_parser(
-        "status", help="show saved-source and release-input status"
-    )
-    add_output_arguments(status)
-    test = groups.add_parser("test", help="run the isolated script regression tests")
-    test.add_argument("-v", "--verbose", action="store_true", help="list each test")
-    test.add_argument(
-        "--all-warnings", action="store_true", help="show every repeated KiCad warning"
-    )
-    test.add_argument(
-        "--document-python",
-        type=Path,
-        help="Python with markdown-it-py for PDF tests (auto-detected by default)",
-    )
-    for group, entries in ACTIONS.items():
-        if group == "campaign":
-            group_parser = groups.add_parser(
-                group,
-                help="configure and preview source-bound KiCad edits",
-                formatter_class=argparse.RawDescriptionHelpFormatter,
-                description="Timestamped JSON campaigns live in config/campaigns.",
-                epilog=(
-                    'Example: create one with campaign new --name "Test points";\n'
-                    "use campaign add-move or add-grid, then campaign preview FILE --diff.\n"
-                    "To apply, provide the document and both hashes from the preview:\n"
-                    "  campaign apply FILE --document pcb --expected-sha256 SOURCE_HASH "
-                    "--expected-campaign-sha256 CAMPAIGN_HASH\n"
-                    "Each apply edits one document; position edits do not drag copper.\n"
-                    "Use an action followed by --help for all its options."
-                ),
-            )
-        else:
-            aliases = ["sch"] if group == "schematic" else []
-            group_parser = groups.add_parser(
-                group, aliases=aliases, help=f"{group} actions"
-            )
-        actions = group_parser.add_subparsers(dest="action", required=True)
-        for name in entries:
-            actions.add_parser(name, add_help=False)
-    return parser
-
-
-def _caller_relative_configs(arguments: list[str], caller: Path) -> list[str]:
-    """Preserve the terminal's relative paths when a module runs elsewhere."""
-    result = list(arguments)
-    for index, argument in enumerate(result):
-        if argument == "--config" and index + 1 < len(result):
-            value = result[index + 1]
-            if value and not value.startswith("-") and not Path(value).is_absolute():
-                result[index + 1] = str(caller / value)
-        elif argument.startswith("--config="):
-            value = argument.partition("=")[2]
-            if value and not Path(value).is_absolute():
-                result[index] = f"--config={caller / value}"
-    return result
-
-
-def command_for(
-    args: argparse.Namespace, forwarded: list[str], *, env: dict | None = None
-) -> list[str]:
-    group = "schematic" if args.group == "sch" else args.group
-    action = ACTIONS[group][args.action]
-    module, runtime, mode = action.module, action.runtime, action.mode
-    if forwarded and forwarded[0] == "--":
-        forwarded = forwarded[1:]
-    selected_project = args.project
-    if mode in ("project", "review", "campaign"):
-        remaining = []
-        index = 0
-        while index < len(forwarded):
-            item = forwarded[index]
-            if (
-                item == "--project"
-                and index + 1 < len(forwarded)
-                and not forwarded[index + 1].startswith("-")
-            ):
-                selected_project = Path(forwarded[index + 1])
-                index += 2
-                continue
-            if item.startswith("--project=") and item.partition("=")[2]:
-                selected_project = Path(item.partition("=")[2])
-                index += 1
-                continue
-            remaining.append(item)
-            index += 1
-        forwarded = remaining
-    if not selected_project.is_absolute():
-        selected_project = Path.cwd() / selected_project
-    paths = ProjectPaths(selected_project)
-    if env is not None:
-        env[ENTRY_ENV] = str(paths.entry)
-    project = paths.root
-    board = str(paths.board)
-    schematic = str(paths.schematic)
-    if args.group == "pcb" and args.action in {
-        "plan-route",
-        "plan-batch",
-        "plan-nets",
-        "optimize",
-    }:
-        forwarded = _caller_relative_configs(forwarded, Path.cwd())
-    if args.group == "check" and "--apply" in forwarded:
-        raise ValueError(
-            "Check actions are read-only; use the corresponding pcb or "
-            "schematic action for an explicit edit."
         )
-    if mode == "board":
-        defaults = [board]
-    elif mode in ("schematic", "schematic_check"):
-        defaults = [schematic]
-        if mode == "schematic_check" and not any(
-            x in forwarded
-            for x in ("--check", "--apply", "--remove", "--output", "--help", "-h")
-        ):
-            defaults.append("--check")
-    elif mode == "project":
-        defaults = ["--project", str(project)]
-    elif mode == "review":
-        defaults = [
+        parser.add_argument(
             "--project",
-            str(project),
-            "--review",
-            str(paths.review),
+            type=Path,
+            default=DEFAULT_PROJECT,
+            help="native KiCad project file or directory",
+        )
+        parser.add_argument(
             "--kicad-python",
-            str(args.kicad_python),
-        ]
-    elif mode == "campaign":
-        defaults = ["--project", str(project), args.action]
-    elif mode in ("check_nets", "pcb_nets"):
-        defaults = ["--board", board, "--schematic", schematic]
-        if mode == "check_nets" or not any(
-            x in forwarded for x in ("--dry-run", "--apply", "--help", "-h")
-        ):
-            defaults.append("--dry-run")
-    elif mode == "none":
-        defaults = []
-    else:
-        raise ValueError(f"Unsupported action mode: {mode}")
-    executable = str(args.kicad_python if runtime == "kicad" else Path(sys.executable))
-    return [executable, "-B", "-m", module, *defaults, *forwarded]
-
-
-def subprocess_env() -> dict[str, str]:
-    env = os.environ.copy()
-    old_path = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(SCRIPTS) + (os.pathsep + old_path if old_path else "")
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    return env
-
-
-def _relay_test_output(lines: Iterable[str], output: TextIO) -> None:
-    """Retain test results and warnings while summarizing one repeated KiCad message."""
-    duplicate_count = 0
-    for line in lines:
-        repeated_warning = line.startswith(
-            "Adding duplicate image handler for '"
-        ) and line.rstrip("\r\n").endswith("'")
-        if repeated_warning:
-            duplicate_count += 1
-            if duplicate_count > 1:
-                continue
-        output.write(line)
-        output.flush()
-    if duplicate_count > 1:
-        output.write(
-            f"KiCad emitted {duplicate_count - 1} further duplicate image-handler messages.\n"
+            type=Path,
+            default=default_kicad_python(),
+            help="KiCad bundled Python, used for PCB-dependent operations",
         )
-        output.flush()
+        groups = parser.add_subparsers(dest="group", required=True)
+        status = groups.add_parser(
+            "status", help="show saved-source and release-input status"
+        )
+        add_output_arguments(status)
+        test = groups.add_parser(
+            "test", help="run the isolated script regression tests"
+        )
+        test.add_argument("-v", "--verbose", action="store_true", help="list each test")
+        test.add_argument(
+            "--all-warnings",
+            action="store_true",
+            help="show every repeated KiCad warning",
+        )
+        test.add_argument(
+            "--document-python",
+            type=Path,
+            help="Python with markdown-it-py for PDF tests (auto-detected by default)",
+        )
+        for group, entries in ACTIONS.items():
+            if group == "campaign":
+                group_parser = groups.add_parser(
+                    group,
+                    help="configure and preview source-bound KiCad edits",
+                    formatter_class=argparse.RawDescriptionHelpFormatter,
+                    description="Timestamped JSON campaigns live in config/campaigns.",
+                    epilog=(
+                        'Example: create one with campaign new --name "Test points";\n'
+                        "use campaign add-move or add-grid, then campaign preview FILE --diff.\n"
+                        "To apply, provide the document and both hashes from the preview:\n"
+                        "  campaign apply FILE --document pcb --expected-sha256 SOURCE_HASH "
+                        "--expected-campaign-sha256 CAMPAIGN_HASH\n"
+                        "Each apply edits one document; position edits do not drag copper.\n"
+                        "Use an action followed by --help for all its options."
+                    ),
+                )
+            else:
+                aliases = ["sch"] if group == "schematic" else []
+                group_parser = groups.add_parser(
+                    group, aliases=aliases, help=f"{group} actions"
+                )
+            actions = group_parser.add_subparsers(dest="action", required=True)
+            for name in entries:
+                actions.add_parser(name, add_help=False)
+        return parser
 
 
-def run_test_suite(command: list[str]) -> int:
-    """Stream regression results without retaining or repeating KiCad's handler noise."""
-    with subprocess.Popen(
-        command,
-        cwd=SCRIPTS,
-        env=subprocess_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        errors="replace",
-        bufsize=1,
-    ) as process:
-        assert process.stdout is not None
-        _relay_test_output(process.stdout, sys.stdout)
-        return process.wait()
+build_parser = LauncherParser()
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args, rest = parser.parse_known_args(argv)
-    env = subprocess_env()
-    if args.group == "status":
-        if rest:
-            parser.error("status takes no additional arguments")
-        try:
-            return show_status(
-                args.project.resolve(), json_mode=args.json, verbose=args.verbose
+class CommandFor:
+    """Turns a parsed action into the command that runs it."""
+
+    @staticmethod
+    def caller_relative_configs(arguments: list[str], caller: Path) -> list[str]:
+        """Preserve the terminal's relative paths when a module runs elsewhere."""
+        result = list(arguments)
+        for index, argument in enumerate(result):
+            if argument == "--config" and index + 1 < len(result):
+                value = result[index + 1]
+                if (
+                    value
+                    and not value.startswith("-")
+                    and not Path(value).is_absolute()
+                ):
+                    result[index + 1] = str(caller / value)
+            elif argument.startswith("--config="):
+                value = argument.partition("=")[2]
+                if value and not Path(value).is_absolute():
+                    result[index] = f"--config={caller / value}"
+        return result
+
+    def __call__(
+        self, args: argparse.Namespace, forwarded: list[str], *, env: dict | None = None
+    ) -> list[str]:
+        """The command line that runs one action.
+
+        Inputs:
+            args: Parsed arguments naming the group and action.
+            forwarded: Arguments after the action, passed through to the module.
+            env: Environment to receive the selected entry file, when given.
+        Outputs:
+            The runtime, ``-B -m`` and the module, the mode's default arguments, then
+            the forwarded arguments. Raises ValueError for a check action given
+            ``--apply`` or an unsupported mode.
+        """
+        group = "schematic" if args.group == "sch" else args.group
+        action = ACTIONS[group][args.action]
+        module, runtime, mode = action.module, action.runtime, action.mode
+        if forwarded and forwarded[0] == "--":
+            forwarded = forwarded[1:]
+        selected_project = args.project
+        if mode in ("project", "review", "campaign"):
+            remaining = []
+            index = 0
+            while index < len(forwarded):
+                item = forwarded[index]
+                if (
+                    item == "--project"
+                    and index + 1 < len(forwarded)
+                    and not forwarded[index + 1].startswith("-")
+                ):
+                    selected_project = Path(forwarded[index + 1])
+                    index += 2
+                    continue
+                if item.startswith("--project=") and item.partition("=")[2]:
+                    selected_project = Path(item.partition("=")[2])
+                    index += 1
+                    continue
+                remaining.append(item)
+                index += 1
+            forwarded = remaining
+        if not selected_project.is_absolute():
+            selected_project = Path.cwd() / selected_project
+        paths = ProjectPaths(selected_project)
+        if env is not None:
+            env[ENTRY_ENV] = str(paths.entry)
+        project = paths.root
+        board = str(paths.board)
+        schematic = str(paths.schematic)
+        if args.group == "pcb" and args.action in {
+            "plan-route",
+            "plan-batch",
+            "plan-nets",
+            "optimize",
+        }:
+            forwarded = self.caller_relative_configs(forwarded, Path.cwd())
+        if args.group == "check" and "--apply" in forwarded:
+            raise ValueError(
+                "Check actions are read-only; use the corresponding pcb or "
+                "schematic action for an explicit edit."
             )
-        except (ValueError, OSError) as error:
-            print(str(error), file=sys.stderr)
-            return 2
-    if args.group == "test":
-        if rest:
-            parser.error("test takes no additional arguments")
-        command = [
-            str(args.kicad_python),
-            "-B",
-            "-m",
-            "unittest",
-            "discover",
-            "-s",
-            str(SCRIPTS / "verification"),
-            "-p",
-            "test_*.py",
-            "-v" if args.verbose else "-q",
-        ]
-    else:
-        try:
-            command = command_for(args, rest, env=env)
-        except ValueError as error:
-            parser.error(str(error))
-    if not Path(command[0]).is_file():
-        print(f"Python runtime not found: {command[0]}", file=sys.stderr)
-        return 2
-    if args.group == "test":
-
-        def run_tests(value: list[str]) -> int:
-            if args.all_warnings:
-                return subprocess.run(
-                    value, cwd=SCRIPTS, env=subprocess_env()
-                ).returncode
-            return run_test_suite(value)
-
-        try:
-            document_python = resolve_document_python(args.document_python)
-        except ValueError as error:
-            print(str(error), file=sys.stderr)
-            return 2
-        status = run_tests(command)
-        if status:
-            return status
-        document_check = (
-            "import importlib.util, sys, unittest\n"
-            "if importlib.util.find_spec('markdown_it') is None:\n"
-            "    print('PDF tests require markdown-it-py in the document Python.', file=sys.stderr)\n"
-            "    raise SystemExit(2)\n"
-            "unittest.main(module=None, argv=[sys.argv[0], 'verification.test_pdf_builder', sys.argv[1]])\n"
+        if mode == "board":
+            defaults = [board]
+        elif mode in ("schematic", "schematic_check"):
+            defaults = [schematic]
+            if mode == "schematic_check" and not any(
+                x in forwarded
+                for x in ("--check", "--apply", "--remove", "--output", "--help", "-h")
+            ):
+                defaults.append("--check")
+        elif mode == "project":
+            defaults = ["--project", str(project)]
+        elif mode == "review":
+            defaults = [
+                "--project",
+                str(project),
+                "--review",
+                str(paths.review),
+                "--kicad-python",
+                str(args.kicad_python),
+            ]
+        elif mode == "campaign":
+            defaults = ["--project", str(project), args.action]
+        elif mode in ("check_nets", "pcb_nets"):
+            defaults = ["--board", board, "--schematic", schematic]
+            if mode == "check_nets" or not any(
+                x in forwarded for x in ("--dry-run", "--apply", "--help", "-h")
+            ):
+                defaults.append("--dry-run")
+        elif mode == "none":
+            defaults = []
+        else:
+            raise ValueError(f"Unsupported action mode: {mode}")
+        executable = str(
+            args.kicad_python if runtime == "kicad" else Path(sys.executable)
         )
-        print("Running PDF tests with the document Python.", flush=True)
-        return run_tests(
-            [
-                str(document_python),
+        return [executable, "-B", "-m", module, *defaults, *forwarded]
+
+
+command_for = CommandFor()
+
+
+class RegressionRun:
+    """Streams the regression tests and summarizes KiCad's repeated image-handler notice."""
+
+    @staticmethod
+    def relay(lines: Iterable[str], output: TextIO) -> None:
+        """Retain test results and warnings while summarizing one repeated KiCad message."""
+        duplicate_count = 0
+        for line in lines:
+            repeated_warning = line.startswith(
+                "Adding duplicate image handler for '"
+            ) and line.rstrip("\r\n").endswith("'")
+            if repeated_warning:
+                duplicate_count += 1
+                if duplicate_count > 1:
+                    continue
+            output.write(line)
+            output.flush()
+        if duplicate_count > 1:
+            output.write(
+                f"KiCad emitted {duplicate_count - 1} further duplicate image-handler messages.\n"
+            )
+            output.flush()
+
+    def __call__(self, command: list[str]) -> int:
+        """Stream regression results without retaining or repeating KiCad's handler noise."""
+        with subprocess.Popen(
+            command,
+            cwd=SCRIPTS,
+            env=subprocess_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            bufsize=1,
+        ) as process:
+            assert process.stdout is not None
+            self.relay(process.stdout, sys.stdout)
+            return process.wait()
+
+
+run_test_suite = RegressionRun()
+
+
+class Launcher:
+    """Command-line entry: dispatches an action to the module that implements it."""
+
+    def __call__(self, argv: list[str] | None = None) -> int:
+        """Run one action, or the status report or the regression tests.
+
+        Inputs:
+            argv: Command-line arguments; the process arguments when None.
+        Outputs:
+            The child's exit status; 2 when the project or runtime cannot be used,
+            and 130 after an interrupt.
+        """
+        parser = build_parser()
+        args, rest = parser.parse_known_args(argv)
+        env = subprocess_env()
+        if args.group == "status":
+            if rest:
+                parser.error("status takes no additional arguments")
+            try:
+                return show_status(
+                    args.project.resolve(), json_mode=args.json, verbose=args.verbose
+                )
+            except (ValueError, OSError) as error:
+                print(str(error), file=sys.stderr)
+                return 2
+        if args.group == "test":
+            if rest:
+                parser.error("test takes no additional arguments")
+            command = [
+                str(args.kicad_python),
                 "-B",
-                "-c",
-                document_check,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                str(SCRIPTS / "verification"),
+                "-p",
+                "test_*.py",
                 "-v" if args.verbose else "-q",
             ]
-        )
-    try:
-        return subprocess.run(command, cwd=SCRIPTS, env=env).returncode
-    except KeyboardInterrupt:
-        print("AutoPCB stopped.", file=sys.stderr)
-        return 130
+        else:
+            try:
+                command = command_for(args, rest, env=env)
+            except ValueError as error:
+                parser.error(str(error))
+        if not Path(command[0]).is_file():
+            print(f"Python runtime not found: {command[0]}", file=sys.stderr)
+            return 2
+        if args.group == "test":
 
+            def run_tests(value: list[str]) -> int:
+                """Run one test command, streaming it unless every warning was requested."""
+                if args.all_warnings:
+                    return subprocess.run(
+                        value, cwd=SCRIPTS, env=subprocess_env()
+                    ).returncode
+                return run_test_suite(value)
+
+            try:
+                document_python = resolve_document_python(args.document_python)
+            except ValueError as error:
+                print(str(error), file=sys.stderr)
+                return 2
+            status = run_tests(command)
+            if status:
+                return status
+            document_check = (
+                "import importlib.util, sys, unittest\n"
+                "if importlib.util.find_spec('markdown_it') is None:\n"
+                "    print('PDF tests require markdown-it-py in the document Python.', file=sys.stderr)\n"
+                "    raise SystemExit(2)\n"
+                "unittest.main(module=None, argv=[sys.argv[0], 'verification.test_pdf_builder', sys.argv[1]])\n"
+            )
+            print("Running PDF tests with the document Python.", flush=True)
+            return run_tests(
+                [
+                    str(document_python),
+                    "-B",
+                    "-c",
+                    document_check,
+                    "-v" if args.verbose else "-q",
+                ]
+            )
+        try:
+            return subprocess.run(command, cwd=SCRIPTS, env=env).returncode
+        except KeyboardInterrupt:
+            print("AutoPCB stopped.", file=sys.stderr)
+            return 130
+
+
+main = Launcher()
 
 if __name__ == "__main__":
     raise SystemExit(main())

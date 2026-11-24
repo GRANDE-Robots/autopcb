@@ -16,7 +16,7 @@ import pcbnew
 from core.compat import strict_zip
 from core.kicad_sexpr import parse
 from core.paths import data_path
-from core.project import ProjectPaths, declared_pairs, read_profile
+from core.project import ProjectPaths, ProjectProfile
 from pcb.net_routing.reference import high_speed_nets
 
 
@@ -204,7 +204,7 @@ class PairAudit:
         ):
             raise ValueError("KiCad could not load the specified copper stack")
         names = {str(name) for name in self.board.GetNetsByName() if name}
-        self.pairs = declared_pairs(project.root, names)
+        self.pairs = ProjectProfile.declared_pairs(project.root, names)
         if not self.pairs:
             raise ValueError(
                 "Record a reviewed, nonempty differential_pairs list in autopcb.project.json"
@@ -223,7 +223,7 @@ class PairAudit:
                 "Declared pairs omit nets in a configured class: "
                 + ", ".join(sorted(omitted))
             )
-        configured = read_profile(project.root).get("reference_net", "GND")
+        configured = ProjectProfile.read(project.root).get("reference_net", "GND")
         if not isinstance(configured, str) or not configured:
             raise ValueError("A reference net name is required")
         matches = names & {configured, "/" + configured}

@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
-"""Run AutoPCB project tools without leaving Python caches in the project."""
+"""run.py: run AutoPCB project tools without leaving Python caches in the project.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 
-def main() -> int:
-    import sys
+class Run:
+    """Command-line entry: hands the command line to the launcher."""
 
-    sys.dont_write_bytecode = True
-    from core.launcher import main as launch
+    def __call__(self) -> int:
+        """Run the launcher with bytecode writing off.
 
-    return launch()
+        Outputs: The launcher's exit status.
+        """
+        import sys
 
+        sys.dont_write_bytecode = True
+        from core.launcher import main as launch
+
+        return launch()
+
+
+main = Run()
 
 if __name__ == "__main__":
     raise SystemExit(main())

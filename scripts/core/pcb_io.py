@@ -1,8 +1,15 @@
-"""Guarded, atomic PCB writes without overwriting unrelated files."""
+"""pcb_io.py: guarded, atomic PCB writes without overwriting unrelated files.
+
+Also reads the native board objects the router and the audits share: copper
+widths, copper boundaries, net classes and the enabled copper layers.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -12,58 +19,125 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
-def file_sha256(path: Path) -> str:
-    """Return the SHA-256 digest of a saved file."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+from core.compat import file_sha256
 
 
-def typed_copper(item: Any) -> Any:
-    """Restore the native subtype erased by KiCad connectivity collections."""
-    import pcbnew
+class TypedCopper:
+    """Restores the native subtype that KiCad connectivity collections erase."""
 
-    if isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)):
+    def __call__(self, item: Any) -> Any:
+        """Return a via or arc cast to its own class; other items unchanged."""
+        import pcbnew
+
+        if isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC)):
+            return item
+        kind = item.Type()
+        if kind == pcbnew.PCB_VIA_T:
+            return pcbnew.Cast_to_PCB_VIA(item)
+        if kind == pcbnew.PCB_ARC_T:
+            return pcbnew.Cast_to_PCB_ARC(item)
         return item
-    kind = item.Type()
-    if kind == pcbnew.PCB_VIA_T:
-        return pcbnew.Cast_to_PCB_VIA(item)
-    if kind == pcbnew.PCB_ARC_T:
-        return pcbnew.Cast_to_PCB_ARC(item)
-    return item
 
 
-def copper_width(item: Any, *, layer: int | None = None) -> int:
-    """Read track width safely; KiCad requires an explicit layer for a via."""
-    import pcbnew
-
-    item = typed_copper(item)
-    if isinstance(item, pcbnew.PCB_VIA):
-        if layer is None:
-            raise ValueError("A copper layer is required when reading a via width")
-        return int(item.GetWidth(layer))
-    return int(item.GetWidth())
+typed_copper = TypedCopper()
 
 
-def copper_boundary(board: Any, tracks: Iterable[Any]) -> dict[str, Any]:
-    """Identify all physical copper contacts outside a selected track chain."""
-    connectivity = board.GetConnectivity()
-    connectivity.Build(board)
-    selected = tuple(tracks)
-    internal = {item.m_Uuid.AsString() for item in selected}
-    return {
-        item.m_Uuid.AsString(): typed_copper(item)
-        for track in selected
-        for item in (
-            *connectivity.GetConnectedTracks(track),
-            *connectivity.GetConnectedPads(track),
+class CopperWidth:
+    """Reads the width of a track, arc or via."""
+
+    def __call__(self, item: Any, *, layer: int | None = None) -> int:
+        """Read track width safely; KiCad requires an explicit layer for a via.
+
+        Inputs:
+            item: A track, arc or via, possibly without its native subtype.
+            layer: Copper layer id; required for a via.
+        Outputs:
+            Width in nanometres. Raises ValueError for a via without a layer.
+        """
+        import pcbnew
+
+        item = typed_copper(item)
+        if isinstance(item, pcbnew.PCB_VIA):
+            if layer is None:
+                raise ValueError("A copper layer is required when reading a via width")
+            return int(item.GetWidth(layer))
+        return int(item.GetWidth())
+
+
+class CopperBoundary:
+    """Finds the copper that touches a chain of tracks from outside it."""
+
+    def __call__(self, board: Any, tracks: Iterable[Any]) -> dict[str, Any]:
+        """Identify all physical copper contacts outside a selected track chain.
+
+        Outputs:
+            Items by UUID: the tracks, vias and pads connected to the chain
+            that are not part of it.
+        """
+        connectivity = board.GetConnectivity()
+        connectivity.Build(board)
+        selected = tuple(tracks)
+        internal = {item.m_Uuid.AsString() for item in selected}
+        return {
+            item.m_Uuid.AsString(): typed_copper(item)
+            for track in selected
+            for item in (
+                *connectivity.GetConnectedTracks(track),
+                *connectivity.GetConnectedPads(track),
+            )
+            if item.m_Uuid.AsString() not in internal
+        }
+
+
+class NetClasses:
+    """Reads a board's net classes."""
+
+    def __call__(self, board: Any) -> dict[str, Any]:
+        """Normalize native wxString keys before ordinary Python dictionary lookup."""
+        return {str(name): value for name, value in board.GetAllNetClasses().items()}
+
+
+class EnabledCopperLayers:
+    """Lists a board's enabled copper layers."""
+
+    def __call__(self, board: Any) -> tuple[str, ...]:
+        """Return only enabled physical copper layers, in stack order."""
+        return tuple(
+            str(board.GetLayerName(layer))
+            for layer in board.GetEnabledLayers().CuStack()
         )
-        if item.m_Uuid.AsString() not in internal
-    }
 
 
-def net_classes(board: Any) -> dict[str, Any]:
-    """Normalize native wxString keys before ordinary Python dictionary lookup."""
-    return {str(name): value for name, value in board.GetAllNetClasses().items()}
+class DuplicateImageHandlerFilter:
+    """Silences KiCad's repeated image-handler notice while a block runs."""
+
+    @contextmanager
+    def __call__(self):
+        """Filter the duplicate-handler debug notice, retaining other wx logs."""
+        import wx
+
+        previous = wx.Log.GetActiveTarget()
+
+        class ImageHandlerFilter(wx.Log):
+            """A wx log target that drops the duplicate-handler notice."""
+
+            def DoLogRecord(self, level, message, info):
+                """Forward every record except the duplicate image-handler notice."""
+                if (
+                    level == wx.LOG_Debug
+                    and message.startswith("Adding duplicate image handler for '")
+                    and message.endswith("'")
+                ):
+                    return
+                previous.LogRecord(level, message, info)
+
+        target = ImageHandlerFilter()
+        wx.Log.SetActiveTarget(target)
+        try:
+            yield
+        finally:
+            wx.Log.FlushActive()
+            wx.Log.SetActiveTarget(previous)
 
 
 class ProjectSettings:
@@ -74,11 +148,11 @@ class ProjectSettings:
     """
 
     def __init__(self, board: Path):
+        """Name the project file that belongs to a board file."""
         self.path = str(Path(board).with_suffix(".kicad_pro"))
 
     def _read(self) -> Any:
-        import json
-
+        """The project file's JSON, or None when it is missing or not JSON."""
         try:
             return json.loads(Path(self.path).read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
@@ -86,10 +160,15 @@ class ProjectSettings:
 
     @property
     def complete(self) -> bool:
+        """Whether the project file already holds KiCad's net settings."""
         data = self._read()
         return isinstance(data, dict) and "net_settings" in data
 
     def write(self) -> None:
+        """Have KiCad create the project file unless it is already complete.
+
+        Outputs: None. Raises RuntimeError when KiCad cannot write it.
+        """
         import pcbnew
 
         if self.complete:
@@ -108,39 +187,6 @@ class ProjectSettings:
             raise RuntimeError("KiCad failed to write the project settings")
 
 
-def enabled_copper_layers(board: Any) -> tuple[str, ...]:
-    """Return only enabled physical copper layers, in stack order."""
-    return tuple(
-        str(board.GetLayerName(layer)) for layer in board.GetEnabledLayers().CuStack()
-    )
-
-
-@contextmanager
-def quiet_duplicate_image_handlers():
-    """Filter KiCad's repeated image-handler notice, retaining other wx logs."""
-    import wx
-
-    previous = wx.Log.GetActiveTarget()
-
-    class ImageHandlerFilter(wx.Log):
-        def DoLogRecord(self, level, message, info):
-            if (
-                level == wx.LOG_Debug
-                and message.startswith("Adding duplicate image handler for '")
-                and message.endswith("'")
-            ):
-                return
-            previous.LogRecord(level, message, info)
-
-    target = ImageHandlerFilter()
-    wx.Log.SetActiveTarget(target)
-    try:
-        yield
-    finally:
-        wx.Log.FlushActive()
-        wx.Log.SetActiveTarget(previous)
-
-
 @dataclass(frozen=True)
 class BoardSaveGuard:
     """Bind an edit to the board and supporting files it was planned against."""
@@ -155,6 +201,17 @@ class BoardSaveGuard:
         expected_sha256: str,
         dependencies: Iterable[Path] = (),
     ) -> BoardSaveGuard:
+        """Record the board and its dependencies as they are now.
+
+        Inputs:
+            source: The ``.kicad_pcb`` file the edit was planned against.
+            expected_sha256: The digest the plan saw for it.
+            dependencies: Other files the plan relied on.
+        Outputs:
+            The guard. Raises ValueError for a missing or non-PCB source or a
+            missing input, and RuntimeError when the board no longer matches
+            ``expected_sha256`` or changes while being recorded.
+        """
         source = source.resolve()
         if source.suffix.lower() != ".kicad_pcb" or not source.is_file():
             raise ValueError(f"Expected an existing PCB source: {source}")
@@ -170,6 +227,7 @@ class BoardSaveGuard:
         return cls(source=source, fingerprints=fingerprints)
 
     def verify_unchanged(self) -> None:
+        """Raise RuntimeError when any recorded file changed or vanished."""
         for path, expected in self.fingerprints:
             if not path.is_file() or file_sha256(path) != expected:
                 raise RuntimeError(f"PCB-edit input changed; refusing to save: {path}")
@@ -189,7 +247,19 @@ class BoardSaveGuard:
         save_board: Callable[[str, Any], object],
         load_board: Callable[[str], object] | None = None,
     ) -> str:
-        """Save through a temporary file and never overwrite a different file."""
+        """Save through a temporary file and never overwrite a different file.
+
+        Inputs:
+            board: The edited native board.
+            destination: A new ``.kicad_pcb`` path, or the guarded source itself.
+            save_board: Writes the board to a path; ``save_board(path, board)``.
+            load_board: Reloads a path, to prove the candidate is readable.
+        Outputs:
+            The SHA-256 of the saved file. Raises RuntimeError when the inputs
+            changed, the editor holds the board, or KiCad produces no file,
+            an unreadable file or a failed readback, ValueError for a bad
+            destination and FileExistsError for another existing file.
+        """
         destination = destination.resolve()
         if (
             destination.suffix.lower() != ".kicad_pcb"
@@ -261,3 +331,10 @@ class BoardSaveGuard:
                         "PCB temporary directory moved outside the temp root."
                     )
                 shutil.rmtree(temporary_dir)
+
+
+copper_width = CopperWidth()
+copper_boundary = CopperBoundary()
+net_classes = NetClasses()
+enabled_copper_layers = EnabledCopperLayers()
+quiet_duplicate_image_handlers = DuplicateImageHandlerFilter()

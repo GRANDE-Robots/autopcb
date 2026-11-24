@@ -12,9 +12,7 @@ from autopcb.placement import Compactor, Envelope, OutlineFitter
 
 
 class CompactorTests(unittest.TestCase):
-    """Tests that parts slide toward a point until they meet each other, a fixed part or
-    the edge margin.
-    """
+    """Tests that parts slide toward a point until something stops them."""
 
     def test_parts_slide_toward_the_point_until_they_meet(self):
         parts = {

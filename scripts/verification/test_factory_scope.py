@@ -67,9 +67,7 @@ class ScopeFixtures:
 
 
 class FactoryScopeTests(unittest.TestCase):
-    """Tests that the factory scope partitions the required system and consolidates only
-    exactly equivalent parts.
-    """
+    """Tests of the required-system partition and the consolidation of exact parts."""
 
     def test_required_owner_part_retained_and_new_factory_part_included(self):
         factory, owner, audit = FactoryScope.partition(

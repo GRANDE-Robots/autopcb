@@ -21,9 +21,7 @@ from pcb import freeroute_preview
 
 
 class FreerouteSnapshotTests(unittest.TestCase):
-    """Tests that router trials run on private snapshots and never overwrite the live
-    design.
-    """
+    """Tests that router trials run on private snapshots of the design."""
 
     def test_compiled_named_width_splits_only_its_net_and_inherits_pair_clearances(
         self,
@@ -341,12 +339,13 @@ class FreerouteSnapshotTests(unittest.TestCase):
         board = pcbnew.BOARD()
 
         def export(_board, destination):
-            """Write a three-layer DSN file that has a GND plane on In1.Cu and report
-            success.
+            """Write a three-layer DSN file with a GND plane on In1.Cu.
 
             Inputs:
                 _board: Ignored.
                 destination: File that receives the DSN text.
+            Outputs:
+                True.
             """
             Path(destination).write_text(
                 "(pcb example (structure (layer F.Cu (type signal)) "
@@ -707,12 +706,12 @@ class FreerouteSnapshotTests(unittest.TestCase):
         }
 
         def route(command, **kwargs):
-            """Stand in for the router process: check its options and environment, then
-            write a session.
+            """Stand in for the router process and write a session.
+
+            Check the router environment and command-line options first.
 
             Inputs:
-                command: Router command line, checked for the isolation and strictness
-                    options.
+                command: Router command line.
                 kwargs: Process options; the router log goes to ``stdout``.
             Outputs:
                 A result with return code 0 after the session file named by ``-do`` is
@@ -870,8 +869,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **_kwargs):
-            """Stand in for the router process: check the neckdown and strictness
-            options, log a version line and write a session.
+            """Stand in for the router process and write a session.
+
+            Check the neckdown, strictness and fanout options and log a version line.
             """
             self.assertIn("--router.automatic_neckdown=true", command)
             self.assertIn("--router.strict_drc=true", command)
@@ -938,8 +938,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **kwargs):
-            """Stand in for the fast router: check its item limit, start count and
-            options, log a version line and write a session.
+            """Stand in for the fast router and write a session.
+
+            Check its item limit, start count and options and log a version line.
             """
             self.assertIn("--router.autorouter.max_items=80", command)
             self.assertIn("--multi-start=2", command)
@@ -1032,8 +1033,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def timeout(command, **kwargs):
-            """Stand in for a fast router that logs a version line, writes a complete
-            session and then times out after 30 s.
+            """Stand in for a fast router that times out after 30 s.
+
+            It logs a version line and writes a complete session first.
             """
             kwargs["stdout"].write(
                 "fastroute 0.1.14\nparsed input: 4 layers, 1 components\n"
@@ -1097,8 +1099,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def timeout(command, **_kwargs):
-            """Stand in for a router that writes a truncated session and then times out
-            after 30 s.
+            """Stand in for a router that times out after 30 s.
+
+            It writes a truncated session first.
             """
             Path(command[command.index("-do") + 1]).write_text(
                 "(session broken", encoding="utf-8"
@@ -1153,9 +1156,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **_kwargs):
-            """Stand in for the router process: write a session file, then rewrite the
-            board as a newer edit.
-            """
+            """Stand in for the router process: write a session, then edit the board."""
             Path(command[command.index("-do") + 1]).write_text(
                 "(session candidate (base_design candidate) (placement (component FOO)) (routes (network_out)))",
                 encoding="utf-8",

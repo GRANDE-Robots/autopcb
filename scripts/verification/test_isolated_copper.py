@@ -21,9 +21,7 @@ from pcb.net_routing.working_save import WorkingQualification
 
 
 class IsolatedCopperTests(unittest.TestCase):
-    """Tests of the evidence that lets detached, tiny copper bypass the protected-net
-    gates.
-    """
+    """Tests of the evidence that lets detached, tiny copper skip cleanup gates."""
 
     def setUp(self):
         """Create a four-copper-layer board with the net SIG."""
@@ -52,9 +50,7 @@ class IsolatedCopperTests(unittest.TestCase):
 
     @staticmethod
     def report(track):
-        """Build a DRC report that has a clearance error and a dangling-track warning
-        for the track.
-        """
+        """Build a DRC report with a clearance error and a dangling-track warning."""
         uid = track.m_Uuid.AsString()
         return {
             "violations": [

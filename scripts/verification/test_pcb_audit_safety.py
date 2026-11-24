@@ -24,8 +24,7 @@ class PcbAuditSafetyTests(unittest.TestCase):
     """Tests that the PCB audits never change design files and refuse stale inputs."""
 
     def board(self, folder: Path) -> Path:
-        """Save an empty board named ``v4.1.kicad_pcb`` in a folder that is created if
-        needed.
+        """Save an empty board ``v4.1.kicad_pcb`` in a folder that is created if needed.
 
         Outputs:
             Path of the saved board.

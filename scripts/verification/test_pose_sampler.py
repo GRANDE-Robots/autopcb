@@ -35,10 +35,10 @@ class PoseSamplerTests(unittest.TestCase):
     """Tests that move candidates come from board geometry as well as from fixed nudges."""
 
     def setUp(self):
-        """Load the route test board and add the part R50 at (3, 3) mm and the pad J50
-        at (8, 7) mm.
+        """Load the route test board and add the part R50 and the pad J50.
 
-        Both sit on the net OTHER, which the selection of R50 lists.
+        R50 sits at (3, 3) mm and J50 at (8, 7) mm, both on the net OTHER, which the
+        selection of R50 lists.
         """
         self.folder = tempfile.TemporaryDirectory()
         self.board = pcbnew.LoadBoard(

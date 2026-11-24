@@ -298,8 +298,7 @@ class CheckpointTests(unittest.TestCase):
     """Tests of checkpoint planning, attempts, neutral seeds and sequential previews."""
 
     def setUp(self):
-        """Create a temporary project with a routing board and a checkpoint
-        configuration.
+        """Create a temporary project with a routing board and a configuration.
 
         The configuration includes the SIGNAL net with at most three pins.
         """
@@ -371,9 +370,7 @@ class CheckpointTests(unittest.TestCase):
         original_obstacles = checkpoints.obstacles
 
         def restrict_pad(*args, **kwargs):
-            """Add a keepout over the pad area to the obstacles that the native reader
-            returns.
-            """
+            """Add a keepout over the pad area to the native obstacles."""
             native = original_obstacles(*args, **kwargs)
             keepout = Obstacle(
                 Point.from_mm([1, 1]), Point.from_mm([2.8, 3]), ("F.Cu",), "", "keepout"
@@ -488,8 +485,9 @@ class CheckpointTests(unittest.TestCase):
         calls = []
 
         def reject_first(*args, **kwargs):
-            """Validate as usual, record the evidence and mark the first one as having
-            new DRC violations.
+            """Validate as usual and record the evidence.
+
+            The first evidence is marked as having new DRC violations.
             """
             evidence = validate(*args, **kwargs)
             calls.append(evidence)
@@ -765,8 +763,9 @@ class CheckpointTests(unittest.TestCase):
         from pcb.net_routing.sequence import preview_sequence
 
         def stop_after_candidate(message):
-            """Raise KeyboardInterrupt on the progress message that reports the
-            temporary board.
+            """Interrupt the preview once the temporary board is reported.
+
+            Raise KeyboardInterrupt on the progress message about the temporary board.
             """
             if "temporary board has" in message:
                 raise KeyboardInterrupt
@@ -790,8 +789,10 @@ class CheckpointTests(unittest.TestCase):
         changed = False
 
         def race(path):
-            """Read the file; the first read of the configuration appends a newline to
-            it as a user edit would.
+            """Read the file and edit the configuration once.
+
+            The first read of the configuration file appends a newline to it, as a user
+            edit would.
             """
             nonlocal changed
             content = original_read(path)

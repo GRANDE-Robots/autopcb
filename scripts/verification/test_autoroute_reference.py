@@ -22,9 +22,7 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class ReferenceCorridorTests(unittest.TestCase):
-    """Tests of the reference-plane corridors that routing keeps clear for high-speed
-    nets.
-    """
+    """Tests of the reference corridors kept clear for high-speed nets."""
 
     def test_local_launch_proof_rejects_a_new_slot_and_allows_only_existing_antipad(
         self,
@@ -121,8 +119,9 @@ class ReferenceCorridorTests(unittest.TestCase):
             used = []
 
             def load(path, *, refill_zones):
-                """Stand in for the refill loader: check the project and rules files
-                beside the board and return the board bytes.
+                """Stub for the refill loader that returns the board bytes.
+
+                Check that the project and rules files beside the board are unchanged.
 
                 Inputs:
                     path: Board file that is loaded.
@@ -156,9 +155,7 @@ class ReferenceCorridorTests(unittest.TestCase):
             used.clear()
 
             def fail(path, *, refill_zones):
-                """Load as the load stub does, then raise RuntimeError saying the refill
-                failed.
-                """
+                """Load as the load stub does, then raise RuntimeError."""
                 load(path, refill_zones=refill_zones)
                 raise RuntimeError("refill failed")
 

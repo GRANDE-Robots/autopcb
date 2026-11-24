@@ -17,13 +17,13 @@ from pcb.net_routing.pair_probe import PairScope, PairDiscovery, PairTrialReport
 
 
 class PairProbeTests(unittest.TestCase):
-    """Tests that pair discovery is conservative and that its trials never publish a
-    result.
-    """
+    """Tests that pair discovery is conservative and its trials publish nothing."""
 
     def setUp(self):
-        """Define the pair inputs: critical nets USB_DP and USB_DM, their endpoints, the
-        class USB_DATA and a gap of 0.24 for that class.
+        """Define the pair inputs.
+
+        The critical nets are USB_DP and USB_DM, with their endpoints, the class
+        USB_DATA and a gap of 0.24 for that class.
         """
         self.critical = {"USB_DP", "USB_DM"}
         self.endpoints = {
@@ -188,8 +188,13 @@ class PairProbeTests(unittest.TestCase):
         ]
 
         def conflict(signal, blocker, net, layer):
-            """Build a reference conflict record for a signal item, a blocking item, its
-            net and the reference layer.
+            """Build a reference conflict record.
+
+            Inputs:
+                signal: Item id of the high-speed item.
+                blocker: Item id of the blocking item.
+                net: Net of the blocking item.
+                layer: Reference layer.
             """
             return SimpleNamespace(
                 high_speed_item_id=signal,

@@ -11,9 +11,7 @@ from pcb.net_routing.alias_reconcile import AliasGroup, AliasReconciliation
 
 
 class CopperAliasTests(unittest.TestCase):
-    """Tests that only complete, proven net aliases are retagged and that nothing else
-    changes.
-    """
+    """Tests that only complete, proven net aliases are retagged."""
 
     def test_only_complete_proven_aliases_are_retagged(self):
         original = (

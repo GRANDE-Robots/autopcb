@@ -37,9 +37,7 @@ class ObstacleReaderStub:
 
 
 class NativeObstacleCacheTests(unittest.TestCase):
-    """Tests that cached native obstacles are reused only for the same board, rules, net
-    and refill mode.
-    """
+    """Tests that cached native obstacles never cross a changed board or rule set."""
 
     def test_reuse_is_bound_to_contents_net_and_refill_mode(self):
         with tempfile.TemporaryDirectory() as directory:

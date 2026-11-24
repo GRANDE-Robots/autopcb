@@ -51,14 +51,10 @@ SCHEMATIC = """(kicad_sch
 
 
 class CampaignTests(unittest.TestCase):
-    """Tests that campaigns change only selected expressions and never overwrite changed
-    or open sources.
-    """
+    """Tests that campaigns edit only selected expressions and protect sources."""
 
     def setUp(self):
-        """Create a temporary project with a board and a schematic and a campaign
-        planner for it.
-        """
+        """Create a temporary project with a board, a schematic and a planner."""
         self.tmp = tempfile.TemporaryDirectory(prefix="jessie-campaign-test-")
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name)

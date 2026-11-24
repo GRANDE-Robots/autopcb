@@ -31,8 +31,9 @@ class ServeTests(unittest.TestCase):
     """Tests of the phone page: the token, the workspace projects and the job limits."""
 
     def setUp(self):
-        """Create a temporary workspace with one project, a held runner and an app with
-        the token ``secret``.
+        """Create a temporary workspace with one project.
+
+        A held runner and an app with the token ``secret`` serve it.
         """
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)

@@ -18,9 +18,7 @@ from pcb.route_optimizer import mm
 
 
 class JointRoundingTests(unittest.TestCase):
-    """Tests that joint rounding repairs only eligible joints and proves the result
-    independently.
-    """
+    """Tests that joint rounding repairs eligible joints and proves the result."""
 
     def setUp(self):
         """Create a temporary project path and a board that has the net SIGNAL."""

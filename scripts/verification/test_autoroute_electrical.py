@@ -45,9 +45,7 @@ class ElectricalNetworkTests(unittest.TestCase):
         )
 
         def quantity(value, unit):
-            """Build a quantity with a value and a unit that cites the verified ratings
-            file.
-            """
+            """Build a quantity that cites the verified ratings file."""
             return api.Quantity(value, unit, evidence)
 
         branches = (

@@ -15,9 +15,7 @@ from pcb.net_routing.via_guard import via_pad_overlaps, verify_no_new_via_pad_ov
 
 
 class ViaPadGuardTests(unittest.TestCase):
-    """Tests that a via whose drill meets a pad is detected and an existing overlap is
-    not new.
-    """
+    """Tests that a via drilling into a pad is detected and a nearby via is allowed."""
 
     @staticmethod
     def board(via_x):

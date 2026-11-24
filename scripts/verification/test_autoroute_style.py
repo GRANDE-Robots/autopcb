@@ -16,9 +16,7 @@ from pcb.route_optimizer import mm
 
 
 class RoutingStyleTests(unittest.TestCase):
-    """Tests that the style checks find bends, staircases, duplicates and locked tracks
-    exactly.
-    """
+    """Tests that the style checks find bends, staircases and locked tracks."""
 
     def test_dangling_single_layer_via_cannot_hide_an_existing_staircase(self):
         api = self.api()

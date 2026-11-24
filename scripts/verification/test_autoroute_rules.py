@@ -1,5 +1,6 @@
-"""test_autoroute_rules.py: saved-rule, search/materialization and renewal consistency
-regressions.
+"""test_autoroute_rules.py: tests of saved-rule, search and renewal consistency.
+
+Saved-rule, search/materialization and renewal consistency regressions.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -80,9 +81,7 @@ compiler = RuleCompiler()
 
 
 class RuleConsistencyTests(unittest.TestCase):
-    """Tests that saved custom rules, net classes and courtyards give the search and the
-    native checks the same widths and clearances.
-    """
+    """Tests that saved rules give search and native checks the same dimensions."""
 
     def test_maximum_width_excludes_an_unrelated_power_rule(self):
         source = """(version 1)
@@ -991,9 +990,7 @@ class RuleConsistencyTests(unittest.TestCase):
 
 
 class RetryConsistencyTests(unittest.TestCase):
-    """Tests of the search budget, the net order trials and the renewal of retried
-    batches.
-    """
+    """Tests of the search budget, order trials and renewal of retried batches."""
 
     def test_multi_net_search_reuses_unused_time_for_remaining_nets(self):
         from pcb.net_routing.model import NetPlan
@@ -1006,8 +1003,9 @@ class RetryConsistencyTests(unittest.TestCase):
             nets = tuple(fixtures.make_net(name, [(0, 0), (1, 0)]) for name in "ABC")
 
             def solve(net, prior):
-                """Advance the fake clock by 8 s for net C and 1 s for the others, check
-                the budget and return one plan.
+                """Advance the clock, check the budget and return one plan.
+
+                The clock moves by 8 s for net C and by 1 s for the others.
                 """
                 clock[0] += 8 if net.name == "C" else 1
                 budget.check()
@@ -1162,8 +1160,9 @@ class RetryConsistencyTests(unittest.TestCase):
         clock = [0.0]
 
         def solve(net, prior):
-            """Jump the fake clock to 20 s and check the budget for the HARD net, then
-            return one plan.
+            """Return one plan, after net HARD moves the clock to 20 s.
+
+            For net HARD the clock jumps to 20 s and the budget is checked.
             """
             if net.name == "HARD":
                 clock[0] = 20.0
@@ -1212,10 +1211,11 @@ class RetryConsistencyTests(unittest.TestCase):
         budget = Budget(Limits(seconds=30, order_trials=3), started=0.0)
 
         def solve(net, prior):
-            """Record the net name and prior plan count. The first search of net A moves
-            the clock to 11 s and returns no plan if the budget check raises
-            BudgetExhausted; net B without prior plans returns no plan; any other search
-            returns one plan.
+            """Record the net name and prior plan count, and return a plan or none.
+
+            The first search of net A moves the clock to 11 s and returns no plan if the
+            budget check raises BudgetExhausted. Net B without prior plans returns no
+            plan. Any other search returns one plan.
             """
             calls.append((net.name, len(prior)))
             if net.name == "A" and calls.count(("A", 0)) == 1:
@@ -1249,8 +1249,9 @@ class RetryConsistencyTests(unittest.TestCase):
         budget = Budget(Limits(seconds=30, order_trials=3), started=0.0)
 
         def solve(net, prior):
-            """Record the net name and prior plan count. The search of net A moves the
-            clock to 11 s and checks the budget; every search returns no plan.
+            """Record the net name and prior plan count, and return no plan.
+
+            The search of net A first moves the clock to 11 s and checks the budget.
             """
             calls.append((net.name, len(prior)))
             if net.name == "A":
@@ -1274,9 +1275,7 @@ class RetryConsistencyTests(unittest.TestCase):
 
 
 class NativeRuleConsistencyTests(unittest.TestCase):
-    """Tests that the native DRC and the search apply the same saved-rule widths and
-    clearances on a saved board.
-    """
+    """Tests that native DRC and search apply the same saved-rule dimensions."""
 
     def test_native_drc_and_search_both_apply_stricter_crossing_width(self):
         import pcbnew

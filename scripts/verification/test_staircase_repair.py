@@ -18,9 +18,7 @@ from pcb.net_routing.style import audit_style
 
 
 class StaircaseRepairTests(unittest.TestCase):
-    """Tests that staircase shortcuts keep the chain ends and are proved before they are
-    applied.
-    """
+    """Tests that staircase shortcuts keep the chain ends and are proved first."""
 
     def add_chain(self, board, name, offset):
         """Add a net with two pads joined by a staircase of three F.Cu tracks.

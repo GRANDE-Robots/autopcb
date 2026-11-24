@@ -86,9 +86,7 @@ class FakeSnapshot:
             raise RuntimeError("Routing sources changed")
 
     def __exit__(self, exc_type, exc, tb):
-        """Check the source when the block raised nothing, then remove the temporary
-        folder.
-        """
+        """Check the source after a clean block, then remove the temporary folder."""
         try:
             if exc_type is None:
                 self.check()
@@ -97,9 +95,7 @@ class FakeSnapshot:
 
 
 class AutoLookaheadTests(unittest.TestCase):
-    """Tests that the neutral lookahead promotes only a fully rechecked reduction and
-    never changes the original checkpoint.
-    """
+    """Tests of the neutral lookahead and its protection of the original board."""
 
     def test_only_checked_neutral_previews_can_be_stepping_stones(self):
         from pcb.net_routing.runner import PreviewJudge
@@ -189,8 +185,10 @@ class AutoLookaheadTests(unittest.TestCase):
             request = {"nets": [{"name": "A"}], "search": {"seconds": 5}}
 
             def replan(*args, **kwargs):
-                """Stub for the replanning step: one round with the request for net A,
-                plus one for net B in the ``alternatives`` and ``unrelated`` modes.
+                """Stub for replanning: one round with the request for net A.
+
+                In the ``alternatives`` and ``unrelated`` modes the round also holds a
+                request for net B.
                 """
                 other = {"nets": [{"name": "B"}], "search": {"seconds": 5}}
                 return {
@@ -202,9 +200,7 @@ class AutoLookaheadTests(unittest.TestCase):
                 }
 
             def planner(directory):
-                """Stub for the campaign planner factory: return a planner that has a
-                plan method.
-                """
+                """Stub planner factory: return an object with a plan method."""
 
                 def plan(kind, changes):
                     """Return a plan whose result is the bytes of the first change."""
@@ -216,8 +212,10 @@ class AutoLookaheadTests(unittest.TestCase):
                 return SimpleNamespace(plan=plan)
 
             def native(function, *args, **kwargs):
-                """Stub for the native runner: answer a follow-up preview round or a
-                cumulative reference check as the mode says.
+                """Stub for the native runner, scripted by the mode.
+
+                Answer a follow-up preview round or a cumulative reference check as the
+                mode says.
 
                 Inputs:
                     function: Runner function being called; any other raises
@@ -253,9 +251,11 @@ class AutoLookaheadTests(unittest.TestCase):
                 raise AssertionError(function)
 
             def verify(branch, project, expected_opens, *, progress=None):
-                """Stub for the final board verification: check the source is still the
-                best board and nine opens are expected, then report a clean result with
-                nine open connections.
+                """Stub for the final board verification.
+
+                Check that the source is still the best board and that nine open
+                connections are expected, then report a clean result with nine open
+                connections.
                 """
                 self.assertEqual(source.read_bytes(), b"best")
                 self.assertEqual(expected_opens, 9)

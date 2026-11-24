@@ -4,7 +4,7 @@ import copy
 from types import SimpleNamespace
 import unittest
 
-from pcb.net_routing.krt_entry import uncached_transform
+from pcb.net_routing.krt_entry import KrtEntry
 
 
 class Uncopyable:
@@ -23,7 +23,7 @@ class KrtEntryTests(unittest.TestCase):
             self.assertFalse(hasattr(board, "_rescue_map_cache"))
             return copy.deepcopy(board)
 
-        result = uncached_transform(transform)(original, "U7", axis=4)
+        result = KrtEntry.uncached_transform(transform)(original, "U7", axis=4)
         self.assertEqual(calls[0][1:], ("U7", 4))
         self.assertIs(original._rescue_map_cache["old"], native)
         result.geometry[0].append(3)
@@ -31,11 +31,13 @@ class KrtEntryTests(unittest.TestCase):
 
     def test_transform_without_cache_does_not_copy_or_modify_input(self):
         original = SimpleNamespace(geometry=[1])
-        self.assertIs(uncached_transform(lambda board: board)(original), original)
+        self.assertIs(
+            KrtEntry.uncached_transform(lambda board: board)(original), original
+        )
 
     def test_transform_wrapper_is_idempotent(self):
-        wrapped = uncached_transform(lambda board: board)
-        self.assertIs(uncached_transform(wrapped), wrapped)
+        wrapped = KrtEntry.uncached_transform(lambda board: board)
+        self.assertIs(KrtEntry.uncached_transform(wrapped), wrapped)
 
 
 if __name__ == "__main__":

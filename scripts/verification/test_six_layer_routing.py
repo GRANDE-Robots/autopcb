@@ -82,7 +82,7 @@ class SixLayerRoutingTests(unittest.TestCase):
     def test_known_layers_and_external_adapter_accept_the_six_layer_stack(self):
         layers = ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu")
         self.assertTrue(set(layers) <= set(COPPER_LAYERS))
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"),
             Path("router"),
             Path("in"),

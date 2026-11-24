@@ -36,7 +36,7 @@ class KrtAdapterTests(unittest.TestCase):
                     RuntimeError, "blocked a native Python dependency"
                 ) as raised,
             ):
-                krt_adapter._python(root, str(executable))
+                krt_adapter.KrtRouterProcess._python(root, str(executable))
             self.assertNotIn("KiCadRoutingTools native module", str(raised.exception))
             self.assertEqual(probe.call_count, 1)
 
@@ -89,7 +89,7 @@ class KrtAdapterTests(unittest.TestCase):
                     f"{len(rules['nets'])} net(s) delivered below\n"
                 )
             )
-            return krt_adapter.strict_size_nets(
+            return krt_adapter.StrictSizeLog.strict_size_nets(
                 log,
                 targets,
                 {"design_rules": rules},
@@ -117,7 +117,9 @@ class KrtAdapterTests(unittest.TestCase):
             )
         )
         self.assertIsNone(
-            krt_adapter.strict_size_nets("JSON_SUMMARY: {}", ("A",), {}, {7: "A"})
+            krt_adapter.StrictSizeLog.strict_size_nets(
+                "JSON_SUMMARY: {}", ("A",), {}, {7: "A"}
+            )
         )
 
     def test_allowlisted_release_binds_source_binary_and_embedded_version(self):
@@ -136,20 +138,27 @@ class KrtAdapterTests(unittest.TestCase):
             with (
                 patch.dict(krt_adapter.RELEASES, {"0.23.8": release}),
                 patch.object(
-                    krt_adapter, "tool_fingerprint", return_value="fingerprint"
+                    krt_adapter.KrtInstallation,
+                    "tool_fingerprint",
+                    return_value="fingerprint",
                 ),
                 patch.object(krt_adapter.subprocess, "run", side_effect=outputs),
             ):
-                self.assertEqual(krt_adapter.validate_installation(root), "fingerprint")
+                self.assertEqual(
+                    krt_adapter.KrtInstallation.validate_installation(root),
+                    "fingerprint",
+                )
             (root / "rust_router" / "grid_router.pyd").write_bytes(b"modified")
             with (
                 patch.dict(krt_adapter.RELEASES, {"0.23.8": release}),
                 patch.object(
-                    krt_adapter, "tool_fingerprint", return_value="fingerprint"
+                    krt_adapter.KrtInstallation,
+                    "tool_fingerprint",
+                    return_value="fingerprint",
                 ),
                 self.assertRaisesRegex(ValueError, "binary does not match"),
             ):
-                krt_adapter.validate_installation(root)
+                krt_adapter.KrtInstallation.validate_installation(root)
             executable = root / "python.exe"
             executable.touch()
             with (
@@ -159,12 +168,13 @@ class KrtAdapterTests(unittest.TestCase):
                 ) as run,
             ):
                 self.assertEqual(
-                    krt_adapter._python(root, str(executable)), executable.resolve()
+                    krt_adapter.KrtRouterProcess._python(root, str(executable)),
+                    executable.resolve(),
                 )
                 self.assertEqual(run.call_args.args[0][-1], "0.23.7")
             (root / "VERSION").write_text("unlisted", encoding="utf8")
             with self.assertRaisesRegex(ValueError, "allowlist"):
-                krt_adapter._release(root)
+                krt_adapter.KrtInstallation._release(root)
 
     def test_router_net_codes_uses_and_validates_the_routers_own_parser(self):
         executable, root, board = (
@@ -178,7 +188,9 @@ class KrtAdapterTests(unittest.TestCase):
             return_value=MagicMock(returncode=0, stdout='{"37": "A", "42": "B"}'),
         ) as run:
             self.assertEqual(
-                krt_adapter.router_net_codes(executable, root, board, {}),
+                krt_adapter.KrtRouterProcess.router_net_codes(
+                    executable, root, board, {}
+                ),
                 {37: "A", 42: "B"},
             )
         self.assertIn("extract_nets", run.call_args.args[0][3])
@@ -191,26 +203,34 @@ class KrtAdapterTests(unittest.TestCase):
                 ),
                 self.assertRaises(ValueError),
             ):
-                krt_adapter.router_net_codes(executable, root, board, {})
+                krt_adapter.KrtRouterProcess.router_net_codes(
+                    executable, root, board, {}
+                )
 
     def test_strict_size_rejection_is_distinguished_from_a_crash(self):
         log = (
             'JSON_SUMMARY_MIN: {"routed": 0, "failed_single": ["A", "B"]}\n'
             "  --strict-sizes: feature below requested size\n"
         )
-        result = krt_adapter.strict_size_rejection(log, 3, ("A", "B"))
+        result = krt_adapter.StrictSizeLog.strict_size_rejection(log, 3, ("A", "B"))
         self.assertEqual(result["failed_nets"], ("A", "B"))
         self.assertEqual(result["status"], "strict_size_rejected")
-        self.assertIsNone(krt_adapter.strict_size_rejection(log, 1, ("A", "B")))
         self.assertIsNone(
-            krt_adapter.strict_size_rejection("--strict-sizes: crashed", 3, ("A",))
+            krt_adapter.StrictSizeLog.strict_size_rejection(log, 1, ("A", "B"))
         )
         self.assertIsNone(
-            krt_adapter.strict_size_rejection("JSON_SUMMARY_MIN: {}", 3, ("A",))
+            krt_adapter.StrictSizeLog.strict_size_rejection(
+                "--strict-sizes: crashed", 3, ("A",)
+            )
+        )
+        self.assertIsNone(
+            krt_adapter.StrictSizeLog.strict_size_rejection(
+                "JSON_SUMMARY_MIN: {}", 3, ("A",)
+            )
         )
 
     def test_command_preserves_rules_and_routes_on_all_four_equal_layers(self):
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"),
             Path("router"),
             Path("input.kicad_pcb"),
@@ -250,7 +270,7 @@ class KrtAdapterTests(unittest.TestCase):
             self.assertNotIn(forbidden, command)
 
     def test_differential_command_keeps_the_same_guards(self):
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"),
             Path("router"),
             Path("input.kicad_pcb"),
@@ -275,25 +295,29 @@ class KrtAdapterTests(unittest.TestCase):
             'JSON_SUMMARY: {"failed_diff_pairs": ["USB_D"]}\n'
             "--strict-sizes: feature below requested size\n"
         )
-        result = krt_adapter.strict_size_rejection(log, 3, ("USB_DP", "USB_DM"))
+        result = krt_adapter.StrictSizeLog.strict_size_rejection(
+            log, 3, ("USB_DP", "USB_DM")
+        )
         self.assertEqual(result["status"], "strict_size_rejected")
         self.assertEqual(result["failed_nets"], ())
         malformed = (
             'JSON_SUMMARY: {"failed_diff_pairs": [1]}\n--strict-sizes: rejected\n'
         )
         self.assertIsNone(
-            krt_adapter.strict_size_rejection(malformed, 3, ("USB_DP", "USB_DM"))
+            krt_adapter.StrictSizeLog.strict_size_rejection(
+                malformed, 3, ("USB_DP", "USB_DM")
+            )
         )
 
     def test_command_rejects_empty_duplicate_and_option_like_targets(self):
         for nets in ((), ("A", "A"), ("--overwrite",), ("",)):
             with self.subTest(nets=nets), self.assertRaises(ValueError):
-                krt_adapter.build_command(
+                krt_adapter.KrtRouterProcess.build_command(
                     Path("python"), Path("router"), Path("in"), Path("out"), nets
                 )
 
     def test_layer_costs_follow_the_saved_board_stack(self):
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"),
             Path("router"),
             Path("in"),
@@ -314,7 +338,7 @@ class KrtAdapterTests(unittest.TestCase):
             ["1", "1"],
         )
         with self.assertRaisesRegex(ValueError, "copper layers"):
-            krt_adapter.build_command(
+            krt_adapter.KrtRouterProcess.build_command(
                 Path("python"),
                 Path("router"),
                 Path("in"),
@@ -324,14 +348,14 @@ class KrtAdapterTests(unittest.TestCase):
             )
 
     def test_optional_grid_changes_search_resolution_not_design_rules(self):
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"), Path("router"), Path("in"), Path("out"), ("A",), grid_mm=0.2
         )
         self.assertEqual(command[command.index("--grid-step") + 1], "0.2")
         self.assertEqual(command[command.index("--escalation") + 1], "off")
         for invalid in (0, -0.1, float("nan"), True):
             with self.subTest(grid=invalid), self.assertRaises(ValueError):
-                krt_adapter.build_command(
+                krt_adapter.KrtRouterProcess.build_command(
                     Path("python"),
                     Path("router"),
                     Path("in"),
@@ -341,7 +365,7 @@ class KrtAdapterTests(unittest.TestCase):
                 )
 
     def test_full_search_keeps_guards_and_enables_router_recovery(self):
-        command = krt_adapter.build_command(
+        command = krt_adapter.KrtRouterProcess.build_command(
             Path("python"), Path("router"), Path("in"), Path("out"), ("A",), quick=False
         )
         self.assertNotIn("--quick", command)
@@ -350,7 +374,7 @@ class KrtAdapterTests(unittest.TestCase):
         self.assertEqual(command[command.index("--max-ripup") + 1], "0")
         self.assertEqual(command[command.index("--direction-preference-cost") + 1], "0")
         with self.assertRaisesRegex(ValueError, "quick"):
-            krt_adapter.build_command(
+            krt_adapter.KrtRouterProcess.build_command(
                 Path("python"),
                 Path("router"),
                 Path("in"),
@@ -367,12 +391,14 @@ class KrtAdapterTests(unittest.TestCase):
             (root / "py_router" / "route.py").write_text("print(1)", encoding="utf8")
             (root / "rust_router" / "grid_router.pyd").write_bytes(b"binary")
             (root / "VERSION").write_text("0.23.7", encoding="utf8")
-            before = krt_adapter.tool_fingerprint(root)
+            before = krt_adapter.KrtInstallation.tool_fingerprint(root)
             (root / "py_router" / "route.py").write_text("print(2)", encoding="utf8")
-            changed = krt_adapter.tool_fingerprint(root)
+            changed = krt_adapter.KrtInstallation.tool_fingerprint(root)
             self.assertNotEqual(before, changed)
             (root / "rust_router" / "grid_router.pyd").write_bytes(b"different")
-            self.assertNotEqual(changed, krt_adapter.tool_fingerprint(root))
+            self.assertNotEqual(
+                changed, krt_adapter.KrtInstallation.tool_fingerprint(root)
+            )
 
     def test_private_proposal_preserves_input_and_is_not_preapproved(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -390,13 +416,23 @@ class KrtAdapterTests(unittest.TestCase):
                 return process
 
             with (
-                patch.object(krt_adapter, "validate_installation", return_value="tool"),
-                patch.object(krt_adapter, "tool_fingerprint", return_value="tool"),
-                patch.object(krt_adapter, "_python", return_value=Path("python")),
+                patch.object(
+                    krt_adapter.KrtInstallation,
+                    "validate_installation",
+                    return_value="tool",
+                ),
+                patch.object(
+                    krt_adapter.KrtInstallation, "tool_fingerprint", return_value="tool"
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess, "_python", return_value=Path("python")
+                ),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(krt_adapter.subprocess, "Popen", side_effect=spawn),
             ):
-                result = krt_adapter.preview(project, project, "auto", ("A",), 10)
+                result = krt_adapter.KrtPreview.preview(
+                    project, project, "auto", ("A",), 10
+                )
             self.assertEqual(result["status"], "unapproved_trial_only")
             self.assertEqual(result["board"], b"unapproved candidate")
             self.assertEqual(
@@ -424,13 +460,23 @@ class KrtAdapterTests(unittest.TestCase):
                 return process
 
             with (
-                patch.object(krt_adapter, "validate_installation", return_value="tool"),
-                patch.object(krt_adapter, "tool_fingerprint", return_value="tool"),
-                patch.object(krt_adapter, "_python", return_value=Path("python")),
+                patch.object(
+                    krt_adapter.KrtInstallation,
+                    "validate_installation",
+                    return_value="tool",
+                ),
+                patch.object(
+                    krt_adapter.KrtInstallation, "tool_fingerprint", return_value="tool"
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess, "_python", return_value=Path("python")
+                ),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(krt_adapter.subprocess, "Popen", side_effect=spawn),
             ):
-                result = krt_adapter.preview(project, project, "auto", ("A",), 10)
+                result = krt_adapter.KrtPreview.preview(
+                    project, project, "auto", ("A",), 10
+                )
             self.assertEqual(result["status"], "strict_size_rejected")
             self.assertEqual(result["failed_nets"], ("A",))
             self.assertNotIn("board", result)
@@ -487,16 +533,26 @@ class KrtAdapterTests(unittest.TestCase):
                 return process
 
             with (
-                patch.object(krt_adapter, "validate_installation", return_value="tool"),
-                patch.object(krt_adapter, "tool_fingerprint", return_value="tool"),
-                patch.object(krt_adapter, "_python", return_value=Path("python")),
                 patch.object(
-                    krt_adapter, "router_net_codes", return_value={7: "A", 9: "B"}
+                    krt_adapter.KrtInstallation,
+                    "validate_installation",
+                    return_value="tool",
+                ),
+                patch.object(
+                    krt_adapter.KrtInstallation, "tool_fingerprint", return_value="tool"
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess, "_python", return_value=Path("python")
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess,
+                    "router_net_codes",
+                    return_value={7: "A", 9: "B"},
                 ),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(krt_adapter.subprocess, "Popen", side_effect=spawn),
             ):
-                result = krt_adapter.preview(
+                result = krt_adapter.KrtPreview.preview(
                     project, project, "auto", ("A", "B"), 10, salvage_strict=True
                 )
             self.assertEqual(result["status"], "strict_size_rejected")
@@ -527,13 +583,21 @@ class KrtAdapterTests(unittest.TestCase):
                 return process
 
             with (
-                patch.object(krt_adapter, "validate_installation", return_value="tool"),
-                patch.object(krt_adapter, "tool_fingerprint", return_value="tool"),
-                patch.object(krt_adapter, "_python", return_value=Path("python")),
+                patch.object(
+                    krt_adapter.KrtInstallation,
+                    "validate_installation",
+                    return_value="tool",
+                ),
+                patch.object(
+                    krt_adapter.KrtInstallation, "tool_fingerprint", return_value="tool"
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess, "_python", return_value=Path("python")
+                ),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(krt_adapter.subprocess, "Popen", side_effect=spawn),
             ):
-                result = krt_adapter.preview(
+                result = krt_adapter.KrtPreview.preview(
                     project,
                     project,
                     "auto",
@@ -558,14 +622,24 @@ class KrtAdapterTests(unittest.TestCase):
             process = MagicMock()
             process.wait.side_effect = subprocess.TimeoutExpired("router", 1)
             with (
-                patch.object(krt_adapter, "validate_installation", return_value="tool"),
-                patch.object(krt_adapter, "tool_fingerprint", return_value="tool"),
-                patch.object(krt_adapter, "_python", return_value=Path("python")),
+                patch.object(
+                    krt_adapter.KrtInstallation,
+                    "validate_installation",
+                    return_value="tool",
+                ),
+                patch.object(
+                    krt_adapter.KrtInstallation, "tool_fingerprint", return_value="tool"
+                ),
+                patch.object(
+                    krt_adapter.KrtRouterProcess, "_python", return_value=Path("python")
+                ),
                 patch.object(pcbnew, "LoadBoard", return_value=native),
                 patch.object(krt_adapter.subprocess, "Popen", return_value=process),
-                patch.object(krt_adapter, "_stop_tree") as stop,
+                patch.object(krt_adapter.KrtRouterProcess, "_stop_tree") as stop,
             ):
-                result = krt_adapter.preview(project, project, "auto", ("A",), 1)
+                result = krt_adapter.KrtPreview.preview(
+                    project, project, "auto", ("A",), 1
+                )
             stop.assert_called_once_with(process)
             self.assertEqual(result["status"], "search_timeout")
             self.assertIn("1 second", result["reason"])

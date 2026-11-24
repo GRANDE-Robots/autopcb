@@ -55,6 +55,18 @@ class PoseSamplerTests(unittest.TestCase):
             [pose.moves[0] for pose in poses if pose.kind == "nudge"],
         )
 
+    def test_relocations_and_nudges_take_turns_so_a_short_list_holds_both(self):
+        class Unguided:
+            corridors = ()
+
+        poses = list(
+            PoseSampler(self.board, Unguided(), lambda *_: True).poses(self.selected)
+        )
+        self.assertEqual(
+            [pose.kind for pose in poses[:6]],
+            ["relocation", "nudge"] * 3,
+        )
+
     def test_relocations_go_where_the_pads_meet_their_net_and_stay_legal(self):
         def legal(_selected, copies):
             at = copies[0].GetPosition()

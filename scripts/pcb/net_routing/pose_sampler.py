@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from pcb.route_optimizer import mm
 
@@ -27,7 +28,8 @@ class PoseSampler:
     detached copies at new poses keep courtyards and the board edge legal.
     """
 
-    # A half turn in place swaps which net each pad of a two-pad part offers its neighbours.
+    # A half turn in place swaps which net each pad of a two-pad part offers
+    # its neighbours.
     NUDGES = (
         (0.5, 1, 0, 0),
         (1.0, 0, 1, 0),
@@ -62,11 +64,15 @@ class PoseSampler:
         )
 
     def poses(self, selected):
+        """Clearing moves first, then relocations and nudges taking turns.
+
+        A caller that keeps only the first few poses still gets both kinds.
+        """
         seen = set()
+        turns = zip_longest(self.relocations(selected), self.nudges(selected))
         for pose in (
             *self.clearing(selected),
-            *self.nudges(selected),
-            *self.relocations(selected),
+            *(pose for pair in turns for pose in pair if pose is not None),
         ):
             if pose.moves not in seen:
                 seen.add(pose.moves)

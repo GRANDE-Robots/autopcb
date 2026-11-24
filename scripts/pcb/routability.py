@@ -171,6 +171,16 @@ class GridModel:
             tuple(states),
         )
 
+    def cut_off(self, net: str) -> bool:
+        """Whether the net's pads fall into more than one group.
+
+        A net without a net class cannot be judged and counts as connected.
+        """
+        try:
+            return len(self.groups(net)) > 1
+        except ValueError:
+            return False
+
     def groups(self, net: str) -> list[tuple[str, ...]]:
         """The net's pads, grouped by whether any path joins them."""
         router = self.router(net)

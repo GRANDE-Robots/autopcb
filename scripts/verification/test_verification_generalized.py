@@ -1,4 +1,9 @@
-"""Regression checks for reusable, accurate PCB verification tools."""
+"""test_verification_generalized.py: check the reusable PCB verification tools.
+
+Regression checks for reusable, accurate PCB verification tools.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -25,7 +30,17 @@ from verification import (
 
 
 class GeneralizedVerificationTests(unittest.TestCase):
+    """Tests for the reusable PCB audit and inspection tools."""
+
     def run_module(self, module, *arguments):
+        """Run a module as a command with this interpreter and capture its output.
+
+        Inputs:
+            module: dotted module name.
+            arguments: command line arguments, each converted to text.
+        Outputs:
+            The completed process with text stdout and stderr.
+        """
         return subprocess.run(
             [sys.executable, "-B", "-m", module, *map(str, arguments)],
             capture_output=True,

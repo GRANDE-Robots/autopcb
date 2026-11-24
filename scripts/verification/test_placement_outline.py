@@ -1,4 +1,9 @@
-"""Compact placement respects catalog limits, fixed poses and the complete native envelope."""
+"""test_placement_outline.py: tests of compact placement and the outline fit.
+
+Compact placement respects catalog limits, fixed poses and the complete native envelope.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
@@ -7,6 +12,8 @@ from autopcb.placement import Compactor, Envelope, OutlineFitter
 
 
 class CompactorTests(unittest.TestCase):
+    """Tests that parts slide toward a point until something stops them."""
+
     def test_parts_slide_toward_the_point_until_they_meet(self):
         parts = {
             "A": Envelope((2, 2), (4, 4)),
@@ -30,6 +37,8 @@ class CompactorTests(unittest.TestCase):
 
 
 class OutlineTests(unittest.TestCase):
+    """Tests of the outline fit around fixed and movable part envelopes."""
+
     def test_floor_prevents_pointless_component_motion(self):
         parts = {"J1": Envelope((1, 1), (4, 4)), "C1": Envelope((7, 3), (9, 7))}
         self.assertEqual(

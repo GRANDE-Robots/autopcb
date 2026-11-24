@@ -1,4 +1,8 @@
-"""Recovery changes the search problem while preserving the design constraints."""
+"""test_autoroute_recovery.py: check that recovery changes the search problem while
+preserving design constraints.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import copy
 import io
@@ -13,29 +17,44 @@ from pcb.route_optimizer import GridRouter, NoGridRoute, Obstacle, Point, mm
 from verification import test_net_routing as fixtures
 
 
-def request():
-    return {
-        "shared": {
-            "bounds_mm": [0, 0, 20, 20],
-            "layers": ["F.Cu"],
-            "step_mm": 1,
-            "width_mm": 0.2,
-            "clearance_mm": 0.2,
-            "via": {"size_mm": 0.6, "drill_mm": 0.3},
-            "gentle_turns": True,
-            "forbid_staircase": True,
-            "current_model": {"unchanged": "evidence"},
-        },
-        "nets": [{"name": "SIGNAL"}],
-        "search": {"seconds": 30},
-        "max_islands": 3,
-        "checkpoint_offset": 0,
-        "recovery_stage": 0,
-        "recovery_bounds_mm": [-10, -10, 40, 40],
-    }
+class RecoveryRequestBuilder:
+    """Builds the autoroute request that the recovery tests start from."""
+
+    def __call__(self):
+        """Build the autoroute request that the recovery tests start from.
+
+        Outputs:
+            A new request for the net SIGNAL on F.Cu over a 20 mm by 20 mm area with 0.2
+            mm tracks and clearance, a 1 mm step, a 30 s search, recovery stage 0 and
+            recovery bounds from -10 mm to 40 mm.
+        """
+        return {
+            "shared": {
+                "bounds_mm": [0, 0, 20, 20],
+                "layers": ["F.Cu"],
+                "step_mm": 1,
+                "width_mm": 0.2,
+                "clearance_mm": 0.2,
+                "via": {"size_mm": 0.6, "drill_mm": 0.3},
+                "gentle_turns": True,
+                "forbid_staircase": True,
+                "current_model": {"unchanged": "evidence"},
+            },
+            "nets": [{"name": "SIGNAL"}],
+            "search": {"seconds": 30},
+            "max_islands": 3,
+            "checkpoint_offset": 0,
+            "recovery_stage": 0,
+            "recovery_bounds_mm": [-10, -10, 40, 40],
+        }
+
+
+request = RecoveryRequestBuilder()
 
 
 class RecoveryTests(unittest.TestCase):
+    """Checks recovery stages, renewal and the reports of failed searches."""
+
     def test_renewal_rebuilds_rejected_checkpoint_from_current_policy(self):
         from pcb.net_routing import runner
 
@@ -445,6 +464,13 @@ class RecoveryTests(unittest.TestCase):
         from pcb.net_routing import runner
 
         def pending(name):
+            """Build a queue entry that holds one net.
+
+            Inputs:
+                name: Net name.
+            Outputs:
+                A queue of one request that names the net.
+            """
             return [{"nets": [{"name": name}]}]
 
         queue = [pending(name) for name in ("A", "A", "B", "B", "C")]
@@ -524,6 +550,13 @@ class RecoveryTests(unittest.TestCase):
         )
 
         def solve(margin):
+            """Route between the anchors inside a search window widened by a margin.
+
+            Inputs:
+                margin: Margin in mm around the anchors.
+            Outputs:
+                The route found. Raises NoGridRoute when the window leaves no route.
+            """
             window, step = search_window(
                 anchors, (0.0, 0.0, 20.0, 20.0), margin, 1.0, 1, 10000
             )

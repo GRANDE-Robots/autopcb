@@ -1,4 +1,9 @@
-"""PCB save guards preserve the source and reject stale edits."""
+"""test_pcb_io.py: check the PCB save guards.
+
+PCB save guards preserve the source and reject stale edits.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,8 @@ from core.pcb_io import BoardSaveGuard, copper_width
 
 
 class BoardSaveGuardTests(unittest.TestCase):
+    """Tests for the guarded board save and the KiCad image handler filter."""
+
     def test_connectivity_base_wrapper_via_width_requires_explicit_layer(self):
         import pcbnew
 
@@ -50,7 +57,10 @@ class BoardSaveGuardTests(unittest.TestCase):
         messages = []
 
         class Collector(wx.Log):
+            """wx log target that collects each record as a (level, message) pair."""
+
             def DoLogRecord(self, level, message, info):
+                """Append the level and message to the collected messages."""
                 messages.append((level, message))
 
         quiet = getattr(pcb_io, "quiet_duplicate_image_handlers", None)
@@ -91,16 +101,23 @@ class BoardSaveGuardTests(unittest.TestCase):
         self.assertEqual(copper_width(track), pcbnew.FromMM(0.2))
 
     def board_file(self, directory: str) -> Path:
+        """Write a source board holding b"original" and return its path.
+
+        Inputs:
+            directory: existing folder.
+        """
         path = Path(directory) / "source.kicad_pcb"
         path.write_bytes(b"original")
         return path
 
     @staticmethod
     def digest(path: Path) -> str:
+        """Return the SHA-256 hex digest of the file."""
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     @staticmethod
     def save_new(path: str, _board: object) -> bool:
+        """Stand-in for the native save that writes b"updated" and reports success."""
         Path(path).write_bytes(b"updated")
         return True
 
@@ -119,6 +136,11 @@ class BoardSaveGuardTests(unittest.TestCase):
             guard = BoardSaveGuard.capture(source, self.digest(source))
 
             def change_source(path: str, _board: object) -> bool:
+                """Stand-in for the native save that also edits the source.
+
+                The candidate is written, then the source file is changed as a user
+                edit, and success is reported.
+                """
                 Path(path).write_bytes(b"candidate")
                 source.write_bytes(b"user edit")
                 return True
@@ -146,6 +168,11 @@ class BoardSaveGuardTests(unittest.TestCase):
             lock = source.with_name(f"~{source.name}.lck")
 
             def open_board(path: str, _board: object) -> bool:
+                """Stand-in for the native save that also creates the editor lock.
+
+                The candidate is written, then the editor lock file is created, and
+                success is reported.
+                """
                 Path(path).write_bytes(b"candidate")
                 lock.write_text("editor open", encoding="utf-8")
                 return True
@@ -172,6 +199,7 @@ class BoardSaveGuardTests(unittest.TestCase):
             guard = BoardSaveGuard.capture(source, self.digest(source))
 
             def fail(_path: str, _board: object) -> bool:
+                """Stand-in for the native save that raises RuntimeError."""
                 raise RuntimeError("serialization failed")
 
             with self.assertRaisesRegex(RuntimeError, "serialization failed"):
@@ -196,6 +224,12 @@ class BoardSaveGuardTests(unittest.TestCase):
             guard = BoardSaveGuard.capture(source, self.digest(source))
 
             def save_with_sidecars(path: str, _board: object) -> bool:
+                """Stand-in for the native save that also writes KiCad sidecar files.
+
+                The candidate must lie in a private folder below the system temporary
+                folder. It is written together with temporary project and settings
+                sidecars, and success is reported.
+                """
                 candidate = Path(path)
                 self.assertEqual(
                     candidate.parent.parent, Path(tempfile.gettempdir()).resolve()
@@ -217,6 +251,11 @@ class BoardSaveGuardTests(unittest.TestCase):
             guard = BoardSaveGuard.capture(source, self.digest(source))
 
             def save_with_sidecars(path: str, _board: object) -> bool:
+                """Stand-in for the native save that also writes KiCad sidecar files.
+
+                The candidate is written together with temporary project and settings
+                sidecars, and success is reported.
+                """
                 candidate = Path(path)
                 candidate.write_bytes(b"candidate")
                 candidate.with_suffix(".kicad_pro").write_bytes(b"temporary project")

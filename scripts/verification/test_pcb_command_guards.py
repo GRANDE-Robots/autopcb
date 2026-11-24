@@ -1,4 +1,8 @@
-"""PCB editing commands require explicit, source-bound in-place writes."""
+"""test_pcb_command_guards.py: check that PCB editing commands require explicit,
+source-bound in-place writes.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -20,6 +24,8 @@ from pcb import (
 
 
 class PcbCommandGuardTests(unittest.TestCase):
+    """Checks the write guards of the PCB editing commands."""
+
     def test_reconcile_requires_board_hash_before_loading(self):
         with tempfile.TemporaryDirectory(prefix="jessie-pcb-args-") as directory:
             root = Path(directory)

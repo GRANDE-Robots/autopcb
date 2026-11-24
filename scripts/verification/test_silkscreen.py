@@ -1,4 +1,8 @@
-"""Silkscreen repairs cannot change copper, footprint placement or the schematic."""
+"""test_silkscreen.py: check that silkscreen repairs cannot change copper, footprint
+placement or the schematic.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from pathlib import Path
 import tempfile
@@ -6,6 +10,8 @@ import unittest
 
 
 class SilkscreenTests(unittest.TestCase):
+    """Checks the silkscreen repairs on disposable boards."""
+
     def test_front_connector_bank_shares_a_column_without_changing_other_artwork(self):
         import pcbnew
         from pcb.silkscreen import TopLabels, SilkscreenProofs
@@ -208,6 +214,13 @@ class SilkscreenTests(unittest.TestCase):
             from pcb.route_validation import _canonical
 
             def footprints(text):
+                """Map each footprint of a board to its canonical form.
+
+                Inputs:
+                    text: Native KiCad PCB text.
+                Outputs:
+                    The canonical footprint text, keyed by footprint UUID.
+                """
                 return {
                     f.children("uuid")[0].atoms()[1].value: _canonical(f)
                     for f in parse(text).children("footprint")

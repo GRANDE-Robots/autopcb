@@ -1,4 +1,8 @@
-"""Protection checks must catch edits even when a board remains valid KiCad."""
+"""test_autoroute_protection.py: check that protection catches edits even when a board
+stays valid KiCad.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,18 @@ BOARD = """(kicad_pcb
 
 
 class ProtectedBoardTests(unittest.TestCase):
+    """Checks which board and schematic edits the protected state reports."""
+
     def capture(self, board=BOARD, schematic=b"schematic", movable=None):
+        """Capture the protected state of a board and schematic.
+
+        Inputs:
+            board: Native KiCad PCB text.
+            schematic: Native schematic bytes.
+            movable: Footprints allowed to move, or None to fix all placement.
+        Outputs:
+            The protected state from ``ProtectedState.capture``.
+        """
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.protection"))
         from pcb.net_routing.protection import ProtectedState
 

@@ -1,4 +1,9 @@
-"""A net-name repair may not quietly change geometry or other nets."""
+"""test_copper_alias_reconcile.py: tests of the copper net-name alias repair.
+
+A net-name repair may not quietly change geometry or other nets.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
@@ -6,6 +11,8 @@ from pcb.net_routing.alias_reconcile import AliasGroup, AliasReconciliation
 
 
 class CopperAliasTests(unittest.TestCase):
+    """Tests that only complete, proven net aliases are retagged."""
+
     def test_only_complete_proven_aliases_are_retagged(self):
         original = (
             b'(kicad_pcb (footprint (pad "1" (net "Net-(R1-Pad1)"))) '

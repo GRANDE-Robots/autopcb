@@ -1,4 +1,9 @@
-"""Search independent batches together and validate their combined copper once."""
+"""test_autoroute_batch.py: check combined validation of routing batches.
+
+Independent batches are searched together and their combined copper is validated once.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,8 @@ from core.toolchain import kicad_cli
 
 
 class CombinedBatchTests(unittest.TestCase):
+    """Tests for searching independent routing batches together."""
+
     def test_previous_diagonal_trace_does_not_block_empty_box_corners(self):
         from pcb.route_batch import _previous_obstacles
         from pcb.route_cli import _obstacle
@@ -208,12 +215,24 @@ class CombinedBatchTests(unittest.TestCase):
                 self.assertEqual(modeled_collision, native_collision)
 
     def api(self):
+        """Return the pcb.net_routing.batch module, asserting that it exists."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.batch"))
         from pcb.net_routing import batch
 
         return batch
 
     def project(self, path):
+        """Write a routing project into a folder and return its board path.
+
+        The board comes from the route optimizer fixture with a 30 mm by 8 mm outline,
+        an extra net OTHER with pads J3 and J4, a minimal schematic and a project file
+        whose CORE_SIGNAL net class covers SIGNAL and OTHER.
+
+        Inputs:
+            path: existing folder that receives the board, schematic and project file.
+        Outputs:
+            The path of the saved board.
+        """
         source = route_fixtures.RouteOptimizerTests.make_board(path)
         board = pcbnew.LoadBoard(str(source))
         for item in list(board.GetDrawings()):
@@ -279,6 +298,12 @@ class CombinedBatchTests(unittest.TestCase):
         return source
 
     def requests(self):
+        """Return two routing requests for disjoint regions of the board.
+
+        Outputs:
+            A list holding a request for net SIGNAL bounded to x 0 mm to 11 mm and a
+            request for net OTHER bounded to x 17 mm to 30 mm, both over y 0 mm to 8 mm.
+        """
         base = net_fixtures.NativeNetRoutingTests.config()
         left = {
             **base,

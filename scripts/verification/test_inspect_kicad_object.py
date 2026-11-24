@@ -1,4 +1,9 @@
-"""Verify compact, read-only lookup of KiCad S-expression objects."""
+"""test_inspect_kicad_object.py: check the lookup of KiCad S-expression objects.
+
+The lookup is compact and read-only.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,13 @@ from verification import inspect_kicad_object as inspect
 
 
 class ObjectInspectionTests(unittest.TestCase):
+    """Tests for looking up PCB and schematic objects."""
+
     def setUp(self) -> None:
+        """Write a temporary project with a board and a schematic.
+
+        The board has two footprints and one segment; the schematic has one symbol.
+        """
         self.temp = tempfile.TemporaryDirectory(prefix="jessie-object-test-")
         self.addCleanup(self.temp.cleanup)
         self.project = Path(self.temp.name).resolve()

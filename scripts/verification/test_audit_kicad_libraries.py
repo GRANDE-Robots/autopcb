@@ -1,4 +1,8 @@
-"""Exercise library checking and path-only reorganization on disposable projects."""
+"""test_audit_kicad_libraries.py: check library checking and path-only reorganization on
+disposable projects.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,15 @@ from verification import audit_kicad_libraries as audit
 
 
 class LibraryAuditTests(unittest.TestCase):
+    """Checks the library audit and library reorganization on a disposable project."""
+
     def setUp(self) -> None:
+        """Create a temporary project with local libraries and library tables.
+
+        The project gets a local symbol library, footprint library and 3D model, the
+        symbol and footprint library tables, a schematic and a board. ``project`` is the
+        resolved project folder, which is removed after the test.
+        """
         self.temporary = tempfile.TemporaryDirectory(prefix="jessie-lib-test-")
         self.addCleanup(self.temporary.cleanup)
         self.project = Path(self.temporary.name).resolve()
@@ -211,6 +223,13 @@ class LibraryAuditTests(unittest.TestCase):
         count = 0
 
         def unstable(project: Path) -> dict[str, str]:
+            """Fingerprint the project, but change the board hash on the second call.
+
+            Inputs:
+                project: The project folder to fingerprint.
+            Outputs:
+                The real file hashes, with the board hash replaced on the second call.
+            """
             nonlocal count
             count += 1
             hashes = original(project)

@@ -1,4 +1,8 @@
-"""External results stay private and do not overwrite prior run state."""
+"""test_freeroute_external.py: check that external results stay private and do not
+overwrite prior run state.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 from contextlib import nullcontext, redirect_stdout
@@ -18,6 +22,8 @@ from pcb.net_routing.runner import _verify_resume_connectivity
 
 
 class ExternalRunStateTests(unittest.TestCase):
+    """Checks which external router results qualify and how run state is retained."""
+
     def test_multi_router_provenance_requires_the_actual_final_tool(self):
         from pcb.net_routing.external import RouterProvenance
 
@@ -139,6 +145,19 @@ class ExternalRunStateTests(unittest.TestCase):
         after_geometry = {"via_count": 1, "track_length_mm": 1.0}
 
         def qualifies(opens, drc, geometry, copper):
+            """Ask whether a cleanup result qualifies as a warning reduction.
+
+            The comparison is against the three open connections, DRC counts, geometry
+            measures and copper recorded before the cleanup.
+
+            Inputs:
+                opens: Open connections after the cleanup.
+                drc: DRC warning and error counts after the cleanup.
+                geometry: Via count and track length in mm after the cleanup.
+                copper: Traces and vias after the cleanup.
+            Outputs:
+                Whether ``qualifies_warning_reduction`` accepts the result.
+            """
             return PreviewQualification.qualifies_warning_reduction(
                 3,
                 opens,
@@ -206,6 +225,17 @@ class ExternalRunStateTests(unittest.TestCase):
         from pcb.net_routing.external import PreviewQualification
 
         def trace(start, end, *, net="A", layer="B.Cu", width=200_000):
+            """Build a trace between two points.
+
+            Inputs:
+                start: Start point in nm.
+                end: End point in nm.
+                net: Net name.
+                layer: Copper layer.
+                width: Trace width in nm.
+            Outputs:
+                The trace.
+            """
             return Trace(net, layer, width, start, end)
 
         trunk = trace((0, 0), (4_000_000, 0))
@@ -221,6 +251,19 @@ class ExternalRunStateTests(unittest.TestCase):
         new_geometry = {"via_count": 1, "track_length_mm": 4.0}
 
         def qualifies(candidate, *, opens=3, drc=new_drc, geometry=new_geometry):
+            """Ask whether a candidate qualifies as a corner cleanup.
+
+            The comparison is against the original copper, DRC counts and geometry
+            measures recorded before the cleanup.
+
+            Inputs:
+                candidate: Traces and vias after the cleanup.
+                opens: Open connections after the cleanup.
+                drc: DRC warning and error counts after the cleanup.
+                geometry: Via count and track length in mm after the cleanup.
+            Outputs:
+                Whether ``qualifies_corner_cleanup`` accepts the candidate.
+            """
             return PreviewQualification.qualifies_corner_cleanup(
                 3, opens, old_drc, drc, old_geometry, geometry, before, candidate
             )

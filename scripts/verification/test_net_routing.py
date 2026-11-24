@@ -1,4 +1,7 @@
-"""Regression cases for whole-net geometry, search order and real KiCad checks."""
+"""test_net_routing.py: check whole-net geometry, search order and real KiCad checks.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -50,69 +53,169 @@ from verification import test_route_optimizer as route_tests
 from core.toolchain import kicad_cli
 
 
-def site(x, y, layer="F.Cu"):
-    return Site(Point.from_mm([x, y]), layer)
+class SiteBuilder:
+    """Builds a routing site from x and y in millimetres and a copper layer."""
+
+    def __call__(self, x, y, layer="F.Cu"):
+        """Build a site from a position in mm.
+
+        Inputs:
+            x: Horizontal position in mm.
+            y: Vertical position in mm.
+            layer: Copper layer of the site.
+        Outputs:
+            The site.
+        """
+        return Site(Point.from_mm([x, y]), layer)
 
 
-def segment(a, b, layer="F.Cu"):
-    return Segment(site(*a).point, site(*b).point, layer)
+site = SiteBuilder()
 
 
-def route(*segments, cost=0, vias=()):
-    return Route(tuple(segments), tuple(vias), (), 0, 0, cost, 0)
+class SegmentBuilder:
+    """Builds a track segment between two millimetre positions on one copper layer."""
+
+    def __call__(self, a, b, layer="F.Cu"):
+        """Build a track segment between two positions in mm.
+
+        Inputs:
+            a: Start position as x and y in mm.
+            b: End position as x and y in mm.
+            layer: Copper layer of the segment.
+        Outputs:
+            The segment.
+        """
+        return Segment(site(*a).point, site(*b).point, layer)
 
 
-def combine(*routes, **overrides):
-    values = dict(existing=(), weights=Weights(), layer_penalties={}, guide=())
-    values.update(overrides)
-    return aggregate(tuple(routes), **values)
+segment = SegmentBuilder()
 
 
-def make_net(name, positions):
-    sites = tuple(site(*p) for p in positions)
-    return Net(
-        name,
-        tuple(Island(str(i), (s,)) for i, s in enumerate(sites)),
-        pad_sites=frozenset(sites),
-    )
+class RouteBuilder:
+    """Builds a route from segments and vias with a given cost, other measures zero."""
+
+    def __call__(self, *segments, cost=0, vias=()):
+        """Build a route from segments and vias with every measure but the cost zero.
+
+        Inputs:
+            segments: The track segments of the route.
+            cost: Route cost.
+            vias: The vias of the route.
+        Outputs:
+            The route.
+        """
+        return Route(tuple(segments), tuple(vias), (), 0, 0, cost, 0)
 
 
-def synthetic_backend(net, budget, **settings):
-    raw = dict(
-        bounds_mm=[-2, -2, 12, 12],
-        step_mm=1,
-        layers=["F.Cu"],
-        width_mm=0.2,
-        clearance_mm=0.2,
-        layer_penalties={},
-        max_expansions=5000,
-    )
-    raw.update(settings)
-    native = NativeNet(net, (), (), False)
-    return NativeBackend(
-        {
-            net.name: Settings(
-                raw, native, {layer: mm(0.035) for layer in COPPER_LAYERS}
-            )
-        },
-        (),
-        budget,
-    )
+route = RouteBuilder()
+
+
+class RouteCombiner:
+    """Merges routes through the route aggregator with neutral default settings."""
+
+    def __call__(self, *routes, **overrides):
+        """Merge routes with no existing copper, default weights and no guide.
+
+        Inputs:
+            routes: The routes to merge.
+            overrides: Aggregator arguments that replace the defaults.
+        Outputs:
+            The merged route. Raises the geometry errors of the aggregator.
+        """
+        values = dict(existing=(), weights=Weights(), layer_penalties={}, guide=())
+        values.update(overrides)
+        return aggregate(tuple(routes), **values)
+
+
+combine = RouteCombiner()
+
+
+class NetBuilder:
+    """Builds a net with one single-pad island per millimetre position."""
+
+    def __call__(self, name, positions):
+        """Build a net with one single-site island per position.
+
+        Every site is a pad site.
+
+        Inputs:
+            name: Net name.
+            positions: Positions of the sites as x and y in mm.
+        Outputs:
+            The net, with islands named 0, 1 and so on.
+        """
+        sites = tuple(site(*p) for p in positions)
+        return Net(
+            name,
+            tuple(Island(str(i), (s,)) for i, s in enumerate(sites)),
+            pad_sites=frozenset(sites),
+        )
+
+
+make_net = NetBuilder()
+
+
+class SyntheticBackendBuilder:
+    """Builds a native backend for one net on a 1 mm grid spanning 14 mm by 14 mm."""
+
+    def __call__(self, net, budget, **settings):
+        """Build a native backend for one net with test settings.
+
+        The settings cover (-2, -2) mm to (12, 12) mm on F.Cu with a 1 mm step, 0.2 mm
+        tracks and clearance and 5000 expansions.
+
+        Inputs:
+            net: The net to route.
+            budget: The search budget.
+            settings: Net settings that replace the defaults.
+        Outputs:
+            The backend.
+        """
+        raw = dict(
+            bounds_mm=[-2, -2, 12, 12],
+            step_mm=1,
+            layers=["F.Cu"],
+            width_mm=0.2,
+            clearance_mm=0.2,
+            layer_penalties={},
+            max_expansions=5000,
+        )
+        raw.update(settings)
+        native = NativeNet(net, (), (), False)
+        return NativeBackend(
+            {
+                net.name: Settings(
+                    raw, native, {layer: mm(0.035) for layer in COPPER_LAYERS}
+                )
+            },
+            (),
+            budget,
+        )
+
+
+synthetic_backend = SyntheticBackendBuilder()
 
 
 class NetGeometryTests(unittest.TestCase):
+    """Checks whole-net search order, budgets and combined route geometry."""
+
     def test_candidate_combination_does_not_hide_unexpected_value_errors(self):
         net = make_net("SIGNAL", [(0, 0), (1, 0)])
         budget = Budget(Limits(seconds=30, tree_beam=1))
 
         class BrokenBackend:
+            """Stand in for a backend whose combination fails unexpectedly."""
+
             def paths(self, net, prior, tree, start, end):
+                """Offer one single-segment route between any two sites."""
                 return (route(segment((0, 0), (1, 0))),)
 
             def combine(self, net, routes):
+                """Fail with a ValueError."""
                 raise ValueError("unexpected combination failure")
 
             def accept(self, net, candidate):
+                """Accept every candidate."""
                 return True
 
         with self.assertRaisesRegex(ValueError, "unexpected combination failure"):
@@ -253,6 +356,15 @@ class NetGeometryTests(unittest.TestCase):
         visited = []
 
         def solve(net, prior):
+            """Record the net and the nets planned before it, then plan it.
+
+            Inputs:
+                net: The net to plan.
+                prior: The plans already chosen.
+            Outputs:
+                No plans for REPAIR once another net is planned, otherwise one plan with
+                an empty route.
+            """
             visited.append((net.name, tuple(plan.net for plan in prior)))
             if net.name == "REPAIR" and prior:
                 return ()
@@ -287,6 +399,17 @@ class NetGeometryTests(unittest.TestCase):
         visited = []
 
         def solve(net, prior):
+            """Record the net and the nets planned before it, then plan it.
+
+            Planning TARGET after another net advances the fake clock until the budget
+            expires.
+
+            Inputs:
+                net: The net to plan.
+                prior: The plans already chosen.
+            Outputs:
+                One plan with an empty route.
+            """
             visited.append((net.name, tuple(plan.net for plan in prior)))
             if net.name == "TARGET" and prior:
                 while True:
@@ -327,16 +450,24 @@ class NetGeometryTests(unittest.TestCase):
         )
 
         class DirectionalBackend:
+            """Stand in for a backend that joins the second island to the first only."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call; offer a route only from the second island.
+
+                The route runs from the second island's site to the first's.
+                """
                 budget.call()
                 if start == second and end == first:
                     return (route(segment((1, 0), (0, 0)), cost=1),)
                 return ()
 
             def combine(self, net, routes):
+                """Merge the routes with the route aggregator."""
                 return combine(*routes)
 
             def accept(self, net, candidate):
+                """Accept every candidate."""
                 return True
 
         plans = whole_net(net, (), DirectionalBackend(), budget)
@@ -350,7 +481,14 @@ class NetGeometryTests(unittest.TestCase):
         budget = Budget(Limits(seconds=10, tree_beam=2, path_calls=2), started=0.0)
 
         class DirectionalBackend:
+            """Stand in for a backend that is slow to search from the first island."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call; stall when starting at the first site.
+
+                Stalling advances the fake clock until the budget expires. Any other
+                start gets a route.
+                """
                 budget.call()
                 if start == first:
                     while True:
@@ -359,9 +497,11 @@ class NetGeometryTests(unittest.TestCase):
                 return (route(segment((1, 0), (0, 0)), cost=1),)
 
             def combine(self, net, routes):
+                """Merge the routes with the route aggregator."""
                 return combine(*routes)
 
             def accept(self, net, candidate):
+                """Accept every candidate."""
                 return True
 
         with patch(
@@ -390,7 +530,14 @@ class NetGeometryTests(unittest.TestCase):
         seen = []
 
         class Backend:
+            """Stand in for a backend that is slow to reach the nearest site."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call and record the end; stall on the nearest site.
+
+                Stalling advances the fake clock until the budget expires. Any other
+                end gets a route.
+                """
                 budget.call()
                 seen.append(end)
                 if end == near:
@@ -400,9 +547,11 @@ class NetGeometryTests(unittest.TestCase):
                 return (route(Segment(start.point, end.point, start.layer)),)
 
             def combine(self, net, routes):
+                """Merge the routes with the route aggregator."""
                 return combine(*routes)
 
             def accept(self, net, candidate):
+                """Accept every candidate."""
                 return True
 
         with patch(
@@ -512,6 +661,15 @@ class NetGeometryTests(unittest.TestCase):
         )
 
         def combined(_net, routes):
+            """Accept the accepted route and reject any other with its conflict point.
+
+            Inputs:
+                _net: The net, unused.
+                routes: The routes to merge; the last is the candidate.
+            Outputs:
+                The accepted route. Raises StaircaseGeometryError naming the witness of
+                a rejected candidate.
+            """
             candidate = routes[-1]
             if candidate is accepted:
                 return accepted
@@ -520,6 +678,18 @@ class NetGeometryTests(unittest.TestCase):
             raise StaircaseGeometryError("context", ((witness.layer, witness.point),))
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search of the context detour test.
+
+            The unrestricted search must see every rejected candidate refused. A detour
+            search must find the conflicting edge blocked and the clear edge open, and
+            accept the accepted route.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                The accepted route and False, for a detour search.
+            """
             if router.edge_clear is not original_clearance:
                 self.assertFalse(
                     router.edge_clear(site(4, 0).point, site(5, 1).point, "F.Cu")
@@ -611,11 +781,24 @@ class NetGeometryTests(unittest.TestCase):
                 accepted = route(segment((0, 0), (1, 1)), segment((1, 1), (2, 1)))
 
                 def combined(_net, routes):
+                    """Reject the rejected route and accept any other."""
                     if routes[-1] is rejected:
                         raise StaircaseGeometryError("context rejected")
                     return accepted
 
                 def search(router, _net, _tree, _start, _end, *, context_check):
+                    """Stand in for the path search with and without heading limits.
+
+                    Without heading limits the rejected candidate must fail the context
+                    check and the search raises the error under test. With heading
+                    limits that exclude heading 0 it returns the accepted route.
+
+                    Inputs:
+                        router: The router that searches.
+                        context_check: Check applied to each candidate route.
+                    Outputs:
+                        The accepted route and False, when headings are limited.
+                    """
                     if (
                         router.initial_directions is None
                         and router.final_directions is None
@@ -667,6 +850,15 @@ class NetGeometryTests(unittest.TestCase):
         model = backend.settings[net.name].router((), frozenset(), budget)
 
         def compatible(_net, routes):
+            """Accept a route that passes through (3, 1) mm and reject any other.
+
+            Inputs:
+                _net: The net, unused.
+                routes: The routes to merge; the last is the candidate.
+            Outputs:
+                The candidate. Raises StaircaseGeometryError for a candidate that misses
+                the point.
+            """
             candidate = routes[-1]
             if any(on_segment(site(3, 1).point, item) for item in candidate.segments):
                 return candidate
@@ -702,6 +894,16 @@ class NetGeometryTests(unittest.TestCase):
         rejected = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search: fail a detour with an unexpected error.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                Never returns. A detour search raises ValueError, an unrestricted search
+                raises SearchLimitReached after its candidate fails the check, and a
+                heading-limited search raises NoGridRoute.
+            """
             if "edge_clear" in vars(router):
                 raise ValueError("unexpected detour failure")
             if router.initial_directions is None and router.final_directions is None:
@@ -746,11 +948,23 @@ class NetGeometryTests(unittest.TestCase):
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
 
         def combine_candidate(_net, routes):
+            """Accept the accepted route and reject any other with a staircase error."""
             if routes[-1] is accepted:
                 return accepted
             raise StaircaseGeometryError("context")
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search of the detour test.
+
+            A detour search accepts the accepted route. The unrestricted search submits
+            every rejected candidate and must be interrupted before the test fails.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                The accepted route and False, for a detour search.
+            """
             if "edge_clear" in vars(router):
                 self.assertTrue(context_check(accepted))
                 return accepted, False
@@ -794,11 +1008,24 @@ class NetGeometryTests(unittest.TestCase):
         unrestricted = []
 
         def combine_candidate(_net, routes):
+            """Accept the accepted route and reject any other with a staircase error."""
             if routes[-1] is accepted:
                 return accepted
             raise StaircaseGeometryError("context")
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search: every detour fails.
+
+            The first unrestricted search submits the rejected candidates and must be
+            interrupted before the test fails. A later one accepts the accepted route.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                The accepted route and False, for a later unrestricted search. A detour
+                search raises NoGridRoute.
+            """
             if "edge_clear" in vars(router):
                 raise NoGridRoute("this detour is blocked")
             unrestricted.append(None)
@@ -846,12 +1073,26 @@ class NetGeometryTests(unittest.TestCase):
         calls = []
 
         def combine_candidate(_net, routes):
+            """Accept the alternate and fallback routes, reject any other."""
             candidate = routes[-1]
             if candidate is alternate or candidate is fallback:
                 return candidate
             raise StaircaseGeometryError("context")
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search: detours fail, heading alternatives succeed.
+
+            The first unrestricted search submits the rejected candidates and must be
+            interrupted before the test fails. Each search is recorded.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                The alternate route for a heading-limited search, the fallback for a
+                later unrestricted one, each with False. A detour search raises
+                NoGridRoute.
+            """
             if "edge_clear" in vars(router):
                 raise NoGridRoute("detour blocked")
             if router.initial_directions is None and router.final_directions is None:
@@ -902,11 +1143,24 @@ class NetGeometryTests(unittest.TestCase):
         calls = []
 
         def combine_candidate(_net, routes):
+            """Accept the accepted route and reject any other with a staircase error."""
             if routes[-1] is accepted:
                 return accepted
             raise StaircaseGeometryError("context")
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search: detours and heading alternatives fail.
+
+            The first unrestricted search submits the rejected candidates and must be
+            interrupted before the test fails. Each search is recorded.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route.
+            Outputs:
+                The accepted route and False, for a later unrestricted search. Detour
+                and heading-limited searches raise NoGridRoute.
+            """
             if "edge_clear" in vars(router):
                 raise NoGridRoute("detour blocked")
             if (
@@ -958,11 +1212,21 @@ class NetGeometryTests(unittest.TestCase):
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
 
         def combine_candidate(_net, routes):
+            """Accept the accepted route and reject any other with a staircase error."""
             if routes[-1] is accepted:
                 return accepted
             raise StaircaseGeometryError("context")
 
         def search(router, _net, _tree, _start, _end, *, context_check):
+            """Stand in for the path search: check four candidates and accept one.
+
+            Inputs:
+                router: The router that searches.
+                context_check: Check applied to each candidate route; it must refuse the
+                    rejected routes and pass the accepted one.
+            Outputs:
+                The accepted route and False.
+            """
             self.assertFalse(context_check(rejected[0]))
             self.assertFalse(context_check(rejected[1]))
             self.assertTrue(context_check(accepted))
@@ -1287,6 +1551,8 @@ class NetGeometryTests(unittest.TestCase):
 
 
 class NetSearchTests(unittest.TestCase):
+    """Checks the whole-net search report, refinement, limits and net order search."""
+
     def test_search_report_excludes_later_validation_time(self):
         budget = Budget(Limits(seconds=10), started=0)
         with patch("pcb.net_routing.model.time.monotonic", return_value=4):
@@ -1471,6 +1737,7 @@ class NetSearchTests(unittest.TestCase):
 
     def test_time_limit_preserves_an_existing_off_grid_candidate(self):
         def stop():
+            """Stand in for the budget check by reporting that time is exhausted."""
             raise BudgetExhausted("Search time budget exhausted")
 
         model = route_tests.router(
@@ -1563,6 +1830,15 @@ class NetSearchTests(unittest.TestCase):
         a, b = make_net("A", [(0, 0), (2, 0)]), make_net("B", [(0, 2), (2, 2)])
 
         def solver(net, prior):
+            """Offer two plans for A and plan B only after the dearer one.
+
+            Inputs:
+                net: The net to plan.
+                prior: The plans already chosen.
+            Outputs:
+                For A, a plan of cost 1 and one of cost 2. For B, no plans when A took
+                the cost 1 plan, otherwise one plan.
+            """
             if net.name == "A":
                 return (
                     NetPlan("A", route(segment((0, 0), (1, 0)), cost=1)),
@@ -1602,6 +1878,14 @@ class NetSearchTests(unittest.TestCase):
         nets = (make_net("A", [(0, 0), (1, 0)]), make_net("B", [(0, 2), (1, 2)]))
 
         def solver(net, prior):
+            """Plan each net on its own row; B costs 50 when planned after another net.
+
+            Inputs:
+                net: The net to plan.
+                prior: The plans already chosen.
+            Outputs:
+                One plan of cost 1, or 50 for B after another net.
+            """
             cost = 50 if net.name == "B" and prior else 1
             y = 0 if net.name == "A" else 2
             return (NetPlan(net.name, route(segment((0, y), (1, y)), cost=cost)),)
@@ -1675,7 +1959,13 @@ class NetSearchTests(unittest.TestCase):
         seen = []
 
         class Backend:
+            """Stand in for a backend that reaches only the thirteenth end site."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call and record the end; reach only the thirteenth.
+
+                Only a route to the thirteenth end site is offered.
+                """
                 budget.call()
                 seen.append(end)
                 if end != ends[12]:
@@ -1683,9 +1973,11 @@ class NetSearchTests(unittest.TestCase):
                 return (route(Segment(start.point, end.point, start.layer)),)
 
             def combine(self, net, routes):
+                """Return the last route."""
                 return routes[-1]
 
             def accept(self, net, result):
+                """Accept every candidate."""
                 return True
 
         answers = whole_net(net, (), Backend(), budget)
@@ -1708,15 +2000,20 @@ class NetSearchTests(unittest.TestCase):
         seen = []
 
         class Backend:
+            """Stand in for a backend that reaches every end site."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call and record the end site; offer a direct route."""
                 budget.call()
                 seen.append(end)
                 return (route(Segment(start.point, end.point, start.layer)),)
 
             def combine(self, net, routes):
+                """Return the last route."""
                 return routes[-1]
 
             def accept(self, net, result):
+                """Accept every candidate."""
                 return True
 
         self.assertTrue(whole_net(net, (), Backend(), budget))
@@ -1737,7 +2034,10 @@ class NetSearchTests(unittest.TestCase):
         seen = []
 
         class Backend:
+            """Stand in for a backend that reaches no end site."""
+
             def paths(self, net, prior, tree, start, end):
+                """Count the call and record the end site; offer no route."""
                 budget.call()
                 seen.append(end)
                 return ()
@@ -1797,6 +2097,8 @@ class NetSearchTests(unittest.TestCase):
 
 
 class NativeNetRoutingTests(unittest.TestCase):
+    """Checks whole-net routing on native boards against KiCad checks."""
+
     def test_farther_access_candidate_passes_native_connectivity_and_drc(self):
         with tempfile.TemporaryDirectory() as folder:
             source = route_tests.RouteOptimizerTests.make_board(Path(folder))
@@ -1832,16 +2134,25 @@ class NativeNetRoutingTests(unittest.TestCase):
             native = synthetic_backend(net, budget, step_mm=0.5)
 
             class PartlyBlocked:
+                """Stand in for a backend that reaches only the last end site."""
+
                 def paths(self, net, prior, tree, a, b):
+                    """Offer no route unless the end is the last end site.
+
+                    The budget is charged for the other ends. The last end is searched
+                    by the native backend.
+                    """
                     if b != ends[-1]:
                         budget.call()
                         return ()
                     return native.paths(net, prior, tree, a, b)
 
                 def combine(self, *args):
+                    """Delegate to the native backend."""
                     return native.combine(*args)
 
                 def accept(self, *args):
+                    """Delegate to the native backend."""
                     return native.accept(*args)
 
             candidates = whole_net(net, (), PartlyBlocked(), budget)
@@ -1999,6 +2310,17 @@ class NativeNetRoutingTests(unittest.TestCase):
 
     @staticmethod
     def make_plane_fixture(project):
+        """Save a four-layer board with a SIGNAL track, a via and an inner zone.
+
+        J2 is moved to the back. The net SIGNAL has a 0.2 mm F.Cu track from (2, 2) mm
+        to (3, 2) mm, a through via with a 0.6 mm diameter and 0.3 mm drill at (3, 2) mm
+        and an In1.Cu zone from (0.2, 0.2) mm to (9.8, 7.8) mm.
+
+        Inputs:
+            project: Folder that receives the board.
+        Outputs:
+            The path of the saved board.
+        """
         source = route_tests.RouteOptimizerTests.make_board(project)
         board = pcbnew.LoadBoard(str(source))
         board.SetCopperLayerCount(4)
@@ -2221,6 +2543,17 @@ class NativeNetRoutingTests(unittest.TestCase):
 
     @staticmethod
     def add_pad(board, reference, at, *, bottom=False, net_name="SIGNAL"):
+        """Add a part with one 0.5 mm square SMD pad to a board.
+
+        Inputs:
+            board: The board that receives the part.
+            reference: Reference designator of the part.
+            at: Position as x and y in mm.
+            bottom: Whether the part and its pad are on the back.
+            net_name: Name of the net of the pad.
+        Outputs:
+            The part.
+        """
         footprint = pcbnew.FOOTPRINT(board)
         footprint.SetReference(reference)
         if bottom:
@@ -2242,6 +2575,16 @@ class NativeNetRoutingTests(unittest.TestCase):
 
     @staticmethod
     def config():
+        """Build a net routing request for the net SIGNAL.
+
+        The request derives from the route plan configuration.
+
+        Outputs:
+            The shared settings of the route plan, minus its net, start, end and
+            snapshot, with a 0.5 mm step, F.Cu only and 4000 expansions; the net SIGNAL;
+            and a search of 1 path candidate, a tree beam of 2, 40 path calls, 1 order
+            trial and 30 s.
+        """
         original = route_tests.RouteOptimizerTests.config()
         for name in ("net", "start", "end", "board_snapshot"):
             original.pop(name, None)
@@ -2474,6 +2817,10 @@ class NativeNetRoutingTests(unittest.TestCase):
             config.write_text("{}", encoding="utf-8")
 
             def changed(*args, **kwargs):
+                """Stand in for the planner: rewrite the configuration file.
+
+                The planner then reports a geometric candidate.
+                """
                 config.write_text('{"changed":true}', encoding="utf-8")
                 return {"status": "geometric_candidate_only"}
 

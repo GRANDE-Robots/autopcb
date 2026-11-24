@@ -1,4 +1,9 @@
-"""Explicit code renewal preserves a checked candidate, not its old plan."""
+"""test_autoroute_renewal.py: check explicit renewal of routing runs.
+
+Explicit code renewal preserves a checked candidate, not its old plan.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -12,6 +17,8 @@ from pcb.net_routing import runner
 
 
 class RenewalTests(unittest.TestCase):
+    """Tests for renewing a saved routing run after the code changed."""
+
     def test_unexpected_error_preserves_the_last_committed_checkpoint_and_queue(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "run.json"

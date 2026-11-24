@@ -1,4 +1,10 @@
-"""Source/identity-bound factory angle corrections without CAD/coordinate edits."""
+"""test_assembly_rotation.py: check source-bound factory angle corrections.
+
+Factory angle corrections must stay bound to the part source and identity and must not
+edit CAD or coordinates.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import copy
 import hashlib
@@ -10,54 +16,68 @@ from pathlib import Path
 from core.assembly_rotation import POLICY_FILE, AssemblyRotation
 
 
-def fixture():
-    parts = [
-        {
-            "Designator": r,
-            "Manufacturer": "Molex",
-            "MPN": "EXACT",
-            "LCSC Part #": "C1",
-            "Footprint": "socket",
+class RotationFixture:
+    """Builds the parts, placement rows, geometry map and policy the tests share."""
+
+    @staticmethod
+    def build():
+        """Return the part rows, placement rows, geometry map and rotation policy.
+
+        Outputs:
+            A tuple (parts, cpl, geometry, policy). parts and cpl list J16, J17 and R1
+            on the top layer at rotation 0 degrees. geometry maps each designator to the
+            string "shape". policy holds one qualified 90 degree offset for J16.
+        """
+        parts = [
+            {
+                "Designator": r,
+                "Manufacturer": "Molex",
+                "MPN": "EXACT",
+                "LCSC Part #": "C1",
+                "Footprint": "socket",
+            }
+            for r in ("J16", "J17", "R1")
+        ]
+        cpl = [
+            {
+                "Designator": r,
+                "Mid X": str(x),
+                "Mid Y": "30.000000",
+                "Rotation": "0.000000",
+                "Layer": "Top",
+            }
+            for r, x in [("J16", 10), ("J17", 20), ("R1", 15)]
+        ]
+        rule = {
+            "designator": "J16",
+            "qualified": True,
+            "offset_deg": 90,
+            "qualification_note": "Pin 1 and catalog landing pattern independently checked.",
+            "expected": {
+                k: parts[0][k]
+                for k in ("Manufacturer", "MPN", "LCSC Part #", "Footprint")
+            },
+            "qualification_evidence": {
+                "path": "design/rotation_evidence.json",
+                "sha256": "0" * 64,
+            },
         }
-        for r in ("J16", "J17", "R1")
-    ]
-    cpl = [
-        {
-            "Designator": r,
-            "Mid X": str(x),
-            "Mid Y": "30.000000",
-            "Rotation": "0.000000",
-            "Layer": "Top",
+        rule["expected"].update(Layer="Top", Rotation=0, Native_geometry_sha256="shape")
+        p = {
+            "schema": 1,
+            "export_scope": "JLCPCB_FACTORY_CPL",
+            "rotation_convention": "ADD_TO_NATIVE_DEGREES_MOD_360",
+            "native_geometry_unchanged": True,
+            "overrides": [rule],
         }
-        for r, x in [("J16", 10), ("J17", 20), ("R1", 15)]
-    ]
-    rule = {
-        "designator": "J16",
-        "qualified": True,
-        "offset_deg": 90,
-        "qualification_note": "Pin 1 and catalog landing pattern independently checked.",
-        "expected": {
-            k: parts[0][k] for k in ("Manufacturer", "MPN", "LCSC Part #", "Footprint")
-        },
-        "qualification_evidence": {
-            "path": "design/rotation_evidence.json",
-            "sha256": "0" * 64,
-        },
-    }
-    rule["expected"].update(Layer="Top", Rotation=0, Native_geometry_sha256="shape")
-    p = {
-        "schema": 1,
-        "export_scope": "JLCPCB_FACTORY_CPL",
-        "rotation_convention": "ADD_TO_NATIVE_DEGREES_MOD_360",
-        "native_geometry_unchanged": True,
-        "overrides": [rule],
-    }
-    return parts, cpl, {r["Designator"]: "shape" for r in parts}, p
+        return parts, cpl, {r["Designator"]: "shape" for r in parts}, p
 
 
 class RotationTests(unittest.TestCase):
+    """Tests for the factory angle offsets AssemblyRotation applies and rejects."""
+
     def test_only_qualified_angle_changes_without_mutating_native_or_positions(self):
-        parts, cpl, geometry, p = fixture()
+        parts, cpl, geometry, p = RotationFixture.build()
         original = copy.deepcopy(cpl)
         out, receipt = AssemblyRotation.apply(cpl, parts, geometry, p)
         self.assertEqual(cpl, original)
@@ -70,7 +90,7 @@ class RotationTests(unittest.TestCase):
         )
 
     def test_negative_offset_wraps_without_side_mirroring(self):
-        parts, cpl, geometry, p = fixture()
+        parts, cpl, geometry, p = RotationFixture.build()
         cpl[0]["Layer"] = "Bottom"
         p["overrides"][0]["expected"]["Layer"] = "Bottom"
         p["overrides"][0]["offset_deg"] = -90
@@ -87,7 +107,7 @@ class RotationTests(unittest.TestCase):
             {"offset_deg": float("nan")},
             {"offset_deg": True},
         ):
-            parts, cpl, g, p = fixture()
+            parts, cpl, g, p = RotationFixture.build()
             p["overrides"][0].update(change)
             with self.subTest(change=change), self.assertRaises(RuntimeError):
                 AssemblyRotation.apply(cpl, parts, g, p)
@@ -102,7 +122,7 @@ class RotationTests(unittest.TestCase):
             "Rotation",
             "Native_geometry_sha256",
         ):
-            parts, cpl, g, p = fixture()
+            parts, cpl, g, p = RotationFixture.build()
             p["overrides"][0]["expected"][field] = (
                 "90" if field == "Rotation" else "changed"
             )
@@ -114,7 +134,7 @@ class RotationTests(unittest.TestCase):
 
     def test_duplicate_missing_or_owner_only_reference_is_rejected(self):
         for mode in ("duplicate_rule", "missing_ref", "owner_only", "duplicate_cpl"):
-            parts, cpl, g, p = fixture()
+            parts, cpl, g, p = RotationFixture.build()
             if mode == "duplicate_rule":
                 p["overrides"] *= 2
             if mode == "missing_ref":
@@ -137,7 +157,7 @@ class RotationTests(unittest.TestCase):
                 self.subTest(folder=folder, reference=reference),
                 tempfile.TemporaryDirectory() as td,
             ):
-                _, _, _, policy = fixture()
+                _, _, _, policy = RotationFixture.build()
                 root = Path(td)
                 inputs = root / "autopcb" / folder
                 inputs.mkdir(parents=True)
@@ -156,7 +176,7 @@ class RotationTests(unittest.TestCase):
                     AssemblyRotation.load(root)
 
     def test_empty_policy_preserves_every_original_factory_row(self):
-        parts, cpl, g, p = fixture()
+        parts, cpl, g, p = RotationFixture.build()
         p["overrides"] = []
         out, schedule = AssemblyRotation.apply(cpl, parts, g, p)
         self.assertEqual(out, cpl)

@@ -1,4 +1,9 @@
-"""Exercise migrated and legacy project paths without modifying live CAD."""
+"""test_project_migration.py: check migrated and legacy project paths.
+
+The tests do not modify live CAD.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -12,6 +17,8 @@ from pcb.route_validation import _copy_inputs, _inputs
 
 
 class ProjectMigrationTests(unittest.TestCase):
+    """Tests for resolving legacy and migrated project paths and libraries."""
+
     def test_legacy_fixtures_and_migrated_support_resolve_separately(self):
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder).resolve()

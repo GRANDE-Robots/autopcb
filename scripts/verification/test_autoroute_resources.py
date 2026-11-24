@@ -1,4 +1,8 @@
-"""Resource budgets must be explicit, bounded, and usable for native checks."""
+"""test_autoroute_resources.py: check that resource budgets are explicit, bounded and
+usable for native checks.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 from unittest import mock
@@ -12,6 +16,8 @@ from pcb.net_routing.resources import (
 
 
 class ResourcePlanTests(unittest.TestCase):
+    """Checks the memory budget plan and the bounded wait for memory."""
+
     def test_automatic_budget_remains_half_ram_capped_at_six(self):
         plan = MemoryBudget.plan(AvailableMemory(5 * GIB, 20 * GIB))
         self.assertEqual(plan["job_commit_limit_bytes"], int(2.5 * GIB))

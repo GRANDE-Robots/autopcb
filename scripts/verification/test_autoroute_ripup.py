@@ -1,4 +1,8 @@
-"""Whole-net search can rearrange existing copper only on a disposable copy."""
+"""test_autoroute_ripup.py: check that whole-net search rearranges existing copper only
+on a disposable copy.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,17 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class RipupTests(unittest.TestCase):
+    """Checks that rip-up of existing copper is limited to requested nets and a copy."""
+
     def make_project(self, project):
+        """Save a board that already carries a three-segment SIGNAL route on F.Cu.
+
+        Inputs:
+            project: Folder that receives the board.
+        Outputs:
+            The saved board path and one ``segment`` removal entry, with the track UUID,
+            for each of the three tracks added.
+        """
         source = route_fixtures.RouteOptimizerTests.make_board(project)
         board = pcbnew.LoadBoard(str(source))
         removed = []

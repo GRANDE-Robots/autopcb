@@ -1,4 +1,9 @@
-"""Only detached, tiny native copper may bypass protected-net cleanup gates."""
+"""test_isolated_copper.py: tests of detached tiny copper cleanup evidence.
+
+Only detached, tiny native copper may bypass protected-net cleanup gates.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 from collections import Counter
@@ -16,13 +21,24 @@ from pcb.net_routing.working_save import WorkingQualification
 
 
 class IsolatedCopperTests(unittest.TestCase):
+    """Tests of the evidence that lets detached, tiny copper skip cleanup gates."""
+
     def setUp(self):
+        """Create a four-copper-layer board with the net SIG."""
         self.board = pcbnew.BOARD()
         self.board.SetCopperLayerCount(4)
         self.net = pcbnew.NETINFO_ITEM(self.board, "SIG")
         self.board.Add(self.net)
 
     def track(self, x=0, length=5_000):
+        """Add a 0.2 mm B.Cu track on net SIG along the X axis.
+
+        Inputs:
+            x: X of the start, in nm.
+            length: Length of the track, in nm.
+        Outputs:
+            The added track.
+        """
         track = pcbnew.PCB_TRACK(self.board)
         track.SetStart(pcbnew.VECTOR2I(x, 0))
         track.SetEnd(pcbnew.VECTOR2I(x + length, 0))
@@ -34,6 +50,7 @@ class IsolatedCopperTests(unittest.TestCase):
 
     @staticmethod
     def report(track):
+        """Build a DRC report with a clearance error and a dangling-track warning."""
         uid = track.m_Uuid.AsString()
         return {
             "violations": [

@@ -1,4 +1,9 @@
-"""Safe selection of potentially redundant vias for private validation."""
+"""test_via_prune.py: check selection of redundant vias.
+
+Potentially redundant vias are selected safely for private validation.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -10,6 +15,8 @@ from pcb.net_routing.via_prune import CleanupCandidates
 
 
 class ViaPruneTests(unittest.TestCase):
+    """Tests for selecting redundant vias and dangling copper for cleanup."""
+
     def test_cleanup_can_defer_both_identified_parity_nets(self):
         from pcb.net_routing.prepare import parity_blocked_nets, summarize_drc
         from pcb.net_routing.via_prune import CleanupBaseline
@@ -99,12 +106,20 @@ class ViaPruneTests(unittest.TestCase):
                     )
 
     def setUp(self):
+        """Create a four-layer board with a net SIG."""
         self.board = pcbnew.BOARD()
         self.board.SetCopperLayerCount(4)
         self.net = pcbnew.NETINFO_ITEM(self.board, "SIG")
         self.board.Add(self.net)
 
     def via(self, x):
+        """Add a through via on net SIG and return it.
+
+        The via is 0.6 mm wide with a 0.3 mm drill and lies on y = 0.
+
+        Inputs:
+            x: x position in nm.
+        """
         via = pcbnew.PCB_VIA(self.board)
         via.SetPosition(pcbnew.VECTOR2I(x, 0))
         via.SetWidth(600_000)
@@ -116,6 +131,12 @@ class ViaPruneTests(unittest.TestCase):
         return via
 
     def track(self, x, layer):
+        """Add a 1 mm long, 0.2 mm wide track on net SIG and return it.
+
+        Inputs:
+            x: start x position in nm; y is 0.
+            layer: native layer of the track.
+        """
         item = pcbnew.PCB_TRACK(self.board)
         item.SetStart(pcbnew.VECTOR2I(x, 0))
         item.SetEnd(pcbnew.VECTOR2I(x + 1_000_000, 0))

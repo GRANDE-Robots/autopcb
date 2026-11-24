@@ -1,4 +1,8 @@
-"""Verify held and source-bound factory review workflows on temporary fixtures."""
+"""test_release_guards.py: check held and source-bound factory review workflows on
+temporary fixtures.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import importlib.util
 import json
@@ -16,7 +20,16 @@ from verification import audit_release_consistency
 
 
 class ReleaseGuardTests(unittest.TestCase):
+    """Checks the hold, source binding and output rules of the release workflows."""
+
     def held_project(self, root: Path) -> Path:
+        """Create a project whose release input manifest is stale.
+
+        Inputs:
+            root: Folder that receives the project.
+        Outputs:
+            The project folder.
+        """
         project = root / "project"
         inputs = project / "design" / "release_inputs"
         inputs.mkdir(parents=True)
@@ -26,6 +39,19 @@ class ReleaseGuardTests(unittest.TestCase):
         return project
 
     def attachment_fixture(self, root: Path, input_folder: str = "design"):
+        """Create the folders that the technical attachment builder reads.
+
+        The project holds a reviewed input manifest, a stackup record with calculator
+        evidence, the fabrication files and the schematic and board files. The
+        manufacturing folder holds a source identity, the manufacturing files and a hash
+        manifest. The gallery holds a source record and the silkscreen and 3D images.
+
+        Inputs:
+            root: Folder that receives the three folders.
+            input_folder: Folder inside the project that holds the release inputs.
+        Outputs:
+            The project, manufacturing and gallery folders.
+        """
         project = root / "project"
         inputs = project / input_folder
         control = inputs / "release_inputs"
@@ -181,6 +207,9 @@ class ReleaseGuardTests(unittest.TestCase):
             original_validate = build_technical_attachment.validate_generated_files
 
             def concurrently_create(*args):
+                """Run the real validation, then create the output file as a concurrent
+                writer would.
+                """
                 original_validate(*args)
                 output.write_bytes(b"another file")
 

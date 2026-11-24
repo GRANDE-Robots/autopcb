@@ -1,4 +1,8 @@
-"""Regression tests for omission, stale metadata and archive identity failures."""
+"""test_export_contract.py: check that omission, stale metadata and archive identity
+failures are caught.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -19,6 +23,8 @@ from core.export_helpers import (
 
 
 class ExportContractTests(unittest.TestCase):
+    """Checks the purchase metadata, source binding and archive rules of exports."""
+
     def test_new_native_part_needs_no_old_register_row(self):
         evidence = []
         r = BomRows.exact_metadata(

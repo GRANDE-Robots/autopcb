@@ -1,4 +1,9 @@
-"""Review publication preserves an existing gallery on failed updates."""
+"""test_review_publication.py: check review gallery publication.
+
+Review publication preserves an existing gallery on failed updates.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,16 @@ from review import refresh_gallery
 
 
 class ReviewPublicationTests(unittest.TestCase):
+    """Tests for gallery currency checks and for publishing with rollback."""
+
     def current_gallery(self, root: Path):
+        """Write a review gallery that matches its saved board and library.
+
+        Inputs:
+            root: existing folder.
+        Outputs:
+            A tuple (project folder, review folder, board hashes, library file path).
+        """
         project = root / "project"
         review = project / "review"
         review.mkdir(parents=True)
@@ -86,6 +100,11 @@ class ReviewPublicationTests(unittest.TestCase):
             calls = 0
 
             def changing(path):
+                """Replace the digest so that the library changes during the check.
+
+                The library digest is true on the first read and different on later
+                reads. Every other file keeps its true digest.
+                """
                 nonlocal calls
                 if path == long_path(dependency):
                     calls += 1
@@ -99,6 +118,15 @@ class ReviewPublicationTests(unittest.TestCase):
                 refresh_gallery.ReviewGallery.is_current(project, review, hashes)
 
     def folders(self, root: Path) -> tuple[Path, Path]:
+        """Create a review folder and a fresh folder that each hold a.png and b.png.
+
+        Review files hold the text "old-" and the name, fresh files "new-" and the name.
+
+        Inputs:
+            root: existing folder.
+        Outputs:
+            A tuple (review folder, fresh folder).
+        """
         review = root / "review"
         fresh = root / "fresh"
         review.mkdir()
@@ -139,6 +167,14 @@ class ReviewPublicationTests(unittest.TestCase):
             original_write = refresh_gallery.atomic_write
 
             def fail_second(target: Path, content: bytes) -> None:
+                """Replace the atomic write so that b.png fails.
+
+                Writing b.png raises OSError; every other file is written.
+
+                Inputs:
+                    target: file to write.
+                    content: bytes to write.
+                """
                 if target.name == "b.png":
                     raise OSError("simulated write failure")
                 original_write(target, content)
@@ -160,6 +196,15 @@ class ReviewPublicationTests(unittest.TestCase):
             original_write = refresh_gallery.atomic_write
 
             def edit_then_fail(target: Path, content: bytes) -> None:
+                """Replace the atomic write so that b.png fails after a user edit.
+
+                Writing b.png first edits a.png as a user would, then raises OSError;
+                every other file is written.
+
+                Inputs:
+                    target: file to write.
+                    content: bytes to write.
+                """
                 if target.name == "b.png":
                     (review / "a.png").write_bytes(b"intervening user edit")
                     raise OSError("simulated write failure")

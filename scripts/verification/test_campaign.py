@@ -1,4 +1,9 @@
-"""Campaigns edit only selected expressions and protect saved sources."""
+"""test_campaign.py: tests of guarded campaign edits.
+
+Campaigns edit only selected expressions and protect saved sources.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -46,7 +51,10 @@ SCHEMATIC = """(kicad_sch
 
 
 class CampaignTests(unittest.TestCase):
+    """Tests that campaigns edit only selected expressions and protect sources."""
+
     def setUp(self):
+        """Create a temporary project with a board, a schematic and a planner."""
         self.tmp = tempfile.TemporaryDirectory(prefix="jessie-campaign-test-")
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name)
@@ -94,6 +102,13 @@ class CampaignTests(unittest.TestCase):
         values = ("a", "(setup)", 'a"b', r"a\\b", "\n", "\ufeff")
 
         def form(depth=0):
+            """Build a random S-expression of up to four nested levels.
+
+            Inputs:
+                depth: Nesting level of the expression.
+            Outputs:
+                Expression text whose names and values are bare or quoted at random.
+            """
             name = rng.choice(names)
             token = name if all(c.isalnum() or c in "_-" for c in name) else quote(name)
             parts = [token]

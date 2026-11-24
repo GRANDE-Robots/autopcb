@@ -1,4 +1,9 @@
-"""Native obstacle reuse must never cross a changed board or rule set."""
+"""test_native_obstacle_cache.py: tests of native obstacle reuse.
+
+Native obstacle reuse must never cross a changed board or rule set.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -11,12 +16,29 @@ from unittest.mock import patch
 from pcb.route_native import NativeObstacleCache, NativeSnapshot
 
 
-def fake_snapshot(path, _net, *, assume_refill=False, removals=None):
-    del assume_refill, removals
-    return NativeSnapshot(hashlib.sha256(path.read_bytes()).hexdigest(), (), 0)
+class ObstacleReaderStub:
+    """Stands in for the native obstacle reader."""
+
+    @staticmethod
+    def read(path, _net, *, assume_refill=False, removals=None):
+        """Return a snapshot that is bound to the hash of the board file.
+
+        Inputs:
+            path: Board file to hash.
+            _net: Net name; unused.
+            assume_refill: Ignored.
+            removals: Ignored.
+        Outputs:
+            A NativeSnapshot with the SHA-256 of the file, no obstacles and no ignored
+            zones.
+        """
+        del assume_refill, removals
+        return NativeSnapshot(hashlib.sha256(path.read_bytes()).hexdigest(), (), 0)
 
 
 class NativeObstacleCacheTests(unittest.TestCase):
+    """Tests that cached native obstacles never cross a changed board or rule set."""
+
     def test_reuse_is_bound_to_contents_net_and_refill_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "fixture.kicad_pcb"
@@ -25,7 +47,8 @@ class NativeObstacleCacheTests(unittest.TestCase):
             rules.write_bytes(b"rules one")
             cache = NativeObstacleCache()
             with patch(
-                "pcb.route_native.read_native_obstacles", side_effect=fake_snapshot
+                "pcb.route_native.read_native_obstacles",
+                side_effect=ObstacleReaderStub.read,
             ) as read:
                 first = cache.load(source, "A", assume_refill=True)
                 self.assertIs(cache.load(source, "A", assume_refill=True), first)
@@ -44,7 +67,8 @@ class NativeObstacleCacheTests(unittest.TestCase):
             source.write_bytes(b"before")
 
             def mutate(path, net, **options):
-                result = fake_snapshot(path, net, **options)
+                """Read the snapshot, then rewrite the board file as a user edit would."""
+                result = ObstacleReaderStub.read(path, net, **options)
                 path.write_bytes(b"after")
                 return result
 
@@ -59,7 +83,8 @@ class NativeObstacleCacheTests(unittest.TestCase):
             cache = NativeObstacleCache()
             removal = [{"kind": "segment", "uuid": "test"}]
             with patch(
-                "pcb.route_native.read_native_obstacles", side_effect=fake_snapshot
+                "pcb.route_native.read_native_obstacles",
+                side_effect=ObstacleReaderStub.read,
             ) as read:
                 cache.load(source, "A", removals=removal)
                 cache.load(source, "A", removals=removal)

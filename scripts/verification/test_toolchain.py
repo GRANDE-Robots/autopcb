@@ -1,4 +1,8 @@
-"""Check tool discovery and version-dependent behavior without a live editor."""
+"""test_toolchain.py: check tool discovery and version-dependent behavior without a live
+editor.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -21,7 +25,13 @@ CLI_AVAILABLE = CLI is not None and CLI.is_file()
 
 
 class ToolchainTests(unittest.TestCase):
+    """Checks KiCad tool discovery, capability reports and the inspect command."""
+
     def setUp(self) -> None:
+        """Create a temporary folder under the system temporary directory.
+
+        Sets ``root`` to it and removes it after the test.
+        """
         self.temporary = tempfile.TemporaryDirectory(prefix="jessie-toolchain-test-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -57,6 +67,15 @@ class ToolchainTests(unittest.TestCase):
         jar.write_text("placeholder", encoding="utf-8")
 
         def run(executable, args):
+            """Stand in for running a KiCad command line query.
+
+            Inputs:
+                executable: The command line tool, which must be the one under test.
+                args: The query arguments; only the version, help, DRC help and ERC help
+                    queries are known.
+            Outputs:
+                The canned success flag and output text for the query.
+            """
             self.assertEqual(executable, cli)
             return {
                 ("version",): (True, "10.0.6"),
@@ -141,6 +160,8 @@ class ToolchainTests(unittest.TestCase):
 
 
 class RouterCacheTests(unittest.TestCase):
+    """Checks the cache locations of the external router binaries."""
+
     def test_external_router_binaries_are_named_for_the_host(self):
         name = "fastroute.exe" if os.name == "nt" else "fastroute"
         with (

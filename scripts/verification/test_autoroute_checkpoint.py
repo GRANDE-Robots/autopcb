@@ -1,4 +1,9 @@
-"""Automatic small-island checkpoints advance multi-terminal nets safely."""
+"""test_autoroute_checkpoint.py: check small-island routing checkpoints.
+
+Automatic small-island checkpoints advance multi-terminal nets safely.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -17,20 +22,31 @@ from verification import test_net_routing as fixtures
 from verification import test_route_optimizer as boards
 
 
-def point(x, y):
-    return Site(Point.from_mm([x, y]), "F.Cu")
+class SiteFactory:
+    """Builds routing access sites for the checkpoint tests."""
+
+    @staticmethod
+    def front(x, y):
+        """Return a Site at (x, y) mm on F.Cu."""
+        return Site(Point.from_mm([x, y]), "F.Cu")
 
 
 class CheckpointRoutingTests(unittest.TestCase):
+    """Tests for checkpoint selection, search windows and partial routing."""
+
     def test_checkpoint_uses_nearest_of_all_retained_access_sites(self):
         from pcb.net_routing.checkpoint import choose_checkpoint
 
-        sites = tuple(point(20 + i, 0) for i in range(12)) + (point(1, 0),)
-        net = Net("N", (Island("many", sites), Island("target", (point(0, 0),))))
+        sites = tuple(SiteFactory.front(20 + i, 0) for i in range(12)) + (
+            SiteFactory.front(1, 0),
+        )
+        net = Net(
+            "N", (Island("many", sites), Island("target", (SiteFactory.front(0, 0),)))
+        )
         selection = choose_checkpoint(net, maximum=2)
         self.assertEqual(
             {site.point for site in selection.anchors},
-            {point(0, 0).point, point(1, 0).point},
+            {SiteFactory.front(0, 0).point, SiteFactory.front(1, 0).point},
         )
 
     def test_nearest_access_pair_matches_exhaustive_search(self):
@@ -41,6 +57,10 @@ class CheckpointRoutingTests(unittest.TestCase):
         for _ in range(30):
 
             def make_site():
+                """Return a Site at a random point of a 100 mm square on a random layer.
+
+                The layer is one of F.Cu, B.Cu, In1.Cu and In2.Cu.
+                """
                 return Site(
                     Point(rng.randrange(100_000_000), rng.randrange(100_000_000)),
                     rng.choice(layers),
@@ -61,7 +81,9 @@ class CheckpointRoutingTests(unittest.TestCase):
     def test_checkpoint_selects_small_different_subsets(self):
         from pcb.net_routing.checkpoint import CheckpointChooser
 
-        net = Net("N", tuple(Island(str(i), (point(i * 2, 0),)) for i in range(5)))
+        net = Net(
+            "N", tuple(Island(str(i), (SiteFactory.front(i * 2, 0),)) for i in range(5))
+        )
         first, anchors = CheckpointChooser.select(net, maximum=2, offset=0)
         second, _ = CheckpointChooser.select(net, maximum=2, offset=1)
         self.assertEqual(len(first.islands), 2)
@@ -73,7 +95,7 @@ class CheckpointRoutingTests(unittest.TestCase):
         from pcb.net_routing.checkpoint import search_window
 
         window, step = search_window(
-            (point(10, 10), point(12, 10)),
+            (SiteFactory.front(10, 10), SiteFactory.front(12, 10)),
             (0.0, 0.0, 100.0, 100.0),
             4.0,
             0.1,
@@ -96,7 +118,7 @@ class CheckpointRoutingTests(unittest.TestCase):
         )
         self.assertEqual(inset, 0.5)
         window, step = search_window(
-            (point(2, 2), point(8, 5)),
+            (SiteFactory.front(2, 2), SiteFactory.front(8, 5)),
             (0.0, 0.0, 10.0, 8.0),
             0.2,
             0.5,
@@ -107,7 +129,7 @@ class CheckpointRoutingTests(unittest.TestCase):
         self.assertEqual(window, (1.0, 1.0, 9.0, 6.0))
         self.assertEqual(step, 0.5)
         coarse, coarse_step = search_window(
-            (point(30, 30), point(70, 70)),
+            (SiteFactory.front(30, 30), SiteFactory.front(70, 70)),
             (0.0, 0.0, 100.0, 100.0),
             0.2,
             0.01,
@@ -121,7 +143,7 @@ class CheckpointRoutingTests(unittest.TestCase):
         for invalid in (-0.1, float("nan"), True):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 search_window(
-                    (point(2, 2), point(8, 5)),
+                    (SiteFactory.front(2, 2), SiteFactory.front(8, 5)),
                     (0.0, 0.0, 10.0, 8.0),
                     0.2,
                     0.5,
@@ -133,7 +155,9 @@ class CheckpointRoutingTests(unittest.TestCase):
     def test_three_island_choices_do_not_repeat_the_same_set_or_wrap(self):
         from pcb.net_routing.checkpoint import CheckpointExhausted, choose_checkpoint
 
-        net = Net("N", tuple(Island(str(i), (point(i * 2, 0),)) for i in range(6)))
+        net = Net(
+            "N", tuple(Island(str(i), (SiteFactory.front(i * 2, 0),)) for i in range(6))
+        )
         first = choose_checkpoint(net, maximum=3)
         selections = [
             choose_checkpoint(net, maximum=3, offset=i) for i in range(first.count)

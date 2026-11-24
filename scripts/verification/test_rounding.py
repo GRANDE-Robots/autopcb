@@ -1,4 +1,9 @@
-"""Native regressions for bounded joint rounding and its independent proof."""
+"""test_rounding.py: tests of bounded joint rounding and its proof.
+
+Native regressions for bounded joint rounding and its independent proof.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from pathlib import Path
 import tempfile
@@ -13,7 +18,10 @@ from pcb.route_optimizer import mm
 
 
 class JointRoundingTests(unittest.TestCase):
+    """Tests that joint rounding repairs eligible joints and proves the result."""
+
     def setUp(self):
+        """Create a temporary project path and a board that has the net SIGNAL."""
         self.tmp = tempfile.TemporaryDirectory(prefix="autopcb-rounding-test-")
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name)
@@ -22,6 +30,14 @@ class JointRoundingTests(unittest.TestCase):
         self.board.Add(pcbnew.NETINFO_ITEM(self.board, "SIGNAL"))
 
     def trace(self, start, end):
+        """Add a 0.2 mm B.Cu track on net SIGNAL.
+
+        Inputs:
+            start: (x, y) of the start, in nm.
+            end: (x, y) of the end, in nm.
+        Outputs:
+            The added track.
+        """
         item = pcbnew.PCB_TRACK(self.board)
         item.SetStart(pcbnew.VECTOR2I(*start))
         item.SetEnd(pcbnew.VECTOR2I(*end))
@@ -32,10 +48,23 @@ class JointRoundingTests(unittest.TestCase):
         return item
 
     def pair(self):
+        """Add two tracks that meet at (3, 2) mm; the second ends 1 nm beyond (4, 3) mm.
+
+        Outputs:
+            The second track.
+        """
         self.trace((mm(2), mm(2)), (mm(3), mm(2)))
         return self.trace((mm(3), mm(2)), (mm(4) + 1, mm(3)))
 
     def snapshots(self, changes):
+        """Save the board, plan the campaign changes and load both results.
+
+        Inputs:
+            changes: Campaign changes for the board.
+        Outputs:
+            The saved bytes, the planned bytes, the saved board and the board loaded
+            from the planned bytes.
+        """
         pcbnew.SaveBoard(str(self.path), self.board)
         before = self.path.read_bytes()
         after = CampaignPlanner(self.project).plan("pcb", changes).after

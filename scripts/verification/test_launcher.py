@@ -1,4 +1,9 @@
-"""Focused tests for the single Jessie tools entry point."""
+"""test_launcher.py: check the single tools entry point.
+
+Focused tests for the Jessie tools launcher.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -21,6 +26,8 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    """Tests for the core launcher: interruption, action specs and arguments."""
+
     def test_interruption_does_not_print_a_python_traceback(self):
         messages = io.StringIO()
         with mock.patch.object(run.subprocess, "run", side_effect=KeyboardInterrupt):
@@ -36,6 +43,14 @@ class LauncherTests(unittest.TestCase):
         self.assertNotIn("Traceback", messages.getvalue())
 
     def args(self, group, action=None):
+        """Return launcher arguments for an example project and Python path.
+
+        Inputs:
+            group: action group name.
+            action: action name or None.
+        Outputs:
+            An argparse.Namespace with project, kicad_python, group and action.
+        """
         return argparse.Namespace(
             project=Path("example-project"),
             kicad_python=Path("kicad-python.exe"),

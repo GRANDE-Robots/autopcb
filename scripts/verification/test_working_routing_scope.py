@@ -1,4 +1,9 @@
-"""A development routing scope must stay explicit and preserve release gates."""
+"""test_working_routing_scope.py: tests of the development routing scope.
+
+A development routing scope must stay explicit and preserve release gates.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -13,6 +18,8 @@ from review.refresh_gallery import ReviewGallery
 
 
 class WorkingScopeTests(unittest.TestCase):
+    """Tests that the working routing scope stays explicit and keeps the release gates."""
+
     def test_explicit_rule_adoption_still_protects_the_saved_board_and_other_inputs(
         self,
     ):

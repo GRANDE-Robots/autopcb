@@ -1,4 +1,8 @@
-"""Placement study verdicts and equal-budget arms (no KiCad needed)."""
+"""test_placement_study.py: check placement study verdicts and equal-budget arms without
+KiCad.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -13,51 +17,108 @@ from unittest.mock import patch
 from autopcb import placement_study as study
 
 
-def geometry(*, parts=None, lengths=(5.0,), vias=0):
-    parts = parts or {"R1": (1, 1, "F.Cu"), "R2": (5, 5, "F.Cu")}
-    return {
-        "bounds": [[0, 0], [20, 10]],
-        "footprints": [
-            {"ref": r, "at": [x, y], "layer": s} for r, (x, y, s) in parts.items()
-        ],
-        "tracks": [{"via": False, "length_mm": n} for n in lengths]
-        + [{"via": True, "length_mm": 0}] * vias,
-    }
+class GeometryBuilder:
+    """Builds the board geometry that the placement study reads."""
+
+    def __call__(self, *, parts=None, lengths=(5.0,), vias=0):
+        """Build the geometry report that the placement study reads.
+
+        The board spans 20 mm by 10 mm.
+
+        Inputs:
+            parts: Mapping of reference to x in mm, y in mm and layer; two resistors on
+                F.Cu by default.
+            lengths: Lengths in mm of the tracks.
+            vias: Number of vias.
+        Outputs:
+            The geometry report with bounds, footprints and tracks.
+        """
+        parts = parts or {"R1": (1, 1, "F.Cu"), "R2": (5, 5, "F.Cu")}
+        return {
+            "bounds": [[0, 0], [20, 10]],
+            "footprints": [
+                {"ref": r, "at": [x, y], "layer": s} for r, (x, y, s) in parts.items()
+            ],
+            "tracks": [{"via": False, "length_mm": n} for n in lengths]
+            + [{"via": True, "length_mm": 0}] * vias,
+        }
 
 
-def arm(
-    name,
-    *,
-    opens,
-    passed=True,
-    applied=True,
-    area=200.0,
-    length=10.0,
-    vias=0,
-    moved=(),
-    preview=None,
-):
-    metrics = study.BoardMetrics(area, length, vias)
-    return study.ArmResult(
+geometry = GeometryBuilder()
+
+
+class ArmBuilder:
+    """Builds the result of one study arm."""
+
+    def __call__(
+        self,
         name,
-        preview or {"best_preview_opens": opens},
-        metrics,
-        [{"ref": r} for r in moved],
-        applied,
+        *,
         opens,
-        passed,
-        0.0,
-    )
+        passed=True,
+        applied=True,
+        area=200.0,
+        length=10.0,
+        vias=0,
+        moved=(),
+        preview=None,
+    ):
+        """Build the result of one study arm.
+
+        Inputs:
+            name: Arm name.
+            opens: Open connections that verification found; the default preview reports
+                the same count.
+            passed: Whether native verification passed.
+            applied: Whether the preview was applied.
+            area: Board area in mm2.
+            length: Track length in mm.
+            vias: Via count.
+            moved: References of the parts that moved.
+            preview: Preview report, or None for one built from ``opens``.
+        Outputs:
+            The arm result with zero wall seconds.
+        """
+        metrics = study.BoardMetrics(area, length, vias)
+        return study.ArmResult(
+            name,
+            preview or {"best_preview_opens": opens},
+            metrics,
+            [{"ref": r} for r in moved],
+            applied,
+            opens,
+            passed,
+            0.0,
+        )
+
+
+arm = ArmBuilder()
 
 
 ORIGINAL = study.BoardMetrics(200.0, 4.0, 0)
 
 
-def verdict(fixed, moves):
-    return study.Verdict(fixed, moves, ORIGINAL).as_dict()
+class VerdictBuilder:
+    """Judges a pair of study arms against the original board metrics."""
+
+    def __call__(self, fixed, moves):
+        """Judge a pair of arms against the original board metrics.
+
+        Inputs:
+            fixed: Result of the arm that kept placement.
+            moves: Result of the arm that could move parts.
+        Outputs:
+            The verdict as a dictionary.
+        """
+        return study.Verdict(fixed, moves, ORIGINAL).as_dict()
+
+
+verdict = VerdictBuilder()
 
 
 class MetricsTests(unittest.TestCase):
+    """Checks the board metrics measured from inspected geometry."""
+
     def test_vias_count_but_add_no_length(self):
         metrics = study.BoardMetrics.from_geometry(geometry(lengths=(3.0, 2.5), vias=2))
         self.assertEqual(
@@ -81,6 +142,8 @@ class MetricsTests(unittest.TestCase):
 
 
 class VerdictTests(unittest.TestCase):
+    """Checks which arm the verdict keeps and what moving cost."""
+
     def test_fixed_stall_and_verified_move_meet_the_criterion(self):
         result = verdict(
             arm("fixed", opens=3, applied=False),
@@ -119,10 +182,22 @@ class VerdictTests(unittest.TestCase):
 
 
 class ArmTests(unittest.TestCase):
+    """Checks that study arms share a budget and differ only in placement."""
+
     def run_arms(self, apply_error=None):
+        """Run both study arms against stand-ins for the router and board checks.
+
+        Inputs:
+            apply_error: Message of the error that applying the fixed arm raises, or
+                None.
+        Outputs:
+            The preview requests in the order they were made, and the results of the
+            fixed arm and the moving arm.
+        """
         calls = []
 
         def preview(self, **kwargs):
+            """Record the preview request; report no opens if placement may move."""
             calls.append(kwargs)
             return {
                 "status": "preview",
@@ -131,6 +206,7 @@ class ArmTests(unittest.TestCase):
             }
 
         def apply(self, run_id):
+            """Raise the requested error for the arm that keeps placement."""
             if apply_error and not calls[-1]["allow_placement"]:
                 raise RuntimeError(apply_error)
 
@@ -178,12 +254,17 @@ class ArmTests(unittest.TestCase):
 
 
 class VariantStudyTests(unittest.TestCase):
+    """Checks the per-seed private copies and verdict counts of the variant study."""
+
     def test_each_seed_packs_a_private_copy_with_the_policy_and_is_counted(self):
         requests = []
 
         class Native:
+            """Stand in for the native worker of the variant study."""
+
             @staticmethod
             def worker(operation, board, record, request, output):
+                """Record the request and list one unroutable net for the first one."""
                 requests.append(
                     (operation, json.loads(Path(request).read_text(encoding="utf-8")))
                 )
@@ -194,6 +275,7 @@ class VariantStudyTests(unittest.TestCase):
 
             @staticmethod
             def status():
+                """Report an empty native status."""
                 return {}
 
         verdicts = iter(
@@ -220,6 +302,7 @@ class VariantStudyTests(unittest.TestCase):
 
             @contextlib.contextmanager
             def opened(_self):
+                """Yield the working copy and project in place of a private copy."""
                 yield working, inner
 
             with (

@@ -1,9 +1,17 @@
-"""Board-wide planning includes every net and preserves reference constraints."""
+"""test_autoroute_controller.py: check the automatic routing controller.
+
+Board-wide planning includes every net and preserves reference constraints; runs resume,
+renew and report correctly.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 
 
 class AutoControllerTests(unittest.TestCase):
+    """Tests for the automatic routing controller and its work queue."""
+
     def test_runtime_search_budgets_change_only_numerical_limits(self):
         from pcb.net_routing.runner import apply_search_budget
 
@@ -138,6 +146,12 @@ class AutoControllerTests(unittest.TestCase):
         )
 
         def candidate(opens, style=()):
+            """Return a validated preview result.
+
+            Inputs:
+                opens: number of unconnected items left after the preview.
+                style: new style issues the preview introduces.
+            """
             return {
                 "status": "validated_preview",
                 "validation": {
@@ -187,10 +201,16 @@ class AutoControllerTests(unittest.TestCase):
         ]
 
         def fake_search(*args):
+            """Record that a search ran and return the prepared search results."""
             calls.append("search")
             return searches
 
         def fake_validate(function, directory, request, result, critical):
+            """Record the validation of a search result by its marker.
+
+            Outputs:
+                A validated preview result.
+            """
             calls.append("validate " + result["marker"])
             return {"status": "validated_preview", "attempts": []}
 
@@ -542,6 +562,10 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
+                """Record each preview round's first net and report no candidate.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     searched.append(args[1][0]["nets"][0]["name"])
                     return {"status": "no_candidate_found", "attempts": []}
@@ -610,6 +634,10 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
+                """Record each preview round's first net and report no candidate.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     searched.append(args[1][0]["nets"][0]["name"])
                     return {"status": "no_candidate_found", "attempts": []}
@@ -670,6 +698,10 @@ class AutoControllerTests(unittest.TestCase):
             searched = []
 
             def native(function, *args, **kwargs):
+                """Record each preview round and report no candidate.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     searched.append(args[1])
                     return {"status": "no_candidate_found", "attempts": []}
@@ -760,6 +792,13 @@ class AutoControllerTests(unittest.TestCase):
             progress = []
 
             def native(function, *args, **kwargs):
+                """Answer the repair searches with fixed results.
+
+                Stand-in for run_native. Preview rounds report no candidate. The reroute
+                search returns one copper rip-up request and one part move request. The
+                requests dispatched as preview alternatives are recorded and each is
+                rejected. Every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 if function is runner.NativePreview.reroutes:
@@ -854,6 +893,12 @@ class AutoControllerTests(unittest.TestCase):
             dispatched = []
 
             def native(function, *args, **kwargs):
+                """Reject every dispatched retry.
+
+                Stand-in for run_native. Preview rounds report no candidate. The
+                requests dispatched as ordinary retries are recorded and each is
+                rejected. Every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 if function is runner.NativePreview.preview_ordinary:
@@ -941,6 +986,10 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
+                """Report no candidate for preview rounds.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -1023,6 +1072,10 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
+                """Report no candidate for preview rounds.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -1092,6 +1145,10 @@ class AutoControllerTests(unittest.TestCase):
             original_native = runner.run_native
 
             def native(function, *args, **kwargs):
+                """Report no candidate for preview rounds.
+
+                Stand-in for run_native; every other operation runs unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -1171,6 +1228,11 @@ class AutoControllerTests(unittest.TestCase):
             original_native, original_search = runner.run_native, batch._search
 
             def seed_native(function, *args, **kwargs):
+                """Report no candidate for preview rounds.
+
+                Stand-in for run_native in the seeding run; every other operation runs
+                unchanged.
+                """
                 if function is runner.NativePreview.preview_round:
                     return {"status": "no_candidate_found", "attempts": []}
                 return original_native(function, *args, **kwargs)
@@ -1199,11 +1261,20 @@ class AutoControllerTests(unittest.TestCase):
             path.write_text(json.dumps(state), encoding="utf-8")
 
             def partial_search(args):
+                """Replace the batch search so that net OTHER has no complete candidate.
+
+                Every other net is searched normally.
+                """
                 if args[1]["nets"][0]["name"] == "OTHER":
                     return {"status": "no_complete_candidate_found", "search": {}}
                 return original_search(args)
 
             def local_preview(function, *args, **kwargs):
+                """Run preview rounds in this process.
+
+                Stand-in for run_native in the resumed run; every other operation goes
+                through the original run_native.
+                """
                 if function is runner.NativePreview.preview_round:
                     return function(*args, **kwargs)
                 return original_native(function, *args, **kwargs)
@@ -1247,6 +1318,7 @@ class AutoControllerTests(unittest.TestCase):
         from pcb.net_routing.runner import insert_reference_repairs
 
         def round_for(name):
+            """Return a round of one request for the named net."""
             return [{"nets": [{"name": name}]}]
 
         plan = {
@@ -1543,6 +1615,15 @@ class AutoControllerTests(unittest.TestCase):
         from pcb.route_validation import _segment_identities
 
         def summary(identifier, width, opens):
+            """Return the DRC summary of a board with one segment.
+
+            Inputs:
+                identifier: uuid of the segment, which carries a dangling-track warning.
+                width: segment width in mm.
+                opens: number of unconnected items in the report.
+            Outputs:
+                The summarized report, bound to the segment identities of that board.
+            """
             source = (
                 f"(kicad_pcb (segment (start 1 2) (end 3 2) (width {width}) "
                 f'(layer "F.Cu") (net "N") (uuid "{identifier}")))'
@@ -1573,6 +1654,14 @@ class AutoControllerTests(unittest.TestCase):
         from pcb.net_routing.runner import verify_resume_reports
 
         def summary(actual, opens):
+            """Return the DRC summary of a report with one copper-edge clearance error.
+
+            Inputs:
+                actual: measured clearance in mm named in the error description.
+                opens: number of unconnected items in the report.
+            Outputs:
+                The summarized report.
+            """
             finding = {
                 "type": "copper_edge_clearance",
                 "severity": "error",
@@ -1611,6 +1700,14 @@ class AutoControllerTests(unittest.TestCase):
         from pcb.net_routing.runner import verify_resume_reports
 
         def report(opens, warnings):
+            """Return a saved DRC report with one dangling-track violation per warning.
+
+            Inputs:
+                opens: number of open connections.
+                warnings: list of [severity, item identifiers] pairs.
+            Outputs:
+                The report in the form the resume check reads.
+            """
             return {
                 "open_connections": opens,
                 "ignored_checks": [],
@@ -2012,6 +2109,7 @@ class AutoControllerTests(unittest.TestCase):
         reports = Queue()
 
         def record(event):
+            """Queue the calling thread together with the event it received."""
             reports.put((current_thread(), event))
 
         with ProgressHeartbeat(record, interval=0.01):
@@ -2027,6 +2125,7 @@ class AutoControllerTests(unittest.TestCase):
 
         @contextmanager
         def bounded(**kwargs):
+            """Replace limit_resources with a job commit limit of 1234 bytes."""
             yield {"job_commit_limit_bytes": 1234}
 
         with (

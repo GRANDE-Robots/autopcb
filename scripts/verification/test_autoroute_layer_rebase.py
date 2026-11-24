@@ -1,4 +1,9 @@
-"""Layer-label and soft-cost checkpoint rebasing must preserve the design."""
+"""test_autoroute_layer_rebase.py: check checkpoint rebasing after layer changes.
+
+Layer-label and soft-cost checkpoint rebasing must preserve the design.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import hashlib
 import json
@@ -13,7 +18,14 @@ from pcb.net_routing.layer_rebase import (
 
 
 class LayerRebaseTests(unittest.TestCase):
+    """Tests for rebasing a checkpoint candidate after layer roles changed."""
+
     def setUp(self):
+        """Build the board texts and routing policy the tests rebase.
+
+        The old board has In1.Cu as a power layer, the new board has it as a signal
+        layer, and the candidate is the old board with one added uuid.
+        """
         self.old = (
             b'(kicad_pcb (layers (0 "F.Cu" signal) (4 "In1.Cu" power) '
             b'(6 "In2.Cu" signal) (2 "B.Cu" signal)) '
@@ -82,6 +94,7 @@ class LayerRebaseTests(unittest.TestCase):
         ).encode()
 
         def digest(value):
+            """Return the SHA-256 hex digest of the bytes."""
             return hashlib.sha256(value).hexdigest()
 
         inputs = {"v4.1.kicad_pcb": digest(self.old), "v4.1.kicad_sch": "unchanged"}

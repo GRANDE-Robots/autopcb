@@ -1,4 +1,9 @@
-"""Focused checks for the saved-board routing progress recorder."""
+"""test_routing_progress.py: check the routing progress recorder.
+
+Focused checks for the saved-board routing progress recorder.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -16,24 +21,38 @@ from PIL import Image
 from review import routing_progress as progress
 
 
-def point(
-    time: str, count: int, digest: str, signature: str = ""
-) -> progress.ProgressPoint:
-    return progress.ProgressPoint(
-        time, count, 0, 3, 0, digest * 64, signature * 64, "Test change", "Verified"
-    )
+class ProgressPoints:
+    """Builds progress points for the routing progress tests."""
+
+    @staticmethod
+    def make(
+        time: str, count: int, digest: str, signature: str = ""
+    ) -> progress.ProgressPoint:
+        """Return a progress point with a test change note and a verified state.
+
+        Inputs:
+            time: timestamp text.
+            count: number of open connections.
+            digest: character repeated 64 times as the board digest.
+            signature: character repeated 64 times as the signature.
+        """
+        return progress.ProgressPoint(
+            time, count, 0, 3, 0, digest * 64, signature * 64, "Test change", "Verified"
+        )
 
 
 class RoutingProgressTests(unittest.TestCase):
+    """Tests for ProgressPace, ProgressChart and the progress record files."""
+
     def test_scope_change_marks_the_last_saved_design_change_not_preview_history(self):
         points = [
-            point("2026-10-29T09:00:00-07:00", 189, "a"),
+            ProgressPoints.make("2026-10-29T09:00:00-07:00", 189, "a"),
             progress.replace(
-                point("2026-10-29T10:00:00-07:00", 177, "b"),
+                ProgressPoints.make("2026-10-29T10:00:00-07:00", 177, "b"),
                 change="IMU power and data moved off carrier; scope change",
             ),
             progress.replace(
-                point("2026-10-29T10:05:00-07:00", 177, "c"),
+                ProgressPoints.make("2026-10-29T10:05:00-07:00", 177, "c"),
                 change="Preview scope change",
             ),
         ]
@@ -45,12 +64,12 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_design_rebase_breaks_plot_lines_and_marks_scope(self):
         points = [
-            point("2026-11-03T09:00:00-08:00", 186, "a"),
+            ProgressPoints.make("2026-11-03T09:00:00-08:00", 186, "a"),
             progress.replace(
-                point("2026-11-04T09:00:00-08:00", 140, "b"),
+                ProgressPoints.make("2026-11-04T09:00:00-08:00", 140, "b"),
                 change="Imported v4.2 baseline; scope change",
             ),
-            point("2026-11-04T09:01:00-08:00", 139, "c"),
+            ProgressPoints.make("2026-11-04T09:01:00-08:00", 139, "c"),
         ]
         helper = getattr(progress.ProgressChart, "series_runs", None)
         self.assertTrue(callable(helper), "scope-aware plot segmentation is missing")
@@ -65,9 +84,9 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_preview_pace_uses_elapsed_wall_time_between_measured_changes(self):
         points = [
-            point("2026-10-29T09:00:00-07:00", 285, "a"),
-            point("2026-10-29T10:00:00-07:00", 262, "b"),
-            point("2026-10-29T10:02:00-07:00", 250, "c"),
+            ProgressPoints.make("2026-10-29T09:00:00-07:00", 285, "a"),
+            ProgressPoints.make("2026-10-29T10:00:00-07:00", 262, "b"),
+            ProgressPoints.make("2026-10-29T10:02:00-07:00", 250, "c"),
         ]
         self.assertEqual(
             progress.ProgressPace.latest_preview_pace(points, 1), (12, 120.0, 6.0)
@@ -76,12 +95,14 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_recorded_run_pace_excludes_idle_time_and_requires_a_valid_counter(self):
         points = [
-            point("2026-10-29T09:00:00-07:00", 285, "a"),
+            ProgressPoints.make("2026-10-29T09:00:00-07:00", 285, "a"),
             progress.replace(
-                point("2026-10-29T10:00:00-07:00", 262, "b"), routing_run_seconds=100
+                ProgressPoints.make("2026-10-29T10:00:00-07:00", 262, "b"),
+                routing_run_seconds=100,
             ),
             progress.replace(
-                point("2026-10-29T10:32:00-07:00", 250, "c"), routing_run_seconds=130
+                ProgressPoints.make("2026-10-29T10:32:00-07:00", 250, "c"),
+                routing_run_seconds=130,
             ),
         ]
         self.assertEqual(
@@ -94,12 +115,14 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_stalled_preview_reports_zero_rate_instead_of_hiding_speed(self):
         points = [
-            point("2026-10-29T09:00:00-07:00", 215, "a"),
+            ProgressPoints.make("2026-10-29T09:00:00-07:00", 215, "a"),
             progress.replace(
-                point("2026-10-29T10:00:00-07:00", 215, "b"), routing_run_seconds=0
+                ProgressPoints.make("2026-10-29T10:00:00-07:00", 215, "b"),
+                routing_run_seconds=0,
             ),
             progress.replace(
-                point("2026-10-29T10:02:00-07:00", 215, "b"), routing_run_seconds=60
+                ProgressPoints.make("2026-10-29T10:02:00-07:00", 215, "b"),
+                routing_run_seconds=60,
             ),
         ]
         self.assertEqual(
@@ -118,9 +141,10 @@ class RoutingProgressTests(unittest.TestCase):
             board.write_bytes(b"saved board")
             digest = hashlib.sha256(board.read_bytes()).hexdigest()
             saved = progress.replace(
-                point("2026-10-29T09:00:00-07:00", 285, "a"), pcb_sha256=digest
+                ProgressPoints.make("2026-10-29T09:00:00-07:00", 285, "a"),
+                pcb_sha256=digest,
             )
-            preview = point("2026-10-29T10:00:00-07:00", 281, "b")
+            preview = ProgressPoints.make("2026-10-29T10:00:00-07:00", 281, "b")
             history = progress.encode_history([saved])
             (review / progress.CSV_NAME).write_bytes(history)
             progress.publish_preview(
@@ -144,7 +168,7 @@ class RoutingProgressTests(unittest.TestCase):
             project = Path(directory)
             review = project / "deliverables" / "review"
             review.mkdir(parents=True)
-            current = point("2026-10-28T13:12:00-07:00", 381, "a", "b")
+            current = ProgressPoints.make("2026-10-28T13:12:00-07:00", 381, "a", "b")
             metrics = progress.RunMetrics(
                 "a" * 64, "b" * 64, 1.5, 120.0, "run evidence"
             )
@@ -204,8 +228,8 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_history_round_trip_and_timestamp_guard(self):
         points = [
-            point("2026-10-27T19:00:00-07:00", 464, "a"),
-            point("2026-10-28T13:12:00-07:00", 381, "b", "c"),
+            ProgressPoints.make("2026-10-27T19:00:00-07:00", 464, "a"),
+            ProgressPoints.make("2026-10-28T13:12:00-07:00", 381, "b", "c"),
         ]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "progress.csv"
@@ -223,8 +247,8 @@ class RoutingProgressTests(unittest.TestCase):
 
     def test_plot_is_a_readable_png(self):
         points = [
-            point("2026-10-27T19:00:00-07:00", 464, "a"),
-            point("2026-10-28T13:12:00-07:00", 381, "b"),
+            ProgressPoints.make("2026-10-27T19:00:00-07:00", 464, "a"),
+            ProgressPoints.make("2026-10-28T13:12:00-07:00", 381, "b"),
         ]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "progress.png"
@@ -238,7 +262,7 @@ class RoutingProgressTests(unittest.TestCase):
             project = Path(directory)
             review = project / "deliverables" / "review"
             review.mkdir(parents=True)
-            current = point("2026-10-28T13:12:00-07:00", 381, "a", "b")
+            current = ProgressPoints.make("2026-10-28T13:12:00-07:00", 381, "a", "b")
             with (
                 mock.patch.object(
                     progress, "check_saved_board", return_value=(current, {})
@@ -304,7 +328,7 @@ class RoutingProgressTests(unittest.TestCase):
             _save,
         )
 
-        sample = asdict(point("2026-10-28T13:12:00-07:00", 281, "a", "b"))
+        sample = asdict(ProgressPoints.make("2026-10-28T13:12:00-07:00", 281, "a", "b"))
         sample["routing_run_seconds"] = 10
         state = {
             "run_id": "a" * 32,

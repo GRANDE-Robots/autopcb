@@ -1,4 +1,8 @@
-"""Board-wide coverage must not silently discard nets or uncertain pads."""
+"""test_autoroute_inventory.py: check that board-wide coverage never silently discards
+nets or uncertain pads.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,17 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class BoardInventoryTests(unittest.TestCase):
+    """Checks that the board inventory keeps every net, pad island and copper island."""
+
     def inventory(self, board, schematic=None):
+        """Read the net inventory of a board.
+
+        Inputs:
+            board: The loaded KiCad board.
+            schematic: Schematic text used to verify no-connect markers, or None.
+        Outputs:
+            The board inventory from ``inventory_board``.
+        """
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.inventory"))
         from pcb.net_routing.inventory import inventory_board
 

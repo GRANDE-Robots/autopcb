@@ -1,4 +1,9 @@
-"""Check conservative discovery for nonpublishing differential-pair trials."""
+"""test_pair_probe.py: tests of differential-pair discovery trials.
+
+Check conservative discovery for nonpublishing differential-pair trials.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import contextlib
 import io
@@ -12,7 +17,14 @@ from pcb.net_routing.pair_probe import PairScope, PairDiscovery, PairTrialReport
 
 
 class PairProbeTests(unittest.TestCase):
+    """Tests that pair discovery is conservative and its trials publish nothing."""
+
     def setUp(self):
+        """Define the pair inputs.
+
+        The critical nets are USB_DP and USB_DM, with their endpoints, the class
+        USB_DATA and a gap of 0.24 for that class.
+        """
         self.critical = {"USB_DP", "USB_DM"}
         self.endpoints = {
             "USB_DP": {"J1": {"D+"}, "U1": {"1D+"}},
@@ -176,6 +188,14 @@ class PairProbeTests(unittest.TestCase):
         ]
 
         def conflict(signal, blocker, net, layer):
+            """Build a reference conflict record.
+
+            Inputs:
+                signal: Item id of the high-speed item.
+                blocker: Item id of the blocking item.
+                net: Net of the blocking item.
+                layer: Reference layer.
+            """
             return SimpleNamespace(
                 high_speed_item_id=signal,
                 blocking_item_id=blocker,

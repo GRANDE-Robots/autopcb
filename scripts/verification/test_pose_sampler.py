@@ -1,4 +1,9 @@
-"""Move candidates come from board geometry, not only from fixed nudges."""
+"""test_pose_sampler.py: tests of the pose sampler.
+
+Move candidates come from board geometry, not only from fixed nudges.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -22,11 +27,19 @@ class Guide:
 
     @staticmethod
     def clears(copies) -> bool:
+        """Say whether every copy sits at x = 4 mm or more."""
         return all(copy.GetPosition().x >= mm(4) for copy in copies)
 
 
 class PoseSamplerTests(unittest.TestCase):
+    """Tests that move candidates come from board geometry as well as from fixed nudges."""
+
     def setUp(self):
+        """Load the route test board and add the part R50 and the pad J50.
+
+        R50 sits at (3, 3) mm and J50 at (8, 7) mm, both on the net OTHER, which the
+        selection of R50 lists.
+        """
         self.folder = tempfile.TemporaryDirectory()
         self.board = pcbnew.LoadBoard(
             str(boards.RouteOptimizerTests.make_board(Path(self.folder.name)))
@@ -41,6 +54,7 @@ class PoseSamplerTests(unittest.TestCase):
         self.selected = ((0, "R50", self.part, {"OTHER"}),)
 
     def tearDown(self):
+        """Remove the temporary folder."""
         self.folder.cleanup()
 
     def test_the_shortest_clearing_move_comes_first(self):
@@ -57,6 +71,8 @@ class PoseSamplerTests(unittest.TestCase):
 
     def test_relocations_and_nudges_take_turns_so_a_short_list_holds_both(self):
         class Unguided:
+            """Guide with no diagnosed corridors."""
+
             corridors = ()
 
         poses = list(
@@ -69,10 +85,13 @@ class PoseSamplerTests(unittest.TestCase):
 
     def test_relocations_go_where_the_pads_meet_their_net_and_stay_legal(self):
         def legal(_selected, copies):
+            """Say whether the first copy is at least 1 mm from the point (8 mm, 7 mm)."""
             at = copies[0].GetPosition()
             return math.hypot(at.x / 1e6 - 8, at.y / 1e6 - 7) >= 1
 
         class Unguided:
+            """Guide with no diagnosed corridors."""
+
             corridors = ()
 
         poses = [

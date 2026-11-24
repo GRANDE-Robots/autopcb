@@ -1,4 +1,8 @@
-"""Verify that proposed branches have explicit, safe KiCad junctions."""
+"""test_route_junctions.py: check that proposed branches have explicit, safe KiCad
+junctions.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -23,16 +27,55 @@ from verification import test_net_routing as net_tests
 from verification import test_route_optimizer as route_tests
 
 
-def point(x: float, y: float) -> Point:
-    return Point(mm(x), mm(y))
+class PointBuilder:
+    """Builds a point from x and y in millimetres."""
+
+    def __call__(self, x: float, y: float) -> Point:
+        """Build a point from x and y in mm.
+
+        Inputs:
+            x: Horizontal position in mm.
+            y: Vertical position in mm.
+        Outputs:
+            The point in nm.
+        """
+        return Point(mm(x), mm(y))
 
 
-def route(*segments: Segment) -> Route:
-    return Route(tuple(segments), (), (), 0, 0, 0, 0)
+point = PointBuilder()
+
+
+class RouteBuilder:
+    """Builds a route made of the given segments and nothing else."""
+
+    def __call__(self, *segments: Segment) -> Route:
+        """Build a route from segments, with no vias and zero measures.
+
+        Inputs:
+            segments: The track segments of the route.
+        Outputs:
+            The route.
+        """
+        return Route(tuple(segments), (), (), 0, 0, 0, 0)
+
+
+route = RouteBuilder()
 
 
 class JunctionTests(unittest.TestCase):
+    """Checks that junctions keep branches connected and remove only safe copper."""
+
     def board_with_dangling_track(self, folder: str, *, intermediate_pad: bool = False):
+        """Save the fixture board with a track that ends without contact.
+
+        The 0.4 mm track on the net SIGNAL runs from (2, 2) mm to (6, 2) mm.
+
+        Inputs:
+            folder: Folder that receives the board.
+            intermediate_pad: Whether to add a SIGNAL pad J3 at (5, 2) mm on the track.
+        Outputs:
+            The board path, the loaded board and the UUID of the track.
+        """
         source = route_tests.RouteOptimizerTests.make_board(Path(folder))
         board = pcbnew.LoadBoard(str(source))
         net = board.FindNet("SIGNAL")
@@ -112,6 +155,16 @@ class JunctionTests(unittest.TestCase):
             real_drc = route_validation._drc
 
             def add_candidate_parity(*args, **kwargs):
+                """Run the real DRC and add a parity error for the candidate board.
+
+                The error is added when the board's folder is named ``after``.
+
+                Inputs:
+                    args: Arguments of the DRC call; the second is the board path.
+                    kwargs: Keyword arguments of the DRC call.
+                Outputs:
+                    The DRC report.
+                """
                 report = real_drc(*args, **kwargs)
                 if args[1].parent.name == "after":
                     report["schematic_parity"].append(
@@ -425,6 +478,17 @@ class JunctionTests(unittest.TestCase):
                     )
 
     def board_with_track(self, folder: str, *, locked: bool = False):
+        """Save the fixture board with a track that ends on a pad.
+
+        The 0.4 mm track on the net SIGNAL runs from (2, 2) mm to (6, 2) mm, where the
+        part J3 has a 1 mm square SMD pad.
+
+        Inputs:
+            folder: Folder that receives the board.
+            locked: Whether the track is locked.
+        Outputs:
+            The board path, the loaded board and the UUID of the track.
+        """
         source = route_tests.RouteOptimizerTests.make_board(Path(folder))
         board = pcbnew.LoadBoard(str(source))
         net = board.FindNet("SIGNAL")

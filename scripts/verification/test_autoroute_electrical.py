@@ -1,4 +1,9 @@
-"""Branch current and voltage-drop checks must fail closed on missing evidence."""
+"""test_autoroute_electrical.py: tests of the electrical network checks.
+
+Branch current and voltage-drop checks must fail closed on missing evidence.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -10,13 +15,25 @@ from pathlib import Path
 
 
 class ElectricalNetworkTests(unittest.TestCase):
+    """Tests of the branch current and voltage-drop assessment of a feed tree."""
+
     def api(self):
+        """Return the ``pcb.net_routing.electrical`` module, which must exist."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.electrical"))
         from pcb.net_routing import electrical
 
         return electrical
 
     def fixture(self, project):
+        """Write a ratings file and build a three-branch feed tree.
+
+        Inputs:
+            project: Folder that receives ``ratings.txt``.
+        Outputs:
+            The electrical module, the quantity builder, the branches and the scenarios.
+            A trunk feeds a left track and a right via; the one scenario draws 1 A and
+            0.5 A at the loads and allows a 0.4 V drop.
+        """
         api = self.api()
         document = project / "ratings.txt"
         document.write_text("Reviewed design envelope", encoding="utf-8")
@@ -28,6 +45,7 @@ class ElectricalNetworkTests(unittest.TestCase):
         )
 
         def quantity(value, unit):
+            """Build a quantity that cites the verified ratings file."""
             return api.Quantity(value, unit, evidence)
 
         branches = (

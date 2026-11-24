@@ -1,4 +1,9 @@
-"""Source-bound checkpoint behavior on disposable synthetic KiCad boards."""
+"""test_checkpoints.py: tests of source-bound checkpoints on synthetic boards.
+
+Source-bound checkpoint behavior on disposable synthetic KiCad boards.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -21,6 +26,8 @@ from verification import test_route_optimizer as route_tests
 
 
 class GroupingTests(unittest.TestCase):
+    """Tests of the run command, the net grouping and the local search bounds."""
+
     def test_run_command_forwards_a_neutral_seed(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -288,7 +295,13 @@ class GroupingTests(unittest.TestCase):
 
 
 class CheckpointTests(unittest.TestCase):
+    """Tests of checkpoint planning, attempts, neutral seeds and sequential previews."""
+
     def setUp(self):
+        """Create a temporary project with a routing board and a configuration.
+
+        The configuration includes the SIGNAL net with at most three pins.
+        """
         self.temp = tempfile.TemporaryDirectory(prefix="autopcb-checkpoint-test-")
         self.addCleanup(self.temp.cleanup)
         self.project = Path(self.temp.name)
@@ -310,6 +323,11 @@ class CheckpointTests(unittest.TestCase):
         )
 
     def make_checkpoint(self):
+        """Plan and save one checkpoint without changing the board.
+
+        Outputs:
+            Path of the saved checkpoint file ``0001.json``.
+        """
         plan, items = checkpoints.create_plan(self.project, self.config)
         self.assertEqual(len(items), 1, plan)
         saved = checkpoints.save_plan(self.project, plan, items)
@@ -352,6 +370,7 @@ class CheckpointTests(unittest.TestCase):
         original_obstacles = checkpoints.obstacles
 
         def restrict_pad(*args, **kwargs):
+            """Add a keepout over the pad area to the native obstacles."""
             native = original_obstacles(*args, **kwargs)
             keepout = Obstacle(
                 Point.from_mm([1, 1]), Point.from_mm([2.8, 3]), ("F.Cu",), "", "keepout"
@@ -385,6 +404,7 @@ class CheckpointTests(unittest.TestCase):
         captured = []
 
         def capture(net, _prior, _backend, _budget):
+            """Record the net that the search receives and return no route."""
             captured.append(net)
             return ()
 
@@ -423,6 +443,7 @@ class CheckpointTests(unittest.TestCase):
         captured = []
 
         def capture(net, _prior, _backend, _budget):
+            """Record the net that the search receives and return no route."""
             captured.append(net)
             return ()
 
@@ -464,6 +485,10 @@ class CheckpointTests(unittest.TestCase):
         calls = []
 
         def reject_first(*args, **kwargs):
+            """Validate as usual and record the evidence.
+
+            The first evidence is marked as having new DRC violations.
+            """
             evidence = validate(*args, **kwargs)
             calls.append(evidence)
             if len(calls) == 1:
@@ -471,6 +496,7 @@ class CheckpointTests(unittest.TestCase):
             return evidence
 
         def refine(_backend, _net, _prior, original):
+            """Return the route with its segments reversed and its cost lowered by one."""
             self.assertGreater(len(original.segments), 1)
             return replace(
                 original,
@@ -489,6 +515,10 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(self.board.read_bytes(), self.before)
 
     def add_second_signal(self):
+        """Add a second net SIGNAL2 with two pads to the board and the configuration.
+
+        The board hash that the tests compare against is refreshed.
+        """
         board = pcbnew.LoadBoard(str(self.board))
         board.Add(pcbnew.NETINFO_ITEM(board, "SIGNAL2"))
         for ref, position in (("J3", (2, 6.5)), ("J4", (8, 6.5))):
@@ -503,6 +533,15 @@ class CheckpointTests(unittest.TestCase):
         self.config.write_text(json.dumps(data))
 
     def make_neutral_seed(self):
+        """Build a neutral seed that replaces one existing track with an equal one.
+
+        The board gains the net EXISTING with two pads and a track between them. The
+        seed removes that track and adds the same geometry again, so the open count
+        stays unchanged.
+
+        Outputs:
+            Path of the seed file in the project configuration folder.
+        """
         from pcb.route_cli import campaign_changes
         from pcb.route_optimizer import Point, Route, Segment, mm
 
@@ -724,6 +763,10 @@ class CheckpointTests(unittest.TestCase):
         from pcb.net_routing.sequence import preview_sequence
 
         def stop_after_candidate(message):
+            """Interrupt the preview once the temporary board is reported.
+
+            Raise KeyboardInterrupt on the progress message about the temporary board.
+            """
             if "temporary board has" in message:
                 raise KeyboardInterrupt
 
@@ -746,6 +789,11 @@ class CheckpointTests(unittest.TestCase):
         changed = False
 
         def race(path):
+            """Read the file and edit the configuration once.
+
+            The first read of the configuration file appends a newline to it, as a user
+            edit would.
+            """
             nonlocal changed
             content = original_read(path)
             if path == self.config.resolve() and not changed:

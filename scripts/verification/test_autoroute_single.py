@@ -1,4 +1,8 @@
-"""One-net searches use the parallel scheduler without losing resume state."""
+"""test_autoroute_single.py: check that one-net searches use the parallel scheduler and
+keep resume state.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import tempfile
@@ -11,7 +15,19 @@ from verification import test_net_routing as net_fixtures
 
 
 class SingleNetSearchTests(unittest.TestCase):
+    """Checks resumable single-net planning against a saved project."""
+
     def project(self, project):
+        """Create a project for single-net planning from the combined batch fixture.
+
+        Adds a minimal schematic and a ``config/autopcb.json`` policy built from the net
+        routing test configuration.
+
+        Inputs:
+            project: Folder that receives the project files.
+        Outputs:
+            The board path of the combined batch fixture.
+        """
         source = batch_fixtures.CombinedBatchTests().project(project)
         (project / "v4.1.kicad_sch").write_text(
             '(kicad_sch (version 20250114) (generator "eeschema") '

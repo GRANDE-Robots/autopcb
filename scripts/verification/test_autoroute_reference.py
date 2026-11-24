@@ -1,4 +1,9 @@
-"""Protect local high-speed return corridors while leaving inner layers usable."""
+"""test_autoroute_reference.py: tests of high-speed return corridor protection.
+
+Protect local high-speed return corridors while leaving inner layers usable.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,8 @@ from verification import test_route_optimizer as route_fixtures
 
 
 class ReferenceCorridorTests(unittest.TestCase):
+    """Tests of the reference corridors kept clear for high-speed nets."""
+
     def test_local_launch_proof_rejects_a_new_slot_and_allows_only_existing_antipad(
         self,
     ):
@@ -37,6 +44,12 @@ class ReferenceCorridorTests(unittest.TestCase):
         before.Add(via)
 
         def cut(item, polygon):
+            """Subtract a polygon from the In1.Cu filled copper of a zone.
+
+            Inputs:
+                item: Zone whose In1.Cu fill is edited.
+                polygon: (x, y) corners of the void, in mm.
+            """
             void = pcbnew.SHAPE_POLY_SET()
             void.NewOutline()
             for x, y in polygon:
@@ -106,6 +119,14 @@ class ReferenceCorridorTests(unittest.TestCase):
             used = []
 
             def load(path, *, refill_zones):
+                """Stub for the refill loader that returns the board bytes.
+
+                Check that the project and rules files beside the board are unchanged.
+
+                Inputs:
+                    path: Board file that is loaded.
+                    refill_zones: Must be true.
+                """
                 self.assertTrue(refill_zones)
                 self.assertEqual(path.with_suffix(".kicad_pro").read_bytes(), project)
                 self.assertEqual(path.with_suffix(".kicad_dru").read_bytes(), rules)
@@ -134,6 +155,7 @@ class ReferenceCorridorTests(unittest.TestCase):
             used.clear()
 
             def fail(path, *, refill_zones):
+                """Load as the load stub does, then raise RuntimeError."""
                 load(path, refill_zones=refill_zones)
                 raise RuntimeError("refill failed")
 
@@ -147,12 +169,14 @@ class ReferenceCorridorTests(unittest.TestCase):
             self.assertTrue(all(not path.parent.exists() for path in used))
 
     def api(self):
+        """Return the ``pcb.net_routing.reference`` module, which must exist."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.reference"))
         from pcb.net_routing import reference
 
         return reference
 
     def board(self):
+        """Build a four-copper-layer board with the nets HS and OTHER."""
         board = pcbnew.BOARD()
         board.SetCopperLayerCount(4)
         board.Add(pcbnew.NETINFO_ITEM(board, "HS"))
@@ -160,6 +184,17 @@ class ReferenceCorridorTests(unittest.TestCase):
         return board
 
     def track(self, board, net, layer, start, end):
+        """Add a 0.2 mm track to a board.
+
+        Inputs:
+            board: Board that receives the track.
+            net: Name of a net on the board.
+            layer: pcbnew copper layer id.
+            start: (x, y) of the start, in mm.
+            end: (x, y) of the end, in mm.
+        Outputs:
+            The added track.
+        """
         track = pcbnew.PCB_TRACK(board)
         track.SetNetCode(board.FindNet(net).GetNetCode())
         track.SetLayer(layer)
@@ -271,6 +306,15 @@ class ReferenceCorridorTests(unittest.TestCase):
             self.assertEqual(result.reference_status, "project_rules_missing")
 
     def fill(self, board, layer, polygons):
+        """Add a filled ground zone to a board.
+
+        Inputs:
+            board: Board that receives the zone; its GND net is created when missing.
+            layer: pcbnew copper layer id of the zone.
+            polygons: Outlines of the filled area, each a list of (x, y) corners in mm.
+        Outputs:
+            The added zone, marked filled.
+        """
         ground = board.FindNet("GND")
         if ground is None:
             ground = pcbnew.NETINFO_ITEM(board, "GND")

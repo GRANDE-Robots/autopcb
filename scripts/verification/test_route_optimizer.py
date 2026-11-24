@@ -1,4 +1,8 @@
-"""Exercise routing search and its geometry without using a live project."""
+"""test_route_optimizer.py: check routing search and its geometry without using a live
+project.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -44,27 +48,58 @@ from pcb.route_optimizer import (
 )
 
 
-def point(x: float, y: float) -> Point:
-    return Point.from_mm([x, y])
+class PointBuilder:
+    """Builds a point from x and y in millimetres."""
+
+    def __call__(self, x: float, y: float) -> Point:
+        """Build a point from x and y in mm.
+
+        Inputs:
+            x: Horizontal position in mm.
+            y: Vertical position in mm.
+        Outputs:
+            The point in nm.
+        """
+        return Point.from_mm([x, y])
 
 
-def router(**changes) -> GridRouter:
-    values = {
-        "lower": point(-2, -2),
-        "upper": point(12, 12),
-        "step": mm(1),
-        "layers": ("F.Cu", "B.Cu"),
-        "net": "SIGNAL",
-        "width": mm(0.2),
-        "clearance": mm(0.2),
-        "via_size": mm(0.6),
-        "via_drill": mm(0.3),
-    }
-    values.update(changes)
-    return GridRouter(**values)
+point = PointBuilder()
+
+
+class GridRouterBuilder:
+    """Builds a grid router over a 14 mm square for the net SIGNAL."""
+
+    def __call__(self, **changes) -> GridRouter:
+        """Build a grid router with test defaults.
+
+        Inputs:
+            changes: Router arguments that replace the defaults.
+        Outputs:
+            A router for the net SIGNAL on F.Cu and B.Cu over (-2, -2) mm to (12, 12) mm
+            with a 1 mm step, 0.2 mm tracks and clearance, and 0.6 mm vias with 0.3 mm
+            drills.
+        """
+        values = {
+            "lower": point(-2, -2),
+            "upper": point(12, 12),
+            "step": mm(1),
+            "layers": ("F.Cu", "B.Cu"),
+            "net": "SIGNAL",
+            "width": mm(0.2),
+            "clearance": mm(0.2),
+            "via_size": mm(0.6),
+            "via_drill": mm(0.3),
+        }
+        values.update(changes)
+        return GridRouter(**values)
+
+
+router = GridRouterBuilder()
 
 
 class RouteOptimizerTests(unittest.TestCase):
+    """Checks the grid router, route planning and validation without a live project."""
+
     def test_centered_plated_oval_and_rectangular_pads_do_not_double_count_hole_clearance(
         self,
     ):
@@ -502,6 +537,14 @@ class RouteOptimizerTests(unittest.TestCase):
         step = 500_001
 
         def at(x, y):
+            """Place a point at a position counted in units of two grid steps.
+
+            Inputs:
+                x: Horizontal position in units of two steps.
+                y: Vertical position in units of two steps.
+            Outputs:
+                The point.
+            """
             return Point(round(x * 2 * step), round(y * 2 * step))
 
         wall = Obstacle(at(4, -1), at(6, 6), ("B.Cu",), "OTHER", "copper")
@@ -571,6 +614,19 @@ class RouteOptimizerTests(unittest.TestCase):
         spent = [0]
 
         def limited(plane, *args, **kwargs):
+            """Stand in for the route search: congest every plane except In2.Cu.
+
+            The layer of each searched plane and the expansions spent are recorded.
+
+            Inputs:
+                plane: The router of one transit plane.
+                args: Arguments of the real search.
+                kwargs: Keyword arguments of the real search, including its expansion
+                    budget.
+            Outputs:
+                The real result for In2.Cu. Raises SearchLimitReached for the other
+                planes.
+            """
             searched.append(plane.layers[0])
             if plane.layers != ("In2.Cu",):
                 used = kwargs["_expansion_budget"]
@@ -617,6 +673,16 @@ class RouteOptimizerTests(unittest.TestCase):
         checked = []
 
         def reject(candidate):
+            """Check and record a candidate route, then reject it.
+
+            The test fails unless the route runs from (1, 2) mm to (9, 2) mm and uses
+            two vias.
+
+            Inputs:
+                candidate: The whole proposed route.
+            Outputs:
+                False.
+            """
             checked.append(candidate)
             self.assertEqual(candidate.segments[0].start, point(1, 2))
             self.assertEqual(candidate.segments[-1].end, point(9, 2))
@@ -707,6 +773,7 @@ class RouteOptimizerTests(unittest.TestCase):
         )
 
         def stop(_):
+            """Stand in for the candidate check by interrupting the search."""
             raise RuntimeError("callback interrupted")
 
         with self.assertRaisesRegex(RuntimeError, "callback interrupted"):
@@ -753,6 +820,7 @@ class RouteOptimizerTests(unittest.TestCase):
         calls = []
 
         def stop():
+            """Stand in for the budget check; expire on the third call."""
             calls.append(None)
             if len(calls) == 3:
                 raise RuntimeError("budget expired")
@@ -775,6 +843,7 @@ class RouteOptimizerTests(unittest.TestCase):
         calls = []
 
         def stop():
+            """Stand in for the budget check; expire on the second call."""
             calls.append(None)
             if len(calls) == 2:
                 raise RuntimeError("budget expired")
@@ -807,10 +876,17 @@ class RouteOptimizerTests(unittest.TestCase):
         messages = []
 
         class Collector(wx.Log):
+            """Collects the messages that the wx logger delivers."""
+
             def DoLogRecord(self, level, message, info):
+                """Record the level and text of one log message."""
                 messages.append((level, message))
 
         def fake_plan(*_args, **_kwargs):
+            """Stand in for the planner: log a debug message and a warning.
+
+            The planner reports a geometric candidate.
+            """
             wx.LogDebug("Adding duplicate image handler for 'PNG file'")
             wx.LogWarning("A real KiCad warning")
             wx.Log.FlushActive()
@@ -840,6 +916,20 @@ class RouteOptimizerTests(unittest.TestCase):
         original = GridRouter.route
 
         def counted(instance, start, start_layer, end, end_layer, **kwargs):
+            """Stand in for the route search: count each budgeted search, then run it.
+
+            A search is counted by its endpoints, layers and heading constraints.
+
+            Inputs:
+                instance: The router that searches.
+                start: Start point.
+                start_layer: Layer of the start.
+                end: End point.
+                end_layer: Layer of the end.
+                kwargs: Keyword arguments of the real search.
+            Outputs:
+                The result of the real search.
+            """
             if "_expansion_budget" in kwargs:
                 calls[
                     (
@@ -871,6 +961,23 @@ class RouteOptimizerTests(unittest.TestCase):
         original = GridRouter.route
 
         def limited_first(instance, start, start_layer, end, end_layer, **kwargs):
+            """Stand in for the route search: fail the first budgeted search.
+
+            Later searches run for real.
+
+            The expansion budget of each budgeted search is recorded.
+
+            Inputs:
+                instance: The router that searches.
+                start: Start point.
+                start_layer: Layer of the start.
+                end: End point.
+                end_layer: Layer of the end.
+                kwargs: Keyword arguments of the real search.
+            Outputs:
+                The result of the real search. Raises SearchLimitReached for the first
+                budgeted search.
+            """
             if "_expansion_budget" in kwargs:
                 budgets.append(kwargs["_expansion_budget"])
                 if len(budgets) == 1:
@@ -901,12 +1008,28 @@ class RouteOptimizerTests(unittest.TestCase):
         calls = 0
 
         def deadline():
+            """Stand in for the budget check; expire on the fifth call."""
             nonlocal calls
             calls += 1
             if calls > 4:
                 raise SearchBudgetExceeded("deadline")
 
         def search(first, layer, last, other_layer, *, _expansion_budget, **_kwargs):
+            """Stand in for the grid search: refuse shallow budgets.
+
+            A deep enough budget returns a direct route.
+
+            Inputs:
+                first: Start point.
+                layer: Layer of the start.
+                last: End point.
+                other_layer: Layer of the end.
+                _expansion_budget: Search states the search may expand.
+            Outputs:
+                A one-segment route from first to last with a length of 5 mm, cost 5 and
+                80 expanded states. Raises SearchLimitReached when the budget is below
+                80.
+            """
             if _expansion_budget < 80:
                 raise SearchLimitReached(
                     "pilot too shallow", expanded=_expansion_budget
@@ -1051,6 +1174,13 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_staircase_count_distinguishes_chamfers_and_overlapping_windows(self):
         def chain(points):
+            """Build B.Cu segments through a list of points.
+
+            Inputs:
+                points: Points in mm.
+            Outputs:
+                One segment between each pair of consecutive points.
+            """
             return [
                 Segment(point(*a), point(*b), "B.Cu")
                 for a, b in zip(points, points[1:])
@@ -1125,6 +1255,14 @@ class RouteOptimizerTests(unittest.TestCase):
         )
 
         def repeated_diagonal(result):
+            """Say whether a route repeats a diagonal around a straight step.
+
+            Inputs:
+                result: The route to examine.
+            Outputs:
+                True when three consecutive segments have the same diagonal first and
+                last and an axis-aligned middle.
+            """
             vectors = [
                 (s.end.x - s.start.x, s.end.y - s.start.y) for s in result.segments
             ]
@@ -2033,6 +2171,13 @@ class RouteOptimizerTests(unittest.TestCase):
         checked = []
 
         def reject(candidate):
+            """Check the heading constraints, record the candidate and reject it.
+
+            Inputs:
+                candidate: The proposed route.
+            Outputs:
+                False.
+            """
             self.assertEqual(
                 (model.initial_directions, model.final_directions), (initial, final)
             )
@@ -2082,6 +2227,13 @@ class RouteOptimizerTests(unittest.TestCase):
         checked = []
 
         def compatible(candidate):
+            """Record the heading of the first segment and accept only heading 1.
+
+            Inputs:
+                candidate: The proposed route.
+            Outputs:
+                Whether the first segment has heading 1.
+            """
             heading = model._direction(
                 candidate.segments[0].start, candidate.segments[0].end
             )
@@ -2102,6 +2254,13 @@ class RouteOptimizerTests(unittest.TestCase):
         seen = []
 
         def compatible(candidate):
+            """Record the candidate and accept only a route of several segments.
+
+            Inputs:
+                candidate: The proposed route.
+            Outputs:
+                Whether the route has more than one segment.
+            """
             seen.append(candidate)
             return len(candidate.segments) > 1
 
@@ -2143,6 +2302,7 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_unexpected_context_errors_propagate(self):
         def fail(_candidate):
+            """Stand in for a candidate check that raises ValueError."""
             raise ValueError("context bug")
 
         with self.assertRaisesRegex(ValueError, "context bug"):
@@ -2248,6 +2408,13 @@ class RouteOptimizerTests(unittest.TestCase):
         groups = {start: [[(start, point(1, 1))]], end: [[(point(4, 1), end)]]}
 
         def usable(route):
+            """Say whether a route avoids every segment that lies along y = 1 mm.
+
+            Inputs:
+                route: The proposed route.
+            Outputs:
+                Whether no segment starts and ends at y = 1 mm.
+            """
             return not any(s.start.y == s.end.y == mm(1) for s in route.segments)
 
         with (
@@ -2686,6 +2853,13 @@ class RouteOptimizerTests(unittest.TestCase):
 
     @staticmethod
     def config() -> dict:
+        """Build a route plan configuration for the net SIGNAL.
+
+        Outputs:
+            A configuration that routes from (2, 2) mm to (8, 5) mm, both on F.Cu, over
+            a 10 mm by 8 mm area with F.Cu and B.Cu available, a 0.25 mm step and 0.2 mm
+            tracks and clearance.
+        """
         return {
             "net": "SIGNAL",
             "bounds_mm": [0, 0, 10, 8],
@@ -2699,6 +2873,7 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_route_plan_obeys_a_shared_search_deadline(self):
         def expired():
+            """Stand in for a budget check that has already expired."""
             raise SearchBudgetExceeded("cleanup budget reached")
 
         with self.assertRaisesRegex(SearchBudgetExceeded, "cleanup budget reached"):
@@ -2708,6 +2883,7 @@ class RouteOptimizerTests(unittest.TestCase):
         calls = 0
 
         def expire_during_search():
+            """Stand in for the budget check; expire on the second call."""
             nonlocal calls
             calls += 1
             if calls >= 2:
@@ -2897,6 +3073,18 @@ class RouteOptimizerTests(unittest.TestCase):
 
     @staticmethod
     def make_board(project: Path, *, crossing: bool = False) -> Path:
+        """Save a 10 mm by 8 mm two-pad board with its project settings.
+
+        The board has an outline, the net SIGNAL with a 1 mm SMD pad on J1 at (2, 2) mm
+        and on J2 at (8, 5) mm, and a two-layer copper stackup.
+
+        Inputs:
+            project: Folder that receives the board.
+            crossing: Whether to add a 0.2 mm F.Cu track of the net OTHER from (5, 0.5)
+                mm to (5, 7.5) mm.
+        Outputs:
+            The path of the saved board.
+        """
         import pcbnew
 
         source = project / "v4.1.kicad_pcb"

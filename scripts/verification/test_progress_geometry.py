@@ -1,4 +1,9 @@
-"""Exercise geometry measurements and source-bound progress history."""
+"""test_progress_geometry.py: tests of geometry measurements and progress history.
+
+Exercise geometry measurements and source-bound progress history.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -17,18 +22,33 @@ from review import routing_progress as progress
 from review.geometry_metrics import GeometryMetrics, measure_board
 
 
-def progress_point(digest: str) -> progress.ProgressPoint:
-    return progress.ProgressPoint(
-        "2026-10-28T12:00:00-07:00", 3, 0, 1, 0, digest, "", "test", "DRC"
-    )
+class ProgressFixtures:
+    """Builds progress history points for the progress tests."""
+
+    @staticmethod
+    def point(digest: str) -> progress.ProgressPoint:
+        """Build a progress point for a board digest.
+
+        Inputs:
+            digest: SHA-256 hex digest of the board the point belongs to.
+        Outputs:
+            A progress point checked at 2026-10-28T12:00:00-07:00 with three open
+            connections, no errors, one warning, no parity finding, an empty source
+            signature, the change ``test`` and the evidence ``DRC``.
+        """
+        return progress.ProgressPoint(
+            "2026-10-28T12:00:00-07:00", 3, 0, 1, 0, digest, "", "test", "DRC"
+        )
 
 
 class GeometryProgressTests(unittest.TestCase):
+    """Tests of the geometry metrics and of the source-bound progress history and chart."""
+
     def test_symmetry_and_runtime_are_plotted_when_measured(self):
         self.assertIn("symmetry_score", progress.FIELDS)
         self.assertIn("routing_run_seconds", progress.FIELDS)
         point = replace(
-            progress_point("a" * 64),
+            ProgressFixtures.point("a" * 64),
             symmetry_score=1.5,
             routing_run_seconds=123.0,
             optimization_evidence="verified run",
@@ -46,7 +66,7 @@ class GeometryProgressTests(unittest.TestCase):
     def test_previous_history_keeps_optimization_metrics_unknown(self):
         self.assertTrue(hasattr(progress, "PREVIOUS_FIELDS"))
         point = progress.ProgressRecorder.attach_geometry(
-            progress_point("a" * 64), GeometryMetrics(1, 2, 3), "source"
+            ProgressFixtures.point("a" * 64), GeometryMetrics(1, 2, 3), "source"
         )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "history.csv"
@@ -62,7 +82,7 @@ class GeometryProgressTests(unittest.TestCase):
 
     def test_run_metrics_require_the_matching_saved_board_and_source(self):
         self.assertTrue(hasattr(progress.ProgressRecorder, "attach_run_metrics"))
-        point = replace(progress_point("a" * 64), source_signature="b" * 64)
+        point = replace(ProgressFixtures.point("a" * 64), source_signature="b" * 64)
         with self.assertRaisesRegex(ValueError, "source"):
             progress.ProgressRecorder.attach_run_metrics(
                 point, "c" * 64, "b" * 64, 0.5, 10, "run"
@@ -79,7 +99,7 @@ class GeometryProgressTests(unittest.TestCase):
         )
 
     def test_parity_is_recorded_but_not_plotted(self):
-        point = progress_point("a" * 64)
+        point = ProgressFixtures.point("a" * 64)
         self.assertEqual(point.schematic_parity, 0)
         self.assertNotIn(
             "schematic_parity",
@@ -104,7 +124,7 @@ class GeometryProgressTests(unittest.TestCase):
         self.assertEqual(measured.degree_two_joints, 1)
 
     def test_legacy_history_preserves_unknown_geometry(self):
-        point = progress_point("a" * 64)
+        point = ProgressFixtures.point("a" * 64)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "history.csv"
             with path.open("w", encoding="utf-8", newline="") as stream:
@@ -132,7 +152,7 @@ class GeometryProgressTests(unittest.TestCase):
             unknown.parent.mkdir()
             unknown.write_bytes(b"different board")
             digest = hashlib.sha256(matched.read_bytes()).hexdigest()
-            history = [progress_point(digest), progress_point("b" * 64)]
+            history = [ProgressFixtures.point(digest), ProgressFixtures.point("b" * 64)]
             (review / progress.CSV_NAME).write_bytes(progress.encode_history(history))
             metrics = GeometryMetrics(22.5, 3, 4)
             with mock.patch.object(
@@ -156,7 +176,7 @@ class GeometryProgressTests(unittest.TestCase):
 
     def test_disagreement_does_not_replace_history(self):
         old = progress.ProgressRecorder.attach_geometry(
-            progress_point("a" * 64), GeometryMetrics(1.0, 2, 3), "saved"
+            ProgressFixtures.point("a" * 64), GeometryMetrics(1.0, 2, 3), "saved"
         )
         with self.assertRaisesRegex(ValueError, "disagrees"):
             progress.ProgressRecorder.attach_geometry(

@@ -1,4 +1,9 @@
-"""Drive the desktop and real native jobs against a private reference project."""
+"""test_desktop.py: drive the desktop and real native jobs.
+
+The tests run against a private reference project.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 from pathlib import Path
@@ -13,8 +18,15 @@ from core.project import SourceSnapshot
 
 
 class DesktopWorkflowTests(unittest.TestCase):
+    """Tests that run the desktop window and its native jobs offscreen."""
+
     @classmethod
     def setUpClass(cls):
+        """Start an offscreen Qt application and find the matched native toolchain.
+
+        Outputs:
+            Raises SkipTest when PySide6 or the matched native toolchain is missing.
+        """
         try:
             from PySide6 import QtCore, QtTest, QtWidgets
         except ImportError as error:
@@ -34,6 +46,13 @@ class DesktopWorkflowTests(unittest.TestCase):
         )
 
     def _wait_for_job(self, window):
+        """Process Qt events until the window's job process stops.
+
+        Inputs:
+            window: desktop window whose job is running.
+        Outputs:
+            Fails the test when the job runs longer than 450 seconds.
+        """
         deadline = monotonic() + 450
         while window.process.state() != self.qt.QProcess.ProcessState.NotRunning:
             if monotonic() > deadline:
@@ -41,6 +60,12 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.qtest.qWait(20)
 
     def _click(self, window, label):
+        """Click a button on the current tab and wait for the job it starts.
+
+        Inputs:
+            window: desktop window.
+            label: text of the one enabled button with that text on the tab.
+        """
         buttons = window.tabs.currentWidget().findChildren(self.widgets.QPushButton)
         matches = [button for button in buttons if button.text() == label]
         self.assertEqual(len(matches), 1, label)

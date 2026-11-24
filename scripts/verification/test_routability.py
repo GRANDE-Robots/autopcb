@@ -1,4 +1,8 @@
-"""Proofs that no route joins pads while every part stays put."""
+"""test_routability.py: check the proofs that no route joins pads while every part stays
+put.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -14,36 +18,63 @@ from pcb.routability import GridModel, Routability
 from verification import test_route_optimizer as boards
 
 
-def ring(board, center=(2, 2), radius=1.3, count=8, size=1.0):
-    """Through-hole pads of another net around ``center``, closed on every layer."""
-    board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
-    walls = []
-    for index in range(count):
-        angle = 2 * math.pi * index / count
-        at = pcbnew.VECTOR2I(
-            mm(round(center[0] + radius * math.cos(angle), 4)),
-            mm(round(center[1] + radius * math.sin(angle), 4)),
-        )
-        footprint = pcbnew.FOOTPRINT(board)
-        footprint.SetReference(f"W{index + 1}")
-        footprint.SetPosition(at)
-        pad = pcbnew.PAD(footprint)
-        pad.SetNumber("1")
-        pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
-        pad.SetSize(pcbnew.VECTOR2I(mm(size), mm(size)))
-        pad.SetDrillSize(pcbnew.VECTOR2I(mm(0.4), mm(0.4)))
-        pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
-        pad.SetLayerSet(pcbnew.PAD.PTHMask())
-        pad.SetPosition(at)
-        pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
-        footprint.Add(pad)
-        board.Add(footprint)
-        walls.append(footprint)
-    return walls
+class WallRingBuilder:
+    """Builds a ring of foreign-net pads that seals a point."""
+
+    def __call__(self, board, center=(2, 2), radius=1.3, count=8, size=1.0):
+        """Add a ring of through-hole pads of another net around a point.
+
+        The pads close the ring on every copper layer.
+
+        Inputs:
+            board: The board that receives the net OTHER and the wall parts.
+            center: Centre of the ring in mm.
+            radius: Radius of the ring in mm.
+            count: Number of wall parts.
+            size: Pad diameter in mm.
+        Outputs:
+            The wall parts, each with one pad, named W1 and up.
+        """
+        board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
+        walls = []
+        for index in range(count):
+            angle = 2 * math.pi * index / count
+            at = pcbnew.VECTOR2I(
+                mm(round(center[0] + radius * math.cos(angle), 4)),
+                mm(round(center[1] + radius * math.sin(angle), 4)),
+            )
+            footprint = pcbnew.FOOTPRINT(board)
+            footprint.SetReference(f"W{index + 1}")
+            footprint.SetPosition(at)
+            pad = pcbnew.PAD(footprint)
+            pad.SetNumber("1")
+            pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+            pad.SetSize(pcbnew.VECTOR2I(mm(size), mm(size)))
+            pad.SetDrillSize(pcbnew.VECTOR2I(mm(0.4), mm(0.4)))
+            pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
+            pad.SetLayerSet(pcbnew.PAD.PTHMask())
+            pad.SetPosition(at)
+            pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
+            footprint.Add(pad)
+            board.Add(footprint)
+            walls.append(footprint)
+        return walls
+
+
+ring = WallRingBuilder()
 
 
 class RoutabilityTests(unittest.TestCase):
+    """Checks that the proof reports unroutable nets with their blocking parts."""
+
     def board(self, folder):
+        """Load the fixture board saved in a folder.
+
+        Inputs:
+            folder: Folder that receives the board file.
+        Outputs:
+            The loaded board.
+        """
         return pcbnew.LoadBoard(
             str(boards.RouteOptimizerTests.make_board(Path(folder)))
         )

@@ -1,4 +1,9 @@
-"""Coverage regressions for the read-only impedance geometry review."""
+"""test_impedance_geometry.py: check the impedance geometry review.
+
+Coverage regressions for the read-only impedance geometry review.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import importlib.util
 import json
@@ -13,7 +18,13 @@ NATIVE = importlib.util.find_spec("pcbnew") is not None
 
 @unittest.skipUnless(NATIVE, "KiCad Python required")
 class ImpedanceTests(unittest.TestCase):
+    """Tests for the impedance geometry review of a native board."""
+
     def setUp(self):
+        """Create a temporary folder with a stackup specification and a project policy.
+
+        The stackup describes a two-layer board with one reviewed 90 ohm net class.
+        """
         import pcbnew
         from pcb.impedance import StackProfile, Trace
 
@@ -66,6 +77,18 @@ class ImpedanceTests(unittest.TestCase):
         )
 
     def build_board(self, *, extra=0, with_plane=True, gap=0.3):
+        """Save a board with a differential pair, a return net and an optional plane.
+
+        Net A runs 10 mm on F.Cu. Net B runs parallel to A at the given edge gap and is
+        10 mm plus extra long. Net RETURN is a 1 mm stub and, with a plane, also a
+        filled zone on B.Cu. The project settings are written next to the board and a
+        physical stackup is put into the board file.
+
+        Inputs:
+            extra: extra length of net B in mm.
+            with_plane: add the filled RETURN zone on B.Cu when true.
+            gap: edge-to-edge gap between A and B in mm.
+        """
         p = self.pcb
         board = p.BOARD()
         for name in ["A", "B", "RETURN"]:
@@ -142,6 +165,12 @@ class ImpedanceTests(unittest.TestCase):
         self.board.write_text(src, encoding="utf-8")
 
     def run_cli(self):
+        """Run the impedance command on the saved board with the stackup file.
+
+        Outputs:
+            A tuple (exit code, parsed JSON from stdout or an empty dictionary, stderr
+            text).
+        """
         scripts = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             [

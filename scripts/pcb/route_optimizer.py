@@ -1,4 +1,4 @@
-"""route_optimizer.py: plan editable octilinear track and via candidates on a conservative grid.
+"""route_optimizer.py: plan octilinear track and via candidates on a conservative grid.
 
 This is a geometric optimizer, not an electrical or manufacturing verifier.
 Native KiCad DRC and connectivity checks are required before using a result.
@@ -317,8 +317,9 @@ class SegmentsIntersect:
         """
 
         def cross(p: Point, q: Point, r: Point) -> int:
-            """Cross product of p to q with p to r; zero when the three points are
-            collinear.
+            """Cross product of p to q with p to r.
+
+            It is zero when the three points are collinear.
             """
             return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
 
@@ -371,7 +372,9 @@ class Weights:
     symmetry: float = 0.0
 
     def __post_init__(self) -> None:
-        """Raise ValueError unless every weight is finite and nonnegative and the length
+        """Check the weights.
+
+        Raises ValueError unless every weight is finite and nonnegative and the length
         weight is positive.
         """
         values = (self.length, self.bend, self.via, self.diagonal, self.symmetry)
@@ -805,8 +808,11 @@ class GridRouter:
                 self.via_blocked.update(self._covered(obstacle, via_margin))
 
     def _spatial_cells(self, first: Point, last: Point, margin: int = 0):
-        """Yield the spatial index cells that the box spanned by two points, grown by
-        margin nanometres, touches.
+        """Yield the spatial index cells that a box touches.
+
+        Inputs:
+            first, last: Opposite corners of the box in nanometres.
+            margin: Distance in nanometres by which the box is grown.
         """
         step = self._spatial_step
         for x in range(
@@ -857,8 +863,10 @@ class GridRouter:
                 break
 
             def clearance(obstacle):
-                """Clearance in nanometres required between the piece and the obstacle:
-                the router's own, or the one the profile gives.
+                """Clearance required between the piece and an obstacle.
+
+                Outputs:
+                    Nanometres: the router's clearance, or the one the profile gives.
                 """
                 if profile is None:
                     return self.clearance
@@ -991,8 +999,11 @@ class GridRouter:
     def _inside(self, x: int, y: int, margin: int) -> bool:
         # Relative integer coordinates are exactly equivalent to creating a
         # Point and checking the absolute bounds, without a per-cell allocation.
-        """Whether grid cell (x, y) lies at least margin nanometres inside the routing
-        bounds.
+        """Whether a grid cell lies inside the routing bounds.
+
+        Inputs:
+            x, y: Grid cell indices.
+            margin: Least distance in nanometres from the cell to the bounds.
         """
         return (
             margin <= x * self.step <= self.upper.x - self.lower.x - margin
@@ -1000,7 +1011,12 @@ class GridRouter:
         )
 
     def _inside_point(self, p: Point, margin: int) -> bool:
-        """Whether the point lies at least margin nanometres inside the routing bounds."""
+        """Whether a point lies inside the routing bounds.
+
+        Inputs:
+            p: Position in nanometres.
+            margin: Least distance in nanometres from the point to the bounds.
+        """
         return (
             self.lower.x + margin <= p.x <= self.upper.x - margin
             and self.lower.y + margin <= p.y <= self.upper.y - margin
@@ -1232,8 +1248,11 @@ class GridRouter:
                 )
 
         def estimate(cell):
-            """Sort key of a via cell: zero or the via weight, the octilinear distance
-            from start through the cell to end in nanometres, and the cell.
+            """Sort key of a via cell.
+
+            Outputs:
+                Zero for a reusable via or else the via weight, the octilinear distance in
+                nanometres from start through the cell to end, and the cell.
             """
             at = self._point(*cell)
             reusable = {start_layer, end_layer} <= self.existing_vias.get(cell, set())
@@ -1335,8 +1354,11 @@ class GridRouter:
             return None
 
         def candidates(endpoint: Point) -> list[tuple[tuple[int, int], bool]]:
-            """Up to 96 usable via cells near the endpoint as ((x, y), reusable) pairs,
-            reusable existing vias first and then the nearest.
+            """Usable via cells near an endpoint.
+
+            Outputs:
+                Up to 96 ((x, y), reusable) pairs: reusable existing vias first, then the
+                nearest cells.
             """
             cx = (endpoint.x - self.lower.x) // self.step
             cy = (endpoint.y - self.lower.y) // self.step
@@ -1422,8 +1444,10 @@ class GridRouter:
             detours = {}
 
             def joined(first, last, transit, middle):
-                """Join two pad escapes and the path between their vias on the transit
-                layer into one route.
+                """Join two pad escapes and the path between their vias.
+
+                Outputs:
+                    One route with both vias, the middle path running on the transit layer.
                 """
                 first_cell, first_reuse, first_path = first
                 last_cell, last_reuse, last_path = last
@@ -1454,8 +1478,10 @@ class GridRouter:
                 )
 
             def accepted(result):
-                """Whether a joined route passes the staircase rule and the caller's
-                check, which runs with the caller's endpoint directions restored.
+                """Whether a joined route is acceptable.
+
+                It must pass the staircase rule and the caller's candidate check, which runs
+                with the caller's endpoint directions restored.
                 """
                 if self.forbid_staircase and self._staircase_off_pads(result.segments):
                     return False
@@ -1563,8 +1589,9 @@ class GridRouter:
                     a, b = self._point(*first[0]), self._point(*last[0])
 
                     def compatible(middle):
-                        """Accept a transit-layer path only when the route joined with
-                        both escapes is accepted.
+                        """Accept a transit-layer path.
+
+                        It is accepted only when the route joined with both escapes is accepted.
                         """
                         return accepted(joined(first, last, transit, middle))
 
@@ -1651,8 +1678,10 @@ class GridRouter:
     def _endpoint_options(
         self, endpoint: Point, layer: str, *, reverse: bool
     ) -> list[tuple[Point, ...]]:
-        """The nearest group of clear grid escapes from an endpoint, or an empty list
-        when it has none.
+        """The nearest group of clear grid escapes from an endpoint.
+
+        Outputs:
+            The stubs of the first group, or an empty list when the endpoint has none.
         """
         return next(self._endpoint_option_groups(endpoint, layer, reverse=reverse), [])
 
@@ -1725,8 +1754,10 @@ class GridRouter:
     def _endpoint_cannot_begin_stub(self, endpoint: Point, layer: str) -> bool:
         # Longer physical tracks can activate a more permissive local rule.
         # Only minimum envelopes are monotone under every such extension.
-        """Whether every shortest grid stub from the endpoint is blocked even at the
-        minimum swept-copper envelope, so the endpoint has no escape.
+        """Whether the endpoint has no possible grid escape.
+
+        True when every shortest grid stub from the endpoint is blocked even at the
+        minimum swept-copper envelope.
         """
         length = self._minimum_stub_leg(endpoint)
         return all(
@@ -2063,8 +2094,10 @@ class GridRouter:
         remaining = self.max_expansions
 
         def goal_seeds() -> frozenset[tuple[int, int, int]]:
-            """Grid states (x, y, layer index) at the first grid vertex of every end
-            escape, on the end layer.
+            """Grid states at the first grid vertex of every end escape.
+
+            Outputs:
+                The (x, y, layer index) states, on the end layer.
             """
             layer = self.layers.index(end_layer)
             return frozenset((*self._index(last[0]), layer) for last in ends)
@@ -2172,9 +2205,10 @@ class GridRouter:
                         accepted = []
 
                         def valid_join(candidate):
-                            """Join a grid route with the current escapes and accept it
-                            only when the join is legal and passes candidate_check,
-                            keeping the joined route.
+                            """Join a grid route with the current escapes.
+
+                            Accepts the candidate only when the join is legal and passes candidate_check,
+                            and keeps the joined route.
                             """
                             result = self._join_off_grid(
                                 start,
@@ -2284,8 +2318,9 @@ class GridRouter:
                 alternatives = []
 
                 def legal_join(candidate):
-                    """Join a grid route with the current escapes and accept it when the
-                    join is legal, keeping the joined route.
+                    """Join a grid route with the current escapes.
+
+                    Accepts the candidate whenever the join is legal and keeps the joined route.
                     """
                     joined_candidate = self._join_off_grid(
                         start,
@@ -2435,8 +2470,10 @@ class GridRouter:
         return cls.staircase_count(segments) > 0
 
     def _staircase_off_pads(self, segments: Iterable[Segment]) -> bool:
-        """Judge each track chain between same-net pad copper, as the saved-board style
-        check does.
+        """Whether any chain of the segments forms a staircase.
+
+        Each track chain between same-net pad copper is judged on its own, as the
+        saved-board style check does.
         """
         chain: list[Segment] = []
         for segment in self._runs(segments):
@@ -2564,8 +2601,13 @@ class GridRouter:
         max_run = math.ceil(self.min_segment_length / self.step)
 
         def long_enough(direction: int, steps: int) -> bool:
-            """Whether a run of steps grid steps in a direction reaches
-            min_segment_length; always true for no run.
+            """Whether a run reaches the minimum segment length.
+
+            Inputs:
+                direction: Heading of the run, or -1 for none.
+                steps: Grid steps in the run.
+            Outputs:
+                True for no run, otherwise whether its length reaches min_segment_length.
             """
             if not steps or direction == -1:
                 return True
@@ -2601,16 +2643,19 @@ class GridRouter:
                 raise NoGridRoute("No route exists in the relaxed grid topology")
 
         def relaxed_cost(x: int, y: int, layer: int) -> float:
-            """Relaxed topology cost to the goal from a grid state, or 0 without a
-            topology bound.
+            """Relaxed topology cost from a grid state to the goal.
+
+            It is 0 when no topology bound is used.
             """
             if topology is None:
                 return 0
             return topology[layer * self.nx * self.ny + y * self.nx + x]
 
         def heuristic(x: int, y: int, layer: int) -> float:
-            """Estimated remaining cost from a grid state: heuristic_weight times the
-            larger of the octilinear lower bound and the relaxed topology cost.
+            """Estimated remaining cost from a grid state.
+
+            It is heuristic_weight times the larger of the octilinear lower bound and the
+            relaxed topology cost.
             """
             dx, dy = abs(ex - x), abs(ey - y)
             straight = _octilinear_lower_bound(
@@ -2845,8 +2890,10 @@ class GridRouter:
     def _offer(
         queue, distances, previous, serial, current, nxt, cost, heuristic
     ) -> None:
-        """Record state nxt, reached from current at cost, and queue it when that beats
-        its best known cost.
+        """Queue a search state that a cheaper path reaches.
+
+        Records nxt, reached from current at cost, and pushes it on the queue when
+        that beats its best known cost.
         """
         if cost + 1e-12 < distances.get(nxt, math.inf):
             distances[nxt] = cost

@@ -1,4 +1,4 @@
-"""route_junctions.py: materialize explicit junctions in proposed, source-bound PCB copper.
+"""route_junctions.py: materialize junctions in proposed, source-bound PCB copper.
 
 This prepares ordinary campaign edits only. Native DRC, connectivity and
 electrical checks remain mandatory before a candidate can be applied.
@@ -57,8 +57,10 @@ _contacts = Contacts()
 
 
 class JunctionChanges:
-    """Splits a route and the existing same-net tracks it meets at every contact and
-    builds the campaign changes.
+    """Splits copper at the contacts of a route.
+
+    Existing same-net tracks and the route itself are split where they touch, and
+    the result is returned as campaign changes.
     """
 
     def __call__(
@@ -234,8 +236,9 @@ class JunctionChanges:
 
     @staticmethod
     def _pieces(segment: Segment, points: set[Point]) -> tuple[Segment, ...]:
-        """Split a segment at the given points, ordered by coordinate, without zero-
-        length pieces.
+        """Split a segment at the given points.
+
+        The pieces are ordered by coordinate and have no zero-length piece.
         """
         ordered = sorted(
             points | {segment.start, segment.end}, key=lambda p: (p.x, p.y)
@@ -340,9 +343,12 @@ class JunctionChanges:
         merged_items = []
 
         def uniform(segment):
-            """The one width of a segment: the route width, or the width of its single
-            piece from segment_dimensions; None when it needs several widths or they are
-            unavailable.
+            """The one width of a segment.
+
+            Outputs:
+                The route width, or the width of the segment's single piece from
+                segment_dimensions; None when it needs several widths or they are
+                unavailable.
             """
             if segment_dimensions is None:
                 return width
@@ -355,8 +361,10 @@ class JunctionChanges:
             )
 
         def anchored(point, layer):
-            """Whether a pad, a via or a same-net arc holds the point on the layer, so
-            no track may be merged across it.
+            """Whether the point is anchored on the layer.
+
+            A pad, a via or a same-net arc anchors it, and no track may be merged across an
+            anchor.
             """
             location = pcbnew.VECTOR2I(point.x, point.y)
             layer_id = board.GetLayerID(layer)

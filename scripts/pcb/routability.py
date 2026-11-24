@@ -1,4 +1,4 @@
-"""routability.py: prove which pads no route can join while every part stays where it is.
+"""routability.py: prove which pads no route can join while the parts stay in place.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -89,8 +89,9 @@ class GridModel:
         )
 
     def parts(self):
-        """Yield each footprint of the board, as posed in footprints, leaving out those
-        set to None.
+        """Yield each footprint of the board as posed in footprints.
+
+        Footprints set to None are left out.
         """
         for footprint in self.board.GetFootprints():
             part = self.footprints.get(footprint.m_Uuid.AsString(), footprint)
@@ -137,8 +138,10 @@ class GridModel:
         )
 
     def router(self, net: str) -> GridRouter:
-        """A grid router for the net, bounded by the board edge clearance and blocked by
-        the obstacles.
+        """A grid router for the net.
+
+        It is bounded by the board outline, inset by the copper-to-edge clearance, and
+        blocked by the obstacles.
         """
         width, clearance, via_size, via_drill = self.rules(net)
         # The router keeps a clearance from its bounds; the board needs its copper-to-edge rule.
@@ -286,8 +289,10 @@ class Routability:
         return sorted(name for name, count in counts.items() if count > 1)
 
     def blockers(self, net: str) -> list[str]:
-        """Sorted references of the footprints without a pad on the net whose removal
-        lets every pad of the net connect.
+        """Sorted references of the footprints that block a net.
+
+        A footprint blocks the net when it has no pad on it and leaving it out lets
+        every pad of the net connect.
         """
         result = []
         for footprint in self.board.GetFootprints():

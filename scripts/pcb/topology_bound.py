@@ -1,4 +1,4 @@
-"""topology_bound.py: optimistic lower bounds on the cost of a grid search, from the grid alone.
+"""topology_bound.py: optimistic lower bounds on the cost of a grid search.
 
 The bounds ignore bends and the direction of travel. They count the new vias a
 route needs or relax the cost of the search so that the real search can use

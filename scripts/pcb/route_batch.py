@@ -1,4 +1,4 @@
-"""route_batch.py: plan a sequential route batch and perform one closing KiCad verification.
+"""route_batch.py: plan a sequential route batch with one closing KiCad verification.
 
 The JSON object contains optional shared route settings, one saved
 ``board_snapshot`` and a ``routes`` array. Each route overrides shared settings

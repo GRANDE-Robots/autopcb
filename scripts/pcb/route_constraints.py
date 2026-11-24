@@ -1,4 +1,4 @@
-"""route_constraints.py: apply supplied electrical limits to geometric routing proposals.
+"""route_constraints.py: apply supplied electrical limits to routing proposals.
 
 The caller supplies conservative, documented limits for the particular branch,
 stackup and environment. This module checks those limits; it does not derive

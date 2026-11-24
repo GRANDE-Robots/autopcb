@@ -1,4 +1,7 @@
-"""route_validation.py: validate a proposed route on temporary KiCad files without publishing it.
+"""route_validation.py: validate a proposed route on temporary KiCad files.
+
+Validation runs on temporary copies of the project, so nothing is published and
+the original board is never written.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
@@ -151,8 +154,9 @@ _copy_inputs = InputCopy()
 
 
 class EvidenceVerification:
-    """Checks stored validation evidence against the current board, project files and
-    tools.
+    """Checks stored validation evidence.
+
+    The evidence is compared with the current board, project files and tools.
     """
 
     def __call__(
@@ -299,13 +303,16 @@ FILL_FORMS = {"filled_polygon", "filled_segments", "fill_segments"}
 
 
 class CanonicalForm:
-    """Reduces parsed S-expressions to values that compare equal when their content is
-    equal.
+    """Reduces parsed S-expressions to comparable values.
+
+    Equal content gives equal values.
     """
 
     def __call__(self, item: Atom | Form) -> object:
-        """The comparable value of an atom or form: a number by value, another atom as
-        text, a form as the tuple of its children.
+        """The comparable value of an atom or form.
+
+        A number is reduced by value, any other atom to text, and a form to the tuple of
+        its children.
         """
         if isinstance(item, Atom):
             try:
@@ -354,8 +361,10 @@ class ZoneDefinition:
     """Reduces a zone to its settings without its fill."""
 
     def __call__(self, zone: Form) -> tuple[object, ...]:
-        """The zone's items in canonical form, without filled polygons or fill segments
-        and without the yes marker KiCad adds to the fill setting.
+        """The settings of a zone, without its fill.
+
+        The zone's items in canonical form, leaving out filled polygons and fill
+        segments and the yes marker KiCad adds to the fill setting.
         """
         result = []
         for item in zone.items:
@@ -383,7 +392,16 @@ class ZoneRefillChanges:
     """Extracts the zone fill that KiCad rewrote during a refill."""
 
     def __call__(self, before: bytes, after: bytes) -> list[dict[str, Any]]:
-        """Retain only the native refill result, never a changed zone definition."""
+        """Retain only the native refill result, never a changed zone definition.
+
+        Inputs:
+            before: Board bytes before the refill.
+            after: Board bytes after the refill.
+        Outputs:
+            One replace change per zone whose fill differs. Raises RuntimeError when
+            the zone inventory or a non-fill setting changed or a non-copper zone would
+            be refilled.
+        """
         old_text, new_text = before.decode("utf-8"), after.decode("utf-8")
         old, new = _zones(old_text), _zones(new_text)
         if old.keys() != new.keys():
@@ -445,8 +463,9 @@ class SegmentIdentities:
         """
 
         def canonical(form: Form, *, root: bool = False) -> tuple:
-            """Reduce a form to nested tuples of its atoms and forms, leaving out its
-            own UUID when root is set.
+            """Reduce a form to nested tuples of its atoms and forms.
+
+            Its own UUID is left out when root is set.
             """
             return tuple(
                 ("atom", item.value)
@@ -498,9 +517,11 @@ class StableConnectionItems:
         """
 
         def inventory(data: bytes):
-            """Index one board: per-net counters of canonical segments, arcs and vias,
-            per-net counters of footprint pads, item to net, and the nets that have
-            zones.
+            """Index one board.
+
+            Outputs:
+                Per-net counters of canonical segments, arcs and vias, per-net counters of
+                footprint pads, the net of each item, and the nets that have zones.
             """
             text = data.decode("utf-8-sig")
             segment_names = _segment_identities(data)
@@ -510,8 +531,9 @@ class StableConnectionItems:
             zones = set()
 
             def one(form, name):
-                """The single value of a child form, or an empty string when it is
-                missing, repeated or malformed.
+                """The single value of a child form.
+
+                It is an empty string when the child is missing, repeated or malformed.
                 """
                 children = form.children(name)
                 if len(children) != 1 or len(children[0].atoms()) != 2:
@@ -725,7 +747,7 @@ class NewDanglingIndices:
         """Match endpoint and warning multisets; never hide a newly dangling end."""
 
         def counters(entries):
-            """Count the entries by severity and endpoint.
+            """Count entries by severity and endpoint.
 
             Raises ValueError for an entry that is not a severity with distinct endpoint
             names.
@@ -1386,7 +1408,14 @@ class RouteBatchValidation:
 
     @staticmethod
     def _anchors(board, point: Point, layer: str, net: str) -> set[str]:
-        """UUIDs of the pads and tracks of the net on the layer that touch the point."""
+        """UUIDs of the pads and tracks that touch a point.
+
+        Inputs:
+            board: Loaded KiCad board.
+            point: Position in nanometres.
+            layer: Copper layer name.
+            net: Net the items must belong to.
+        """
         import pcbnew
 
         layer_id = board.GetLayerID(layer)
@@ -1404,8 +1433,12 @@ class RouteBatchValidation:
     def _connected(
         board, starts: set[str], targets: set[str], *, rebuild: bool = True
     ) -> bool:
-        """Whether any start item connects to any target item; rebuild first rebuilds
-        the board's connectivity.
+        """Whether any start item connects to any target item.
+
+        Inputs:
+            board: Loaded KiCad board.
+            starts, targets: UUIDs of pads and tracks.
+            rebuild: Rebuild the board's connectivity first.
         """
         items = list(board.GetPads()) + list(board.GetTracks())
         by_uuid = {item.m_Uuid.AsString(): item for item in items}

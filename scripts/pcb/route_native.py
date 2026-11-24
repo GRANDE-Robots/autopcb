@@ -1,4 +1,4 @@
-"""route_native.py: read conservative copper envelopes from a stable saved-board snapshot.
+"""route_native.py: read conservative copper envelopes from a saved-board snapshot.
 
 Nothing here writes to or opens an editor for the original PCB. Envelopes can
 overestimate obstacles, while board outlines, custom rules and actual zone

@@ -1,4 +1,8 @@
-"""Guard the optional native-file router's command and tool identity."""
+"""test_krt_adapter.py: check the command and tool identity of the optional native-file
+router.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import json
 import subprocess
@@ -13,6 +17,8 @@ from pcb.net_routing import krt_adapter
 
 
 class KrtAdapterTests(unittest.TestCase):
+    """Checks the command, tool identity and result handling of the KRT router adapter."""
+
     def test_application_control_refusal_is_not_reported_as_missing_python_packages(
         self,
     ):
@@ -71,6 +77,19 @@ class KrtAdapterTests(unittest.TestCase):
         def check(
             entries, *, targets=("A", "B"), codes=None, headline=None, **overrides
         ):
+            """Resolve the narrowed nets from a log built around the given ledger.
+
+            Inputs:
+                entries: Narrowed rule entries, each with a net and a count.
+                targets: Net names the router was asked to route.
+                codes: The router's net codes mapped to net names, or None for codes 7
+                    and 9 mapped to A and B.
+                headline: Strict-size headline line, or None to build one from the
+                    entries.
+                overrides: Design rule fields that replace the generated ones.
+            Outputs:
+                The result of ``StrictSizeLog.strict_size_nets``.
+            """
             rules = {
                 "escalation_policy": "off",
                 "fab_tier_escalations": 0,
@@ -412,6 +431,7 @@ class KrtAdapterTests(unittest.TestCase):
             process.wait.return_value = 0
 
             def spawn(command, **_kwargs):
+                """Stand in for Popen: write an unapproved candidate board."""
                 Path(command[5]).write_bytes(b"unapproved candidate")
                 return process
 
@@ -451,6 +471,7 @@ class KrtAdapterTests(unittest.TestCase):
             process.wait.return_value = 3
 
             def spawn(command, **kwargs):
+                """Stand in for Popen: write a candidate and a strict-size failure."""
                 Path(command[5]).write_bytes(b"must not be published")
                 kwargs["stdout"].write(
                     'JSON_SUMMARY_MIN: {"failed_single": ["A"], "routed": 0}\n'
@@ -520,6 +541,7 @@ class KrtAdapterTests(unittest.TestCase):
             }
 
             def spawn(command, **kwargs):
+                """Stand in for Popen: write a mixed candidate, summary and size log."""
                 Path(command[5]).write_bytes(b"unapproved mixed candidate")
                 Path(command[command.index("--json-out") + 1]).write_text(
                     json.dumps(summary), encoding="utf8"
@@ -578,6 +600,7 @@ class KrtAdapterTests(unittest.TestCase):
             settings = {}
 
             def spawn(command, **kwargs):
+                """Stand in for Popen: record the environment and write a candidate."""
                 settings.update(kwargs["env"])
                 Path(command[5]).write_bytes(b"unapproved pair candidate")
                 return process

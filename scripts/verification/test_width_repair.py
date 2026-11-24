@@ -1,4 +1,8 @@
-"""Width repair retains clearance and connectivity rather than hiding violations."""
+"""test_width_repair.py: check that width repair retains clearance and connectivity
+instead of hiding violations.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from pathlib import Path
 import tempfile
@@ -7,6 +11,8 @@ from core.toolchain import kicad_cli
 
 
 class WidthRepairTests(unittest.TestCase):
+    """Checks the width repair of connection-width findings on disposable boards."""
+
     def test_only_an_independently_landed_sense_tip_can_be_removed(self):
         import pcbnew
         from pcb.branch_widths import WidthRules
@@ -19,6 +25,14 @@ class WidthRepairTests(unittest.TestCase):
             sense.SetValue("sense")
 
             def add(start, end):
+                """Add a 0.3 mm F.Cu track on the net SIGNAL to the board.
+
+                Inputs:
+                    start: Start point in nm.
+                    end: End point in nm.
+                Outputs:
+                    The track.
+                """
                 trace = pcbnew.PCB_TRACK(board)
                 trace.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 trace.SetLayer(pcbnew.F_Cu)
@@ -135,6 +149,15 @@ class WidthRepairTests(unittest.TestCase):
                 )
 
             def add(name, a, b):
+                """Add a 0.2 mm F.Cu track on a net to the board.
+
+                Inputs:
+                    name: Net name.
+                    a: Start point in mm.
+                    b: End point in mm.
+                Outputs:
+                    The UUID of the track.
+                """
                 item = pcbnew.PCB_TRACK(board)
                 item.SetNetCode(board.FindNet(name).GetNetCode())
                 item.SetLayer(pcbnew.F_Cu)
@@ -199,6 +222,16 @@ class WidthRepairTests(unittest.TestCase):
             part.SetPosition(pcbnew.VECTOR2I(8000000, 1800000))
 
             def line(net, a, b, width):
+                """Add an F.Cu track on a net to the board.
+
+                Inputs:
+                    net: Net name.
+                    a: Start point in nm.
+                    b: End point in nm.
+                    width: Track width in nm.
+                Outputs:
+                    The track.
+                """
                 track = pcbnew.PCB_TRACK(board)
                 track.SetNetCode(board.FindNet(net).GetNetCode())
                 track.SetLayer(pcbnew.F_Cu)
@@ -281,6 +314,13 @@ class WidthRepairTests(unittest.TestCase):
             )
 
             def edge(y):
+                """Give the two ends of a horizontal edge from x 3.2 mm to x 4.8 mm.
+
+                Inputs:
+                    y: Vertical position of the edge in mm.
+                Outputs:
+                    The start and end points of the edge.
+                """
                 return (Point.from_mm((3.2, y)), Point.from_mm((4.8, y)))
 
             self.assertFalse(grid.edge_clear(*edge(3.08), "F.Cu"))
@@ -350,6 +390,15 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.width_repair import EditProofs, ConnectivityRegression
 
         def trace(uid):
+            """Write the native text of a 0.2 mm F.Cu track on the net N.
+
+            The track runs from (1, 1) mm to (2, 1) mm.
+
+            Inputs:
+                uid: UUID of the track.
+            Outputs:
+                The track text.
+            """
             return f'(segment (start 1 1) (end 2 1) (width .2) (layer "F.Cu") (net "N") (uuid "{uid}"))'
 
         zone = '(zone (uuid "z") (net "GND") (layer "F.Cu") '
@@ -382,6 +431,16 @@ class WidthRepairTests(unittest.TestCase):
             board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
 
             def trace(net, layer, a, b):
+                """Add a 0.2 mm track on a net and layer to the board.
+
+                Inputs:
+                    net: Net name.
+                    layer: Copper layer.
+                    a: Start point in mm.
+                    b: End point in mm.
+                Outputs:
+                    The track.
+                """
                 item = pcbnew.PCB_TRACK(board)
                 item.SetNetCode(board.FindNet(net).GetNetCode())
                 item.SetLayer(layer)
@@ -413,6 +472,15 @@ class WidthRepairTests(unittest.TestCase):
         net = board.FindNet("POWER").GetNetCode()
 
         def trace(first, last, layer=pcbnew.F_Cu):
+            """Add a 0.4 mm track on the net POWER to the board.
+
+            Inputs:
+                first: Start point in nm.
+                last: End point in nm.
+                layer: Copper layer.
+            Outputs:
+                The track.
+            """
             item = pcbnew.PCB_TRACK(board)
             item.SetNetCode(net)
             item.SetLayer(layer)
@@ -464,6 +532,15 @@ class WidthRepairTests(unittest.TestCase):
         net = board.FindNet("POWER").GetNetCode()
 
         def trace(first, last, width):
+            """Add an In1.Cu track on the net POWER to the board.
+
+            Inputs:
+                first: Start point in nm.
+                last: End point in nm.
+                width: Track width in nm.
+            Outputs:
+                The track.
+            """
             item = pcbnew.PCB_TRACK(board)
             item.SetNetCode(net)
             item.SetLayer(pcbnew.In1_Cu)
@@ -553,6 +630,17 @@ class WidthRepairTests(unittest.TestCase):
             board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
 
             def trace(net, a, b, layer, width):
+                """Add a track on a net and layer to the board.
+
+                Inputs:
+                    net: Net name.
+                    a: Start point in mm.
+                    b: End point in mm.
+                    layer: Copper layer.
+                    width: Track width in nm.
+                Outputs:
+                    The track.
+                """
                 item = pcbnew.PCB_TRACK(board)
                 item.SetNetCode(board.FindNet(net).GetNetCode())
                 item.SetLayer(layer)
@@ -684,11 +772,20 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.net_routing.style import audit_style
 
         def board():
+            """Create an empty board that holds the net SIGNAL."""
             value = pcbnew.BOARD()
             value.Add(pcbnew.NETINFO_ITEM(value, "SIGNAL"))
             return value
 
         def trace(value, a, b, width):
+            """Add an F.Cu track on the net SIGNAL to a board.
+
+            Inputs:
+                value: The board that receives the track.
+                a: Start point in mm.
+                b: End point in mm.
+                width: Track width in nm.
+            """
             item = pcbnew.PCB_TRACK(value)
             item.SetNetCode(value.FindNet("SIGNAL").GetNetCode())
             item.SetLayer(pcbnew.F_Cu)
@@ -775,6 +872,14 @@ class WidthRepairTests(unittest.TestCase):
                 board = pcbnew.LoadBoard(str(source))
 
                 def trace(a, b):
+                    """Add a 0.2 mm F.Cu track on the net SIGNAL to the board.
+
+                    Inputs:
+                        a: Start point in mm.
+                        b: End point in mm.
+                    Outputs:
+                        The track.
+                    """
                     value = pcbnew.PCB_TRACK(board)
                     value.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                     value.SetLayer(pcbnew.F_Cu)
@@ -824,6 +929,16 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.width_repair import DrcFindings
 
         def warning(items, value=".1500"):
+            """Build a connection width warning for tracks of the net POWER.
+
+            The warning reports a minimum of 0.2 mm on B.Cu.
+
+            Inputs:
+                items: UUIDs of the tracks the warning names.
+                value: Measured width in mm, as DRC text.
+            Outputs:
+                The warning as a DRC violation record.
+            """
             return {
                 "type": "connection_width",
                 "severity": "warning",
@@ -940,6 +1055,14 @@ class WidthRepairTests(unittest.TestCase):
         board = pcbnew.BOARD()
 
         def trace(a, b):
+            """Add a 0.2 mm F.Cu track to the board.
+
+            Inputs:
+                a: Start point in nm.
+                b: End point in nm.
+            Outputs:
+                The track.
+            """
             value = pcbnew.PCB_TRACK(board)
             value.SetStart(pcbnew.VECTOR2I(*a))
             value.SetEnd(pcbnew.VECTOR2I(*b))
@@ -1004,6 +1127,15 @@ class WidthRepairTests(unittest.TestCase):
             board.Add(other)
 
             def track(net, a, b):
+                """Add a 0.2 mm F.Cu track on a net to the board.
+
+                Inputs:
+                    net: Net name.
+                    a: Start point in mm.
+                    b: End point in mm.
+                Outputs:
+                    The track.
+                """
                 value = pcbnew.PCB_TRACK(board)
                 value.SetNetCode(board.FindNet(net).GetNetCode())
                 value.SetLayer(pcbnew.F_Cu)
@@ -1099,6 +1231,16 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.width_repair import DrcFindings
 
         def finding(uid, actual="0.1000"):
+            """Build a connection width finding for a track of the net PWR on B.Cu.
+
+            The finding reports a minimum of 0.2 mm.
+
+            Inputs:
+                uid: UUID of the track the finding names.
+                actual: Measured width in mm, as DRC text.
+            Outputs:
+                The finding as a DRC violation record.
+            """
             return {
                 "type": "connection_width",
                 "severity": "warning",
@@ -1160,6 +1302,14 @@ class WidthRepairTests(unittest.TestCase):
         attempted = []
 
         def check(widths):
+            """Record a width set and reject it when it holds the key bad.
+
+            Inputs:
+                widths: The track widths in nm to test, by track.
+            Outputs:
+                An empty list of findings. Raises ConnectivityRegression for a set with
+                bad.
+            """
             attempted.append(dict(widths))
             if "bad" in widths:
                 raise ConnectivityRegression("ground island disconnected")
@@ -1180,6 +1330,13 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.width_repair import ConnectivityRegression, WidthBatches
 
         def check(widths):
+            """Reject every width set.
+
+            Inputs:
+                widths: The track widths in nm to test, by track.
+            Outputs:
+                Never returns. Raises ConnectivityRegression.
+            """
             raise ConnectivityRegression("ground island disconnected")
 
         selected, deferred = WidthBatches.select(
@@ -1248,6 +1405,14 @@ class WidthRepairTests(unittest.TestCase):
         from pcb.width_repair import DrcFindings
 
         def finding(text, ids=("trace",)):
+            """Build a track width finding with the given description.
+
+            Inputs:
+                text: Description of the finding.
+                ids: UUIDs of the tracks the finding names.
+            Outputs:
+                The finding as a DRC violation record.
+            """
             return {
                 "type": "track_width",
                 "description": text,

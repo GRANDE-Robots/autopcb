@@ -1,4 +1,7 @@
-"""Geometry and clearance checks for automatic zone access."""
+"""test_zone_stitch.py: check the geometry and clearance of automatic zone access.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import hashlib
 import json
@@ -24,6 +27,8 @@ from pcb.net_routing.zone_stitch import (
 
 
 class ZoneStitchGeometryTests(unittest.TestCase):
+    """Checks zone stitch geometry, clearance and electrical evidence."""
+
     def test_native_shapes_accept_exact_clearance_without_changing_the_rules(self):
         from pcb.freeroute_delta import (
             Trace,
@@ -339,6 +344,15 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             )
 
             def assess(proofs, source=board_hash):
+                """Verify the pad limits that proofs claim for the fixture board.
+
+                Inputs:
+                    proofs: The stitch proofs to verify.
+                    source: SHA-256 of the board the proofs are checked against; the
+                        fixture board's hash by default.
+                Outputs:
+                    The verified allowances, keyed by pad.
+                """
                 return StitchAllowances.verified_pad_limits(
                     project, proofs, dimensions, board_sha256=source
                 )

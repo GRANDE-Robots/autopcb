@@ -1,4 +1,8 @@
-"""Branch allowances must be proven leaves, not coordinate-based guesses."""
+"""test_branch_widths.py: check that branch allowances are proven leaves, not
+coordinate-based guesses.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import unittest
 from pathlib import Path
@@ -10,6 +14,8 @@ from core.compat import strict_zip
 
 
 class BranchWidthTests(unittest.TestCase):
+    """Checks that branch width allowances come from proven leaf branches."""
+
     def test_terminal_selector_survives_native_units_without_matching_another_trace(
         self,
     ):
@@ -24,6 +30,13 @@ class BranchWidthTests(unittest.TestCase):
             board = pcbnew.LoadBoard(str(source))
 
             def trace(offset):
+                """Build a 0.4 mm F.Cu track on the net SIGNAL, shifted along y.
+
+                Inputs:
+                    offset: Shift in nm added to the track's y coordinate.
+                Outputs:
+                    The track, which is not added to the board.
+                """
                 item = pcbnew.PCB_TRACK(board)
                 item.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 item.SetLayer(pcbnew.F_Cu)
@@ -133,6 +146,14 @@ class BranchWidthTests(unittest.TestCase):
         board = pcbnew.BOARD()
 
         def track(a, b):
+            """Build an F.Cu track between two points.
+
+            Inputs:
+                a: Start point in nm.
+                b: End point in nm.
+            Outputs:
+                The track, which has no net and is not added to the board.
+            """
             value = pcbnew.PCB_TRACK(board)
             value.SetStart(pcbnew.VECTOR2I(*a))
             value.SetEnd(pcbnew.VECTOR2I(*b))
@@ -178,6 +199,15 @@ class BranchWidthTests(unittest.TestCase):
             pad = next(iter(board.FindFootprintByReference("J1").Pads()))
 
             def trace(a, b, width):
+                """Build an F.Cu track on the net of the pad.
+
+                Inputs:
+                    a: Start point in nm.
+                    b: End point in nm.
+                    width: Track width in nm.
+                Outputs:
+                    The track, which is not added to the board.
+                """
                 item = pcbnew.PCB_TRACK(board)
                 item.SetLayer(pcbnew.F_Cu)
                 item.SetNetCode(pad.GetNetCode())
@@ -205,9 +235,24 @@ class BranchWidthTests(unittest.TestCase):
         board.Add(net)
 
         def point(x, y):
+            """Convert a position in mm to a native point.
+
+            Inputs:
+                x: Horizontal position in mm.
+                y: Vertical position in mm.
+            Outputs:
+                The point in nm.
+            """
             return pcbnew.VECTOR2I(round(x * 1e6), round(y * 1e6))
 
         def terminal(reference, x, y):
+            """Add a part with one 0.6 mm square SMD pad on the net to the board.
+
+            Inputs:
+                reference: Reference designator of the part.
+                x: Horizontal position in mm.
+                y: Vertical position in mm.
+            """
             part = pcbnew.FOOTPRINT(board)
             part.SetReference(reference)
             part.SetValue("test")
@@ -223,6 +268,12 @@ class BranchWidthTests(unittest.TestCase):
             board.Add(part)
 
         def rectangle(start, end):
+            """Add a filled copper rectangle on F.Cu and the net to the board.
+
+            Inputs:
+                start: One corner in mm.
+                end: The opposite corner in mm.
+            """
             shape = pcbnew.PCB_SHAPE(board)
             shape.SetShape(pcbnew.SHAPE_T_RECT)
             shape.SetLayer(pcbnew.F_Cu)
@@ -234,6 +285,14 @@ class BranchWidthTests(unittest.TestCase):
             board.Add(shape)
 
         def trace(start, end):
+            """Add a 1 mm wide F.Cu track on the net to the board.
+
+            Inputs:
+                start: Start point in mm.
+                end: End point in mm.
+            Outputs:
+                The UUID of the track.
+            """
             track = pcbnew.PCB_TRACK(board)
             track.SetLayer(pcbnew.F_Cu)
             track.SetStart(point(*start))

@@ -6,9 +6,9 @@ import unittest
 
 from pcb.net_routing.controller import encode_checkpoint
 from pcb.net_routing.layer_rebase import (
-    compatible_policies,
+    LayerAnnotations,
+    LayerPolicy,
     rebase_checkpoint,
-    rebase_layer_annotations,
 )
 
 
@@ -32,7 +32,7 @@ class LayerRebaseTests(unittest.TestCase):
         }
 
     def test_only_changed_layer_roles_are_applied_to_candidate(self):
-        changed = rebase_layer_annotations(self.old, self.new, self.candidate)
+        changed = LayerAnnotations.rebase(self.old, self.new, self.candidate)
         self.assertEqual(
             changed, self.candidate.replace(b'"In1.Cu" power', b'"In1.Cu" signal')
         )
@@ -44,11 +44,11 @@ class LayerRebaseTests(unittest.TestCase):
             self.new.replace(b"(thickness 0.035)", b"(thickness 0.061)"),
         ):
             with self.assertRaisesRegex(ValueError, "only.*layer"):
-                rebase_layer_annotations(self.old, new, self.candidate)
+                LayerAnnotations.rebase(self.old, new, self.candidate)
 
     def test_candidate_must_match_old_layer_roles(self):
         with self.assertRaisesRegex(ValueError, "candidate.*layer"):
-            rebase_layer_annotations(self.old, self.new, self.new)
+            LayerAnnotations.rebase(self.old, self.new, self.new)
 
     def test_only_soft_layer_costs_and_order_may_change(self):
         policy = {
@@ -59,13 +59,13 @@ class LayerRebaseTests(unittest.TestCase):
             },
             "max_pins": 3,
         }
-        self.assertTrue(compatible_policies(self.policy, policy))
+        self.assertTrue(LayerPolicy.compatible(self.policy, policy))
         for mutation in (
             dict(policy["route"], width_mm=0.15),
             dict(policy["route"], layers=["F.Cu", "B.Cu"]),
         ):
             self.assertFalse(
-                compatible_policies(self.policy, {**policy, "route": mutation})
+                LayerPolicy.compatible(self.policy, {**policy, "route": mutation})
             )
 
     def test_checkpoint_rebase_checks_all_other_sources_and_hard_policy(self):
@@ -133,7 +133,7 @@ class LayerRebaseTests(unittest.TestCase):
             {"layers": ["F.Cu"], "layer_penalties": {"F.Cu": float("nan")}},
         ):
             self.assertFalse(
-                compatible_policies({"route": mutation}, {"route": mutation})
+                LayerPolicy.compatible({"route": mutation}, {"route": mutation})
             )
 
 

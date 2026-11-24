@@ -8,11 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from pcb.freeroute_delta import Trace, Via
 from pcb.net_routing.protection import protected_footprint_changes
-from pcb.net_routing.working_save import (
-    save_working,
-    verify_working_net_copper,
-    working_improvement,
-)
+from pcb.net_routing.working_save import save_working, WorkingQualification
 
 
 class WorkingSaveTests(unittest.TestCase):
@@ -45,7 +41,9 @@ class WorkingSaveTests(unittest.TestCase):
         with patch.object(
             api, "rebind_exact_saved_checkpoint", return_value={"candidate_sha256": "x"}
         ):
-            updated = api._saved_state(state, b"pcb", {}, {}, "policy", checked, policy)
+            updated = api.SavedPreview.saved_state(
+                state, b"pcb", {}, {}, "policy", checked, policy
+            )
         self.assertEqual(
             [
                 n["name"]
@@ -83,7 +81,7 @@ class WorkingSaveTests(unittest.TestCase):
     def test_equal_open_cleanup_requires_fewer_warnings_and_trace_removal_only(self):
         provenance = {"engine": "native-dangling-prune", "objective": "reduce-warnings"}
         self.assertEqual(
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.cleaned,
                 self.copper,
@@ -93,15 +91,15 @@ class WorkingSaveTests(unittest.TestCase):
             "fewer dangling warnings",
         )
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before, self.cleaned, self.copper, self.copper, provenance
             )
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before, self.cleaned, self.copper, [self.other], provenance
             )
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.cleaned,
                 self.copper,
@@ -120,14 +118,14 @@ class WorkingSaveTests(unittest.TestCase):
         }
         provenance = {"engine": "native-via-prune", "objective": "minimize-vias"}
         self.assertEqual(
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before, after, self.copper, [self.trace, self.other], provenance
             ),
             "fewer vias",
         )
         added = Trace("C", "B.Cu", 200_000, (0, 0), (0, 1_000_000))
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 after,
                 self.copper,
@@ -152,11 +150,13 @@ class WorkingSaveTests(unittest.TestCase):
             "objective": "reduce-warnings",
         }
         self.assertEqual(
-            working_improvement(self.before, self.cleaned, before, after, provenance),
+            WorkingQualification.working_improvement(
+                self.before, self.cleaned, before, after, provenance
+            ),
             "fewer dangling warnings",
         )
         with self.assertRaisesRegex(RuntimeError, "cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.cleaned,
                 before,
@@ -167,7 +167,7 @@ class WorkingSaveTests(unittest.TestCase):
     def test_more_opens_never_qualifies(self):
         after = {**self.cleaned, "drc": {**self.cleaned["drc"], "open_connections": 11}}
         with self.assertRaisesRegex(RuntimeError, "worsens"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before, after, self.copper, [self.other, self.via], {}
             )
 
@@ -177,11 +177,11 @@ class WorkingSaveTests(unittest.TestCase):
             "objective": "repair-rounding",
         }
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before, self.before, self.copper, self.copper, provenance
             )
         with self.assertRaisesRegex(RuntimeError, "verified cleanup"):
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.before,
                 self.copper,
@@ -190,7 +190,7 @@ class WorkingSaveTests(unittest.TestCase):
                 rounding_proof={"corrected": 0},
             )
         self.assertEqual(
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.before,
                 self.copper,
@@ -211,7 +211,7 @@ class WorkingSaveTests(unittest.TestCase):
                 self.subTest(proof=proof),
                 self.assertRaisesRegex(RuntimeError, "verified cleanup"),
             ):
-                working_improvement(
+                WorkingQualification.working_improvement(
                     self.before,
                     self.before,
                     self.copper,
@@ -220,7 +220,7 @@ class WorkingSaveTests(unittest.TestCase):
                     staircase_proof=proof,
                 )
         self.assertEqual(
-            working_improvement(
+            WorkingQualification.working_improvement(
                 self.before,
                 self.before,
                 self.copper,
@@ -250,16 +250,22 @@ class WorkingSaveTests(unittest.TestCase):
             GetNetClassName=lambda: classes[name]
         )
         signal = Trace("SIGNAL_A", "B.Cu", 200_000, (0, 0), (1_000_000, 0))
-        verify_working_net_copper(board, [], [signal], ())
+        WorkingQualification.verify_working_net_copper(board, [], [signal], ())
         for net in ("ENC_A_MCU", "SUPPLY", "UNCLASSIFIED"):
             with self.subTest(net=net):
                 item = Trace(net, "B.Cu", 200_000, (0, 0), (1_000_000, 0))
                 with self.assertRaisesRegex(RuntimeError, net):
-                    verify_working_net_copper(board, [], [item], ())
+                    WorkingQualification.verify_working_net_copper(
+                        board, [], [item], ()
+                    )
                 with self.assertRaisesRegex(RuntimeError, net):
-                    verify_working_net_copper(board, [item], [], ())
+                    WorkingQualification.verify_working_net_copper(
+                        board, [item], [], ()
+                    )
         with self.assertRaisesRegex(RuntimeError, "SIGNAL_A"):
-            verify_working_net_copper(board, [], [signal], ("SIGNAL_A",))
+            WorkingQualification.verify_working_net_copper(
+                board, [], [signal], ("SIGNAL_A",)
+            )
 
     def test_unqualified_footprint_geometry_cannot_change(self):
         board, part, pad = MagicMock(), MagicMock(), MagicMock()

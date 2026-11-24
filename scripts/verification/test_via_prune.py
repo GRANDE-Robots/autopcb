@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pcbnew
 
-from pcb.net_routing.via_prune import candidate_vias
+from pcb.net_routing.via_prune import CleanupCandidates
 
 
 class ViaPruneTests(unittest.TestCase):
     def test_cleanup_can_defer_both_identified_parity_nets(self):
         from pcb.net_routing.prepare import parity_blocked_nets, summarize_drc
-        from pcb.net_routing.via_prune import verify_cleanup_baseline
+        from pcb.net_routing.via_prune import CleanupBaseline
 
         report = {
             "violations": [],
@@ -33,10 +33,11 @@ class ViaPruneTests(unittest.TestCase):
             parity_blocked_nets(report, {"pad-1": "OLD"})
         )
         self.assertEqual(
-            verify_cleanup_baseline(baseline, expected_opens=3), ("NEW", "OLD")
+            CleanupBaseline.verify_cleanup_baseline(baseline, expected_opens=3),
+            ("NEW", "OLD"),
         )
         with self.assertRaises(RuntimeError):
-            verify_cleanup_baseline(
+            CleanupBaseline.verify_cleanup_baseline(
                 {**baseline, "parity_blocked_nets": []}, expected_opens=3
             )
         with self.assertRaises(ValueError):
@@ -44,7 +45,7 @@ class ViaPruneTests(unittest.TestCase):
 
     def test_cleanup_baseline_can_attribute_existing_native_errors(self):
         from pcb.net_routing.prepare import summarize_drc
-        from pcb.net_routing.via_prune import verify_cleanup_baseline
+        from pcb.net_routing.via_prune import CleanupBaseline
 
         finding = {
             "type": "copper_edge_clearance",
@@ -60,12 +61,12 @@ class ViaPruneTests(unittest.TestCase):
             "ignored_checks": [],
         }
         baseline = summarize_drc(report)
-        verify_cleanup_baseline(baseline, expected_opens=3)
+        CleanupBaseline.verify_cleanup_baseline(baseline, expected_opens=3)
         self.assertFalse(baseline["complete"])
 
     def test_cleanup_baseline_rejects_incomplete_or_excluded_evidence(self):
         from pcb.net_routing.prepare import summarize_drc
-        from pcb.net_routing.via_prune import verify_cleanup_baseline
+        from pcb.net_routing.via_prune import CleanupBaseline
 
         report = {
             "violations": [],
@@ -93,7 +94,9 @@ class ViaPruneTests(unittest.TestCase):
         for candidate, expected in invalid:
             with self.subTest(candidate=candidate, expected=expected):
                 with self.assertRaises(RuntimeError):
-                    verify_cleanup_baseline(candidate, expected_opens=expected)
+                    CleanupBaseline.verify_cleanup_baseline(
+                        candidate, expected_opens=expected
+                    )
 
     def setUp(self):
         self.board = pcbnew.BOARD()
@@ -137,12 +140,16 @@ class ViaPruneTests(unittest.TestCase):
         self.board.Add(group)
         group.AddItem(group_via)
         self.assertEqual(
-            candidate_vias(self.board, {"SIG"}, set()), (single.m_Uuid.AsString(),)
+            CleanupCandidates.candidate_vias(self.board, {"SIG"}, set()),
+            (single.m_Uuid.AsString(),),
         )
-        self.assertEqual(candidate_vias(self.board, {"SIG"}, {"SIG"}), ())
-        self.assertEqual(candidate_vias(self.board, set(), set()), ())
+        self.assertEqual(
+            CleanupCandidates.candidate_vias(self.board, {"SIG"}, {"SIG"}), ()
+        )
+        self.assertEqual(CleanupCandidates.candidate_vias(self.board, set(), set()), ())
         self.assertNotIn(
-            through.m_Uuid.AsString(), candidate_vias(self.board, {"SIG"}, set())
+            through.m_Uuid.AsString(),
+            CleanupCandidates.candidate_vias(self.board, {"SIG"}, set()),
         )
 
     def test_zone_or_pad_connections_are_never_assumed_redundant(self):
@@ -157,19 +164,20 @@ class ViaPruneTests(unittest.TestCase):
         pad.SetLayerSet(pcbnew.LSET.BackMask())
         pad.SetNetCode(self.net.GetNetCode())
         footprint.Add(pad)
-        self.assertEqual(candidate_vias(self.board, {"SIG"}, set()), ())
+        self.assertEqual(
+            CleanupCandidates.candidate_vias(self.board, {"SIG"}, set()), ()
+        )
         footprint.Remove(pad)
         zone = pcbnew.ZONE(self.board)
         self.board.Add(zone)
         zone.SetNet(self.net)
-        self.assertEqual(candidate_vias(self.board, {"SIG"}, set()), ())
+        self.assertEqual(
+            CleanupCandidates.candidate_vias(self.board, {"SIG"}, set()), ()
+        )
         self.assertTrue(via.GetNetname() == "SIG")
 
     def test_dead_end_track_is_removed_with_its_via(self):
-        from pcb.net_routing.via_prune import (
-            copper_removal_changes,
-            dangling_spur_items,
-        )
+        from pcb.net_routing.via_prune import copper_removal_changes, CleanupCandidates
 
         via = self.via(0)
         self.track(0, pcbnew.B_Cu)
@@ -179,7 +187,7 @@ class ViaPruneTests(unittest.TestCase):
             if not isinstance(item, pcbnew.PCB_VIA)
         )
         self.assertEqual(
-            dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
+            CleanupCandidates.dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
             {via.m_Uuid.AsString(), track.m_Uuid.AsString()},
         )
         changes = copper_removal_changes(
@@ -194,15 +202,14 @@ class ViaPruneTests(unittest.TestCase):
 
     def test_text_candidate_removes_only_selected_copper(self):
         from core.kicad_campaign import CampaignPlanner
-        from pcb.net_routing.via_prune import (
-            copper_removal_changes,
-            dangling_spur_items,
-        )
+        from pcb.net_routing.via_prune import copper_removal_changes, CleanupCandidates
 
         via = self.via(0)
         self.track(0, pcbnew.B_Cu)
         self.track(4_000_000, pcbnew.F_Cu)
-        selected = dangling_spur_items(self.board, {via.m_Uuid.AsString()})
+        selected = CleanupCandidates.dangling_spur_items(
+            self.board, {via.m_Uuid.AsString()}
+        )
         survivor = next(
             item.m_Uuid.AsString()
             for item in self.board.GetTracks()
@@ -223,7 +230,7 @@ class ViaPruneTests(unittest.TestCase):
             self.assertIn(survivor.encode(), candidate)
 
     def test_spur_does_not_remove_tracks_connecting_two_pads(self):
-        from pcb.net_routing.via_prune import dangling_spur_items
+        from pcb.net_routing.via_prune import CleanupCandidates
 
         via = self.via(0)
         self.track(0, pcbnew.B_Cu)
@@ -251,12 +258,12 @@ class ViaPruneTests(unittest.TestCase):
             pad.SetNetCode(self.net.GetNetCode())
             footprint.Add(pad)
         self.assertEqual(
-            dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
+            CleanupCandidates.dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
             {via.m_Uuid.AsString(), spur.m_Uuid.AsString()},
         )
 
     def test_spur_stops_at_an_interior_copper_contact(self):
-        from pcb.net_routing.via_prune import dangling_spur_items
+        from pcb.net_routing.via_prune import CleanupCandidates
 
         via = self.via(0)
         self.track(0, pcbnew.B_Cu)
@@ -268,12 +275,12 @@ class ViaPruneTests(unittest.TestCase):
         branch.SetNetCode(self.net.GetNetCode())
         self.board.Add(branch)
         self.assertEqual(
-            dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
+            CleanupCandidates.dangling_spur_items(self.board, {via.m_Uuid.AsString()}),
             {via.m_Uuid.AsString()},
         )
 
     def test_dangling_track_seeds_require_warning_and_eligible_unlocked_net(self):
-        from pcb.net_routing.via_prune import candidate_dangling_tracks
+        from pcb.net_routing.via_prune import CleanupCandidates
 
         eligible = self.track(0, pcbnew.B_Cu)
         locked = self.track(3_000_000, pcbnew.B_Cu)
@@ -291,22 +298,32 @@ class ViaPruneTests(unittest.TestCase):
             ]
         }
         self.assertEqual(
-            candidate_dangling_tracks(self.board, report, {"SIG"}, set()),
+            CleanupCandidates.candidate_dangling_tracks(
+                self.board, report, {"SIG"}, set()
+            ),
             (eligible.m_Uuid.AsString(),),
         )
         self.assertEqual(
-            candidate_dangling_tracks(self.board, report, {"SIG"}, {"SIG"}), ()
+            CleanupCandidates.candidate_dangling_tracks(
+                self.board, report, {"SIG"}, {"SIG"}
+            ),
+            (),
         )
         self.assertEqual(
-            candidate_dangling_tracks(self.board, report, set(), set()), ()
+            CleanupCandidates.candidate_dangling_tracks(
+                self.board, report, set(), set()
+            ),
+            (),
         )
         self.assertNotIn(
             unwarned.m_Uuid.AsString(),
-            candidate_dangling_tracks(self.board, report, {"SIG"}, set()),
+            CleanupCandidates.candidate_dangling_tracks(
+                self.board, report, {"SIG"}, set()
+            ),
         )
 
     def test_dangling_track_walk_stops_at_a_branch_with_two_pad_connections(self):
-        from pcb.net_routing.via_prune import extend_dangling_tracks
+        from pcb.net_routing.via_prune import CleanupCandidates
 
         trunk = self.track(0, pcbnew.B_Cu)
         middle = self.track(1_000_000, pcbnew.B_Cu)
@@ -328,7 +345,7 @@ class ViaPruneTests(unittest.TestCase):
             pad.SetLayerSet(pcbnew.LSET.BackMask())
             pad.SetNetCode(self.net.GetNetCode())
             footprint.Add(pad)
-        selected = extend_dangling_tracks(
+        selected = CleanupCandidates.extend_dangling_tracks(
             self.board, {seed.m_Uuid.AsString()}, {"SIG"}, set()
         )
         self.assertEqual(selected, {seed.m_Uuid.AsString(), middle.m_Uuid.AsString()})
@@ -337,10 +354,7 @@ class ViaPruneTests(unittest.TestCase):
 
     def test_dangling_cleanup_chamfers_a_live_interior_branch(self):
         from core.kicad_campaign import CampaignPlanner
-        from pcb.net_routing.via_prune import (
-            coordinated_tail_changes,
-            copper_removal_changes,
-        )
+        from pcb.net_routing.via_prune import TailChamfer, copper_removal_changes
 
         trunk = self.track(0, pcbnew.B_Cu)
         trunk.SetEnd(pcbnew.VECTOR2I(4_000_000, 0))
@@ -354,7 +368,9 @@ class ViaPruneTests(unittest.TestCase):
         self.board.Add(branch)
         self.via(0)
         selected = {seed.m_Uuid.AsString()}
-        changes = coordinated_tail_changes(self.board, selected, {"SIG"}, set())
+        changes = TailChamfer.coordinated_tail_changes(
+            self.board, selected, {"SIG"}, set()
+        )
         self.assertEqual(len(changes), 3)
         self.assertEqual(sum(entry["op"] == "insert" for entry in changes), 1)
         with tempfile.TemporaryDirectory() as folder:
@@ -379,7 +395,7 @@ class ViaPruneTests(unittest.TestCase):
             self.assertFalse(audit_style(after).invalid_bends)
 
     def test_dangling_cleanup_never_edits_a_protected_or_locked_branch(self):
-        from pcb.net_routing.via_prune import coordinated_tail_changes
+        from pcb.net_routing.via_prune import TailChamfer
 
         trunk = self.track(0, pcbnew.B_Cu)
         trunk.SetEnd(pcbnew.VECTOR2I(4_000_000, 0))
@@ -394,15 +410,19 @@ class ViaPruneTests(unittest.TestCase):
         self.via(0)
         selected = {seed.m_Uuid.AsString()}
         self.assertEqual(
-            coordinated_tail_changes(self.board, selected, {"SIG"}, {"SIG"}), []
+            TailChamfer.coordinated_tail_changes(
+                self.board, selected, {"SIG"}, {"SIG"}
+            ),
+            [],
         )
         branch.SetLocked(True)
         self.assertEqual(
-            coordinated_tail_changes(self.board, selected, {"SIG"}, set()), []
+            TailChamfer.coordinated_tail_changes(self.board, selected, {"SIG"}, set()),
+            [],
         )
 
     def test_dangling_cleanup_does_not_move_an_anchored_junction(self):
-        from pcb.net_routing.via_prune import coordinated_tail_changes
+        from pcb.net_routing.via_prune import TailChamfer
 
         trunk = self.track(0, pcbnew.B_Cu)
         trunk.SetEnd(pcbnew.VECTOR2I(4_000_000, 0))
@@ -425,7 +445,7 @@ class ViaPruneTests(unittest.TestCase):
         pad.SetNetCode(self.net.GetNetCode())
         footprint.Add(pad)
         self.assertEqual(
-            coordinated_tail_changes(
+            TailChamfer.coordinated_tail_changes(
                 self.board, {seed.m_Uuid.AsString()}, {"SIG"}, set()
             ),
             [],
@@ -433,10 +453,7 @@ class ViaPruneTests(unittest.TestCase):
 
     def test_cleanup_defers_nets_with_new_dangling_or_geometry_findings(self):
         from pcb.net_routing.style import Joint, Staircase, StyleReport
-        from pcb.net_routing.via_prune import (
-            newly_affected_style_nets,
-            newly_dangling_nets,
-        )
+        from pcb.net_routing.via_prune import CleanupRegressions
 
         before = {
             "violations": [{"type": "track_dangling", "items": [{"uuid": "old"}]}]
@@ -449,7 +466,7 @@ class ViaPruneTests(unittest.TestCase):
             ]
         }
         self.assertEqual(
-            newly_dangling_nets(
+            CleanupRegressions.newly_dangling_nets(
                 before, after, {"old": "A", "new-via": "B", "new-track": "C"}
             ),
             {"B", "C"},
@@ -465,13 +482,12 @@ class ViaPruneTests(unittest.TestCase):
             (),
             (),
         )
-        self.assertEqual(newly_affected_style_nets(empty, changed), {"D", "E"})
+        self.assertEqual(
+            CleanupRegressions.newly_affected_style_nets(empty, changed), {"D", "E"}
+        )
 
     def test_cleanup_finds_a_new_dangling_endpoint_on_the_same_track(self):
-        from pcb.net_routing.via_prune import (
-            newly_dangling_endpoint_nets,
-            newly_dangling_nets,
-        )
+        from pcb.net_routing.via_prune import CleanupRegressions
 
         before = {
             "violations": [{"type": "track_dangling", "items": [{"uuid": "same"}]}]
@@ -489,26 +505,36 @@ class ViaPruneTests(unittest.TestCase):
                 ["warning", ['dangling:["NMEA","F.Cu",3,4,250000,1,0]']]
             ]
         }
-        self.assertEqual(newly_dangling_nets(before, after, {"same": "NMEA"}), set())
-        self.assertEqual(newly_dangling_endpoint_nets(old, new), {"NMEA"})
+        self.assertEqual(
+            CleanupRegressions.newly_dangling_nets(before, after, {"same": "NMEA"}),
+            set(),
+        )
+        self.assertEqual(
+            CleanupRegressions.newly_dangling_endpoint_nets(old, new), {"NMEA"}
+        )
 
     def test_cleanup_splits_independent_branches_but_keeps_overlapping_tails_together(
         self,
     ):
-        from pcb.net_routing.via_prune import merge_cleanup_groups, split_cleanup_groups
+        from pcb.net_routing.via_prune import CleanupGroups
 
-        groups = merge_cleanup_groups(({"a", "b"}, {"b", "c"}, {"d"}, {"e", "f"}))
+        groups = CleanupGroups.merge_cleanup_groups(
+            ({"a", "b"}, {"b", "c"}, {"d"}, {"e", "f"})
+        )
         self.assertEqual(
             groups,
             (frozenset({"a", "b", "c"}), frozenset({"d"}), frozenset({"e", "f"})),
         )
-        pieces = split_cleanup_groups(groups, frozenset("abcdef"))
+        pieces = CleanupGroups.split_cleanup_groups(groups, frozenset("abcdef"))
         self.assertEqual(len(pieces), 2)
         self.assertFalse(pieces[0] & pieces[1])
         self.assertEqual(pieces[0] | pieces[1], frozenset("abcdef"))
         self.assertTrue(any({"a", "b", "c"} <= piece for piece in pieces))
         self.assertEqual(
-            split_cleanup_groups((frozenset({"a", "b"}),), frozenset({"a", "b"})), ()
+            CleanupGroups.split_cleanup_groups(
+                (frozenset({"a", "b"}),), frozenset({"a", "b"})
+            ),
+            (),
         )
 
 

@@ -12,7 +12,7 @@ from pcb.net_routing.isolated_copper import (
     same_net_bounding_overlap,
     verify_isolated_protected_removals,
 )
-from pcb.net_routing.working_save import verify_working_net_copper
+from pcb.net_routing.working_save import WorkingQualification
 
 
 class IsolatedCopperTests(unittest.TestCase):
@@ -152,8 +152,10 @@ class IsolatedCopperTests(unittest.TestCase):
             return_value={"SIG"},
         ):
             with self.assertRaisesRegex(RuntimeError, "electrical qualification"):
-                verify_working_net_copper(self.board, [record], [], ())
-            verify_working_net_copper(
+                WorkingQualification.verify_working_net_copper(
+                    self.board, [record], [], ()
+                )
+            WorkingQualification.verify_working_net_copper(
                 self.board,
                 [record],
                 [],
@@ -162,7 +164,7 @@ class IsolatedCopperTests(unittest.TestCase):
                 critical_nets=frozenset({"USB"}),
             )
             with self.assertRaisesRegex(RuntimeError, "not limited"):
-                verify_working_net_copper(
+                WorkingQualification.verify_working_net_copper(
                     self.board,
                     [record],
                     [],

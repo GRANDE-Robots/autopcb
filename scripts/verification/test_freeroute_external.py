@@ -8,12 +8,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
 from pcb.net_routing.external import (
-    _compare_checked_board,
-    _saved_checks,
-    accepted_state,
-    qualifies_via_reduction,
-    qualifies_warning_reduction,
-    removes_only_copper,
+    CheckedBoards,
+    PreviewState,
+    PreviewQualification,
     retain_candidate,
 )
 from pcb.freeroute_delta import Trace, Via
@@ -22,17 +19,17 @@ from pcb.net_routing.runner import _verify_resume_connectivity
 
 class ExternalRunStateTests(unittest.TestCase):
     def test_multi_router_provenance_requires_the_actual_final_tool(self):
-        from pcb.net_routing.external import router_stage_evidence
+        from pcb.net_routing.external import RouterProvenance
 
         fingerprint = "a" * 64
         stages = (("fastroute", None), ("krt", fingerprint))
-        evidence = router_stage_evidence(stages, "krt", fingerprint)
+        evidence = RouterProvenance.router_stage_evidence(stages, "krt", fingerprint)
         self.assertEqual([item["engine"] for item in evidence], ["fastroute", "krt"])
         self.assertEqual(evidence[-1]["router_fingerprint"], fingerprint)
         with self.assertRaises(ValueError):
-            router_stage_evidence(stages, "fastroute", None)
+            RouterProvenance.router_stage_evidence(stages, "fastroute", None)
         with self.assertRaises(ValueError):
-            router_stage_evidence(
+            RouterProvenance.router_stage_evidence(
                 (("fastroute", None), ("krt", "invalid")), "krt", "invalid"
             )
 
@@ -51,7 +48,7 @@ class ExternalRunStateTests(unittest.TestCase):
             "blocked_nets": {"USB": "unverified"},
             "island_counts": {},
         }
-        state = accepted_state(
+        state = PreviewState.accepted_state(
             old, "b" * 32, 250, plan, {"status": "sampled_unverified"}, [], 45.0
         )
         self.assertEqual(old["best_preview_opens"], 262)
@@ -61,7 +58,7 @@ class ExternalRunStateTests(unittest.TestCase):
         self.assertEqual(state["status"], "paused")
         self.assertFalse(state["publication_enabled"])
         self.assertEqual(state["renewed_from"], old["run_id"])
-        optimized = accepted_state(
+        optimized = PreviewState.accepted_state(
             old,
             "c" * 32,
             262,
@@ -78,21 +75,31 @@ class ExternalRunStateTests(unittest.TestCase):
         old = {"run_id": "a" * 32, "best_preview_opens": 262}
         plan = {"rounds": [], "blocked_nets": {}, "island_counts": {}}
         with self.assertRaisesRegex(ValueError, "improvement"):
-            accepted_state(old, "b" * 32, 262, plan, {}, [], 0.0)
+            PreviewState.accepted_state(old, "b" * 32, 262, plan, {}, [], 0.0)
 
     def test_via_optimization_requires_no_connectivity_or_length_regression(self):
         before = {"via_count": 10, "track_length_mm": 100.0, "degree_two_joints": 20}
         good = {"via_count": 9, "track_length_mm": 99.0, "degree_two_joints": 20}
-        self.assertTrue(qualifies_via_reduction(10, 10, before, good))
-        self.assertFalse(qualifies_via_reduction(10, 11, before, good))
-        self.assertFalse(
-            qualifies_via_reduction(10, 10, before, {**good, "via_count": 10})
+        self.assertTrue(
+            PreviewQualification.qualifies_via_reduction(10, 10, before, good)
         )
         self.assertFalse(
-            qualifies_via_reduction(10, 10, before, {**good, "track_length_mm": 101.0})
+            PreviewQualification.qualifies_via_reduction(10, 11, before, good)
         )
         self.assertFalse(
-            qualifies_via_reduction(10, 10, before, {**good, "degree_two_joints": 21})
+            PreviewQualification.qualifies_via_reduction(
+                10, 10, before, {**good, "via_count": 10}
+            )
+        )
+        self.assertFalse(
+            PreviewQualification.qualifies_via_reduction(
+                10, 10, before, {**good, "track_length_mm": 101.0}
+            )
+        )
+        self.assertFalse(
+            PreviewQualification.qualifies_via_reduction(
+                10, 10, before, {**good, "degree_two_joints": 21}
+            )
         )
         for engine, objective in (
             ("fastroute", "minimize-vias"),
@@ -114,8 +121,10 @@ class ExternalRunStateTests(unittest.TestCase):
         trace = Trace("N", "B.Cu", 200_000, (0, 0), (1_000_000, 0))
         via = Via("N", (1_000_000, 0), 600_000, 300_000)
         new_trace = Trace("N", "B.Cu", 200_000, (0, 0), (0, 1_000_000))
-        self.assertTrue(removes_only_copper([trace, via], [trace]))
-        self.assertFalse(removes_only_copper([trace, via], [trace, new_trace]))
+        self.assertTrue(PreviewQualification.removes_only_copper([trace, via], [trace]))
+        self.assertFalse(
+            PreviewQualification.removes_only_copper([trace, via], [trace, new_trace])
+        )
 
     def test_dangling_cleanup_requires_fewer_warnings_and_removal_only(self):
         first = Trace("A", "B.Cu", 200_000, (0, 0), (1_000_000, 0))
@@ -130,7 +139,7 @@ class ExternalRunStateTests(unittest.TestCase):
         after_geometry = {"via_count": 1, "track_length_mm": 1.0}
 
         def qualifies(opens, drc, geometry, copper):
-            return qualifies_warning_reduction(
+            return PreviewQualification.qualifies_warning_reduction(
                 3,
                 opens,
                 before_drc,
@@ -194,7 +203,7 @@ class ExternalRunStateTests(unittest.TestCase):
                 )
 
     def test_junction_cleanup_requires_the_exact_local_chamfer_and_fewer_warnings(self):
-        from pcb.net_routing.external import qualifies_corner_cleanup
+        from pcb.net_routing.external import PreviewQualification
 
         def trace(start, end, *, net="A", layer="B.Cu", width=200_000):
             return Trace(net, layer, width, start, end)
@@ -212,7 +221,7 @@ class ExternalRunStateTests(unittest.TestCase):
         new_geometry = {"via_count": 1, "track_length_mm": 4.0}
 
         def qualifies(candidate, *, opens=3, drc=new_drc, geometry=new_geometry):
-            return qualifies_corner_cleanup(
+            return PreviewQualification.qualifies_corner_cleanup(
                 3, opens, old_drc, drc, old_geometry, geometry, before, candidate
             )
 
@@ -241,14 +250,16 @@ class ExternalRunStateTests(unittest.TestCase):
         trace = Trace("N", "B.Cu", 200_000, (0, 0), (1_000_000, 0))
         via = Via("N", (1_000_000, 0), 600_000, 300_000)
         added = Trace("N", "B.Cu", 200_000, (1_000_000, 0), (2_000_000, 0))
-        self.assertFalse(qualifies_via_reduction(10, 10, before, after))
+        self.assertFalse(
+            PreviewQualification.qualifies_via_reduction(10, 10, before, after)
+        )
         self.assertTrue(
-            qualifies_via_reduction(
+            PreviewQualification.qualifies_via_reduction(
                 10, 10, before, after, before_copper=[trace, via], after_copper=[trace]
             )
         )
         self.assertFalse(
-            qualifies_via_reduction(
+            PreviewQualification.qualifies_via_reduction(
                 10,
                 10,
                 before,
@@ -268,7 +279,8 @@ class ExternalRunStateTests(unittest.TestCase):
         from pcb.net_routing import external
 
         self.assertEqual(
-            external.layer_cost_evidence("krt"), "native_router_equal_costs_configured"
+            external.RouterProvenance.layer_cost_evidence("krt"),
+            "native_router_equal_costs_configured",
         )
         with self.assertRaisesRegex(ValueError, "fingerprint"):
             retain_candidate(Path("missing"), "a" * 32, Path("missing"), engine="krt")
@@ -285,7 +297,7 @@ class ExternalRunStateTests(unittest.TestCase):
         }
         with (
             patch(
-                "pcb.net_routing.krt_adapter.validate_installation",
+                "pcb.net_routing.krt_adapter.KrtInstallation.validate_installation",
                 return_value="a" * 64,
             ),
             patch.object(
@@ -313,7 +325,7 @@ class ExternalRunStateTests(unittest.TestCase):
         from pcb.net_routing import external
 
         self.assertEqual(
-            external.layer_cost_evidence("TraceMaker"),
+            external.RouterProvenance.layer_cost_evidence("TraceMaker"),
             "session_layer_costs_not_independently_verified",
         )
         with self.assertRaisesRegex(ValueError, "fingerprint"):
@@ -322,13 +334,13 @@ class ExternalRunStateTests(unittest.TestCase):
             )
         stages = (("fastroute", None), ("TraceMaker", "c" * 64))
         self.assertEqual(
-            external.router_stage_evidence(stages, "TraceMaker", "c" * 64)[-1][
-                "engine"
-            ],
+            external.RouterProvenance.router_stage_evidence(
+                stages, "TraceMaker", "c" * 64
+            )[-1]["engine"],
             "TraceMaker",
         )
         with self.assertRaisesRegex(ValueError, "fingerprint"):
-            external.router_stage_evidence(
+            external.RouterProvenance.router_stage_evidence(
                 (("fastroute", None), ("TraceMaker", None)), "TraceMaker", None
             )
 
@@ -403,7 +415,9 @@ class ExternalRunStateTests(unittest.TestCase):
             patch("pcb.net_routing.external.run_native") as native,
             patch("pcb.net_routing.external.stable_connection_items", return_value={}),
         ):
-            _compare_checked_board(snapshot, baseline, candidate, 4, b"saved")
+            CheckedBoards.compare_checked_board(
+                snapshot, baseline, candidate, 4, b"saved"
+            )
         native.assert_called_once_with(
             _verify_resume_connectivity, snapshot.directory, b"saved"
         )
@@ -415,7 +429,9 @@ class ExternalRunStateTests(unittest.TestCase):
             patch("pcb.net_routing.external.stable_connection_items", return_value={}),
         ):
             with self.assertRaisesRegex(RuntimeError, "violations"):
-                _compare_checked_board(snapshot, baseline, candidate, 4, b"saved")
+                CheckedBoards.compare_checked_board(
+                    snapshot, baseline, candidate, 4, b"saved"
+                )
         native.assert_not_called()
 
     def test_saved_drc_cache_is_reused_only_for_identical_sources_and_tools(self):
@@ -424,20 +440,20 @@ class ExternalRunStateTests(unittest.TestCase):
         with patch(
             "pcb.net_routing.external.run_native", side_effect=reports
         ) as native:
-            first = _saved_checks(
+            first = CheckedBoards.saved_checks(
                 Path("project"), {"board": "v1"}, {"cli": "v1"}, "policy", cache
             )
             first["drc"]["errors"] = 99
-            second = _saved_checks(
+            second = CheckedBoards.saved_checks(
                 Path("project"), {"board": "v1"}, {"cli": "v1"}, "policy", cache
             )
-            changed = _saved_checks(
+            changed = CheckedBoards.saved_checks(
                 Path("project"), {"board": "v2"}, {"cli": "v1"}, "policy", cache
             )
-            changed_tool = _saved_checks(
+            changed_tool = CheckedBoards.saved_checks(
                 Path("project"), {"board": "v2"}, {"cli": "v2"}, "policy", cache
             )
-            changed_policy = _saved_checks(
+            changed_policy = CheckedBoards.saved_checks(
                 Path("project"), {"board": "v2"}, {"cli": "v2"}, "new", cache
             )
         self.assertEqual(second["drc"]["errors"], 0)

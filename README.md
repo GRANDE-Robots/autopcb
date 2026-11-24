@@ -1,10 +1,30 @@
 # AutoPCB
 
+## Overview
+
 AutoPCB takes design requirements or an existing KiCad project through layout preview, verification, and reproducible fabrication export. The desktop and CLI run the same jobs. Edit the native schematic and board in KiCad.
 
-The [workflow map](docs/workflow.html) shows how board area, routing cost and electrical evidence affect each decision.
+The [workflow map](docs/workflow.html) shows how board area, routing cost and electrical evidence affect each decision. The [algorithm guide](docs/algorithm.pdf) explains the search and its limits, and its [editable source](docs/algorithm.md) stays beside it.
 
-## Install and open
+## Responsibilities
+
+- Turn requirements and an offline component catalog into a reviewable proposal and a native KiCad project (`propose`, `create`).
+- Preview routing and placement on a private copy of an existing KiCad project, and save only a validated improvement (`route`, `compare`, `apply`, `placement-study`).
+- Check the saved board independently with KiCad: ERC, DRC, schematic agreement and sampled reference copper (`verify`).
+- Export checked fabrication packages, and draft packages that list their blockers (`export`).
+- Qualify an installation on the reference designs and benchmark routing arms under equal budgets (`qualify`, `benchmark`).
+- Run the same jobs from the terminal, the desktop app, and a phone or browser (`autopcb serve`).
+
+AutoPCB does not replace editing in KiCad or engineering review. Production approval and hardware bring-up remain separate.
+
+## Requirements
+
+- Python 3.9 or newer.
+- KiCad 10 with a Python that can import `pcbnew`. Set `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly. The software checks in this repository run on KiCad 10, most recently 10.0.8, and the Windows release check expects KiCad 10.0.6.
+- Optional extras in `pyproject.toml`: `desktop` (PySide6), `benchmark` (psutil), `review` (Pillow, pypdfium2, markdown-it-py) and `desktop-build` (PySide6, PyInstaller).
+- Building the Windows installer also needs Inno Setup 6.
+
+## Installation
 
 ```bash
 python -m pip install ".[desktop,benchmark]"
@@ -12,9 +32,28 @@ autopcb doctor
 autopcb-desktop
 ```
 
-Install KiCad 10 with a matching Python that can import `pcbnew`. Use `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly.
+`autopcb doctor` checks that a matched KiCad CLI and native worker are available.
 
-## Workspace
+### Build the desktop installer
+
+```bash
+python -m pip install ".[desktop-build]"
+python packaging/build_desktop.py --output results/distribution --bundle-only
+```
+
+Build on Windows with x64 Python, the `desktop-build` dependencies, and Inno Setup 6. The installer is per-user and adds a Start menu shortcut. The installed desktop loads `%LOCALAPPDATA%\AutoPCB\Workspace` by default; an installed Linux build uses `~/.local/share/AutoPCB/Workspace` (or `$XDG_DATA_HOME`) and macOS uses `~/Library/Application Support/AutoPCB/Workspace`. Use `--workspace` before `desktop` to select an existing workspace.
+
+```powershell
+New-Item -ItemType Directory -Path results/windows-release -Force | Out-Null
+python packaging/build_desktop.py --output results/windows-release/installer --iscc 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 2>&1 |
+    Tee-Object -FilePath results/windows-release/build.log
+```
+
+Omit `--iscc` to search for the compiler on PATH and in the standard Inno Setup 6 install locations. The output directory must be new. Compiling the installer leaves the Windows runtime checks pending.
+
+## Usage
+
+### Workspace
 
 | Folder | What goes there |
 | --- | --- |
@@ -75,7 +114,17 @@ The `autopcb.project.json` profile uses `schema_version: 1` and an `entry` nativ
 
 A checked export requires passing native checks and an `electrical_review` pointer with the report's relative `file` and `sha256`. The report file can live in `data/projects/<project>/`. The version 1 review records the reviewer, the exact `sources` from verification excluding the profile and review file, and a `policy_sha256` of the profile without the review pointer. Compute the policy digest over compact UTF-8 JSON with sorted keys. The `checks` map includes passing `electrical` and applicable `reference_copper` checks, with a method and measurements for each. Use `checks.reference_copper.findings` to map each current finding ID to a documented engineering disposition. Draft exports include the same blockers and raw findings as verification. Production approval and hardware bring-up remain separate. The [USB breakout review](docs/usb-breakout-review.md) gives the launch dispositions and a bench bring-up procedure for the USB reference design.
 
-## Development and packaging
+## Validation
+
+Software checks, KiCad verification and hardware evidence are reported separately and none stands in for another.
+
+| Evidence | What it covers | Where it comes from |
+| --- | --- | --- |
+| Software checks | The unit and integration suite, the code-rules audit, `ruff format` and `ruff check`. | `python scripts/run.py --project . test` and `check code`. CI runs the suite on Linux, macOS and Windows for each pull request that changes code. |
+| KiCad verification | ERC, DRC, schematic agreement and reference-copper sampling on a saved board. | `autopcb verify`, and `autopcb qualify` on the reference designs. Each run records its own results under `results/`, which Git ignores. |
+| Hardware evidence | Behavior of a built board. | Pending. The bench bring-up procedure for the USB reference design is in the [USB breakout review](docs/usb-breakout-review.md). |
+
+### Software tests
 
 ```bash
 python scripts/run.py --project . test
@@ -87,6 +136,10 @@ autopcb qualify --output results/host-qualification
 
 Pull requests that change code run the full suite with KiCad 10 on Windows, macOS and Linux (`.github/workflows/tests.yml`). The manual [Installers workflow](.github/workflows/installers.yml) builds the Windows installer, a Debian package and a macOS disk image from the selected commit and uploads each with its SHA-256. The installer build uses Inno Setup on Windows, a disk image on macOS, and a Debian package on Linux. The Linux job also installs the package and runs [the Linux check](packaging/check_linux_release.sh): `install` checks the files, desktop entry and `doctor`, `qualify` runs both reference projects, and `remove` checks that nothing is left behind. Set `CHECK_KICAD_PYTHON` when the system `python3` is not the interpreter that imports `pcbnew`. Run `qualify` from a fresh install on each target system. It creates both reference designs, verifies every guarded Apply against the saved PCB, and starts another preview when opens fall and rounds remain. A preview with no improvement ends that case's routing search. The report records the host, outline, toolchain, per-pass budget, saved opens and release blockers. The output directory retains the native projects, checks and draft packages. An incomplete qualification exits with status 2. Use `autopcb benchmark --baseline PATH` for a measured comparison under equal rule and resource budgets. The `--refinement` benchmark compares greedy routing with negotiated recovery under equal budgets. The original `scripts/run.py` commands remain available for existing KiCad projects.
 
+`python scripts/run.py --project . check code` audits the class, header, docstring and README rules, including that each folder README's File Structure table lists the files Git tracks in that folder and that this README has the sections above in order. Its baseline of older breaches, `scripts/verification/code_rules_baseline.json`, may only shrink.
+
+### Host qualification
+
 To compare compact placement with the original catalog outline, run the same two circuits with identical budgets in fresh output directories.
 
 ```bash
@@ -94,32 +147,33 @@ autopcb qualify --output results/compact-control --rounds 65 --seconds 24 --memo
 autopcb qualify --output results/nominal-control --fixed-outlines --rounds 65 --seconds 24 --memory-gib 2
 ```
 
-### Building and qualifying the Windows installer
-
-Build on Windows with x64 Python, the `desktop-build` dependencies, and Inno Setup 6. The installer is per-user and adds a Start menu shortcut. The installed desktop loads `%LOCALAPPDATA%\AutoPCB\Workspace` by default; an installed Linux build uses `~/.local/share/AutoPCB/Workspace` (or `$XDG_DATA_HOME`) and macOS uses `~/Library/Application Support/AutoPCB/Workspace`. Use `--workspace` before `desktop` to select an existing workspace.
-
-```powershell
-New-Item -ItemType Directory -Path results/windows-release -Force | Out-Null
-python packaging/build_desktop.py --output results/windows-release/installer --iscc 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 2>&1 |
-    Tee-Object -FilePath results/windows-release/build.log
-```
-
-Omit `--iscc` to search for the compiler on PATH and in the standard Inno Setup 6 install locations. The output directory must be new. Compiling the installer leaves the Windows runtime checks pending.
+### Windows installer qualification
 
 Copy the installer and [the validation script](packaging/check_windows_release.ps1) to a clean Windows 11 x64 VM. Use a non-elevated PowerShell session that permits local scripts, with the same standard user and evidence directory for both phases. Phase Install requires a VM with AutoPCB and KiCad absent. It checks setup, the Start menu entry, the installed CLI, and the missing KiCad diagnostic. Then install KiCad 10.0.6 in its standard location in the VM and run Phase Qualify.
 
 ```powershell
 .\check_windows_release.ps1 -Phase Install -Installer .\AutoPCB-1.0.0.dev0-windows.exe -EvidenceDir '..\AutoPCB QA'
-# Install KiCad 10.0.6 in the VM between these commands.
-.\check_windows_release.ps1 -Phase Qualify -Installer .\AutoPCB-1.0.0.dev0-windows.exe -EvidenceDir '..\AutoPCB QA'
-```
 
-Phase Qualify runs both reference projects from the installed executable, guides the desktop test, and checks uninstall and workspace retention. The expected checked-export refusal is the missing source-bound electrical review on the disposable boards. Copy back the evidence directory before resetting the VM. If Windows blocks an executable, the report identifies the file and failing step so the build can be reviewed under the VM's normal policy.
+## File Structure
 
-For a source preflight on a workstation with PySide6 and a matching KiCad toolchain, run this from the repository root:
+| File | Relevance | Dependencies | Used by |
+| --- | --- | --- | --- |
+| [`.git-blame-ignore-revs`](.git-blame-ignore-revs) | The formatting-only commits that `git blame` skips. | None | Git |
+| [`.gitattributes`](.gitattributes) | Keeps the controlled release inputs byte-exact. | None | Git |
+| [`.github/`](.github/workflows/README.md) | GitHub Actions workflows for tests and installers. | GitHub Actions | GitHub pull requests |
+| [`.gitignore`](.gitignore) | Keeps KiCad editor state, Python caches, `results/`, `config/campaigns/` and local snapshots out of Git. | None | Git |
+| [`AGENTS.md`](AGENTS.md) | The working rules for code, documentation, checks and Git. | None | Contributors and coding assistants |
+| [`LICENSE`](LICENSE) | The proprietary license. | None | Everyone who uses the repository |
+| [`config/`](config/README.md) | Routing defaults and the PDF build list. | None | `scripts/autopcb`, `scripts/utils` |
+| [`data/`](data/README.md) | Project inputs: requirements, catalog and engineering evidence. | None | `scripts/autopcb`, `scripts/core` |
+| [`docs/`](docs/README.md) | Product documentation, including the algorithm guide and its PDF. | `scripts/utils` builds the PDF | Readers |
+| [`packaging/`](packaging/README.md) | The desktop bundle and installer build, and the Windows release check. | `scripts/` packages | `.github/workflows/installers.yml` |
+| [`pyproject.toml`](pyproject.toml) | Package metadata, the `autopcb` and `autopcb-desktop` commands, optional dependency groups and package data. | setuptools | `pip`, the installer build |
+| [`ruff.toml`](ruff.toml) | Formatter and linter settings: 88 columns, Python 3.9 target. | `ruff` | `ruff format`, `ruff check`, CI |
+| [`scripts/`](scripts/README.md) | All AutoPCB code and its tests, one package per job. | KiCad 10 and its Python | Every command above |
 
-`python -B -m unittest discover -s scripts -p test_desktop.py`
+Generated output goes to `results/`, which Git ignores.
 
-The test drives the Qt controls offscreen and uses the real KiCad jobs for a disposable USB board. This covers preview, guarded Apply, native verification and draft export before the separate install and uninstall trial on the VM.
+## License
 
-[Algorithm guide](docs/algorithm.pdf) · [Editable documentation](docs/algorithm.md)
+AutoPCB and its documentation are proprietary. Copyright (c) 2026 GRANDE Robots and Aaron John Sabu. All rights reserved. See [LICENSE](LICENSE). KiCad is installed separately under its own license.

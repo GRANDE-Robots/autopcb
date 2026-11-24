@@ -1,7 +1,9 @@
-"""Plan editable octilinear track/via candidates on a conservative grid.
+"""route_optimizer.py: plan editable octilinear track and via candidates on a conservative grid.
 
 This is a geometric optimizer, not an electrical or manufacturing verifier.
 Native KiCad DRC and connectivity checks are required before using a result.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
@@ -20,103 +22,161 @@ COPPER_LAYERS = ("F.Cu", *(f"In{index}.Cu" for index in range(1, 31)), "B.Cu")
 DIRECTIONS = ((1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1))
 
 
-def is_staircase_triplet(first: int, middle: int, last: int) -> bool:
-    """Match diagonal, cardinal, then the same diagonal direction."""
-    return first == last and first % 2 == 1 and middle % 2 == 0
+class StaircaseTriplet:
+    """Recognizes the heading triple that forms a staircase."""
+
+    def __call__(self, first: int, middle: int, last: int) -> bool:
+        """Match diagonal, cardinal, then the same diagonal direction."""
+        return first == last and first % 2 == 1 and middle % 2 == 0
 
 
-def is_standard_dogleg(directions: Iterable[int]) -> bool:
-    """Recognize two 45-degree chamfers around one perpendicular cardinal run."""
-    directions = tuple(directions)
-    if len(directions) != 5:
-        return False
-    first, diagonal, middle, other_diagonal, last = directions
-    return (
-        first == last
-        and diagonal == other_diagonal
-        and first % 2 == middle % 2 == 0
-        and diagonal % 2 == 1
-        and (first - middle) % 8 in {2, 6}
-        and (diagonal - first) % 8 in {1, 7}
-        and (diagonal - middle) % 8 in {1, 7}
-    )
+is_staircase_triplet = StaircaseTriplet()
 
 
-def _advance_staircase_history(
-    memory: int, current: int, following: int, anchored: bool = False
-) -> int | None:
-    """Keep three prior runs; resolve a diagonal/cardinal/diagonal after its exit.
+class StandardDogleg:
+    """Recognizes the heading sequence of an allowed two-chamfer dogleg."""
 
-    A pending final triplet is checked on the complete candidate, where pad
-    access and existing-copper context are available. No unsafe path is accepted
-    merely because this bounded search history has not seen its ending yet.
-    A turn inside same-net pad copper ends the chain there, so a staircase
-    ending at it has no dogleg exit and the next run starts a new chain.
-    """
-    if current < 0 or current == following:
-        return memory
-    history = []
-    value = max(0, memory)
-    while value:
-        history.append(value % 9 - 1)
-        value //= 9
-    history.reverse()
-    if anchored:
+    def __call__(self, directions: Iterable[int]) -> bool:
+        """Recognize two 45-degree chamfers around one perpendicular cardinal run."""
+        directions = tuple(directions)
+        if len(directions) != 5:
+            return False
+        first, diagonal, middle, other_diagonal, last = directions
         return (
-            None
-            if len(history) >= 2 and is_staircase_triplet(*history[-2:], current)
-            else -1
+            first == last
+            and diagonal == other_diagonal
+            and first % 2 == middle % 2 == 0
+            and diagonal % 2 == 1
+            and (first - middle) % 8 in {2, 6}
+            and (diagonal - first) % 8 in {1, 7}
+            and (diagonal - middle) % 8 in {1, 7}
         )
-    context = [*history, current, following]
-    if (
-        len(context) == 5
-        and is_staircase_triplet(*context[1:4])
-        and not is_standard_dogleg(context)
-    ):
-        return None
-    result = 0
-    for direction in (*history, current)[-3:]:
-        result = result * 9 + direction + 1
-    return result
 
 
-def mm(value: object) -> int:
-    """Convert finite millimetres to exact integer nanometres."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, str, Decimal)):
-        raise ValueError("Millimetre values must be numbers")
-    try:
-        result = Decimal(str(value)) * NM_PER_MM
-    except InvalidOperation as exc:
-        raise ValueError("Invalid millimetre value") from exc
-    if not result.is_finite() or result != result.to_integral_value():
-        raise ValueError(
-            "Coordinates must be finite and have at most nanometre precision"
+is_standard_dogleg = StandardDogleg()
+
+
+class StaircaseHistory:
+    """Tracks the last three runs of a search path to spot a staircase as it forms."""
+
+    def __call__(
+        self, memory: int, current: int, following: int, anchored: bool = False
+    ) -> int | None:
+        """Keep three prior runs; resolve a diagonal/cardinal/diagonal after its exit.
+
+        A pending final triplet is checked on the complete candidate, where pad
+        access and existing-copper context are available. No unsafe path is accepted
+        merely because this bounded search history has not seen its ending yet.
+        A turn inside same-net pad copper ends the chain there, so a staircase
+        ending at it has no dogleg exit and the next run starts a new chain.
+        """
+        if current < 0 or current == following:
+            return memory
+        history = []
+        value = max(0, memory)
+        while value:
+            history.append(value % 9 - 1)
+            value //= 9
+        history.reverse()
+        if anchored:
+            return (
+                None
+                if len(history) >= 2 and is_staircase_triplet(*history[-2:], current)
+                else -1
+            )
+        context = [*history, current, following]
+        if (
+            len(context) == 5
+            and is_staircase_triplet(*context[1:4])
+            and not is_standard_dogleg(context)
+        ):
+            return None
+        result = 0
+        for direction in (*history, current)[-3:]:
+            result = result * 9 + direction + 1
+        return result
+
+
+_advance_staircase_history = StaircaseHistory()
+
+
+class Millimetres:
+    """Converts millimetre values to exact integer nanometres."""
+
+    def __call__(self, value: object) -> int:
+        """Convert finite millimetres to exact integer nanometres."""
+        if isinstance(value, bool) or not isinstance(value, (int, float, str, Decimal)):
+            raise ValueError("Millimetre values must be numbers")
+        try:
+            result = Decimal(str(value)) * NM_PER_MM
+        except InvalidOperation as exc:
+            raise ValueError("Invalid millimetre value") from exc
+        if not result.is_finite() or result != result.to_integral_value():
+            raise ValueError(
+                "Coordinates must be finite and have at most nanometre precision"
+            )
+        return int(result)
+
+
+mm = Millimetres()
+
+
+class ToMillimetres:
+    """Converts integer nanometres to millimetres."""
+
+    def __call__(self, value: int) -> float:
+        """Convert a length from nanometres to millimetres.
+
+        Inputs:
+            value: Length in nanometres.
+        Outputs:
+            The same length in millimetres.
+        """
+        return value / NM_PER_MM
+
+
+to_mm = ToMillimetres()
+
+
+class OctilinearLowerBound:
+    """Lower bound on the cost of moving across the grid in octilinear directions."""
+
+    def __call__(
+        self, dx: int, dy: int, step: float, axial_weight: float, diagonal_weight: float
+    ) -> float:
+        """Cheapest unobstructed displacement, ignoring bends and layer changes."""
+        short, long = sorted((dx, dy))
+        diagonal_cost = math.sqrt(2) * (axial_weight + diagonal_weight)
+        return step * (
+            (long - short) * axial_weight + short * min(2 * axial_weight, diagonal_cost)
         )
-    return int(result)
 
 
-def to_mm(value: int) -> float:
-    return value / NM_PER_MM
-
-
-def _octilinear_lower_bound(
-    dx: int, dy: int, step: float, axial_weight: float, diagonal_weight: float
-) -> float:
-    """Cheapest unobstructed displacement, ignoring bends and layer changes."""
-    short, long = sorted((dx, dy))
-    diagonal_cost = math.sqrt(2) * (axial_weight + diagonal_weight)
-    return step * (
-        (long - short) * axial_weight + short * min(2 * axial_weight, diagonal_cost)
-    )
+_octilinear_lower_bound = OctilinearLowerBound()
 
 
 @dataclass(frozen=True)
 class Point:
+    """A board position.
+
+    Inputs:
+        x: Horizontal coordinate in nanometres.
+        y: Vertical coordinate in nanometres.
+    """
+
     x: int
     y: int
 
     @classmethod
     def from_mm(cls, value: object) -> Point:
+        """Build a point from millimetre coordinates.
+
+        Inputs:
+            value: A two-element list or tuple [x, y] in millimetres.
+        Outputs:
+            The point in nanometres. Raises ValueError when value is not a two-element
+            list or tuple or an element is not an exact millimetre number.
+        """
         if not isinstance(value, (list, tuple)) or len(value) != 2:
             raise ValueError(
                 "A point must be a two-element [x, y] array in millimetres"
@@ -124,6 +184,7 @@ class Point:
         return cls(mm(value[0]), mm(value[1]))
 
     def as_mm(self) -> list[float]:
+        """The point as a list [x, y] in millimetres."""
         return [to_mm(self.x), to_mm(self.y)]
 
 
@@ -144,6 +205,13 @@ class Obstacle:
     boundary_only: bool = False
 
     def __post_init__(self) -> None:
+        """Check the obstacle's geometry.
+
+        Raises ValueError for reversed bounds, a layer that is not a copper layer, an
+        unknown kind, a boundary-only flag on anything but a keepout, a radius or
+        clearance that is not a nonnegative integer, rounded corners on anything but a
+        plain pad rectangle, or a capsule that is malformed or leaves the bounds.
+        """
         if self.lower.x > self.upper.x or self.lower.y > self.upper.y:
             raise ValueError("Obstacle bounds are reversed")
         if not self.layers or any(layer not in COPPER_LAYERS for layer in self.layers):
@@ -214,50 +282,88 @@ class Obstacle:
         )
 
 
-def _point_near_segment(point: Point, first: Point, last: Point, radius: int) -> bool:
-    """Compare squared distances exactly, including both round end caps."""
-    dx, dy = last.x - first.x, last.y - first.y
-    px, py = point.x - first.x, point.y - first.y
-    length_sq = dx * dx + dy * dy
-    projection = px * dx + py * dy
-    if not length_sq or projection <= 0:
-        return px * px + py * py <= radius * radius
-    if projection >= length_sq:
-        qx, qy = point.x - last.x, point.y - last.y
-        return qx * qx + qy * qy <= radius * radius
-    cross = px * dy - py * dx
-    return cross * cross <= radius * radius * length_sq
+class PointNearSegment:
+    """Tests whether a point lies within a distance of a segment."""
+
+    def __call__(self, point: Point, first: Point, last: Point, radius: int) -> bool:
+        """Compare squared distances exactly, including both round end caps."""
+        dx, dy = last.x - first.x, last.y - first.y
+        px, py = point.x - first.x, point.y - first.y
+        length_sq = dx * dx + dy * dy
+        projection = px * dx + py * dy
+        if not length_sq or projection <= 0:
+            return px * px + py * py <= radius * radius
+        if projection >= length_sq:
+            qx, qy = point.x - last.x, point.y - last.y
+            return qx * qx + qy * qy <= radius * radius
+        cross = px * dy - py * dx
+        return cross * cross <= radius * radius * length_sq
 
 
-def _segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool:
-    def cross(p: Point, q: Point, r: Point) -> int:
-        return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+_point_near_segment = PointNearSegment()
 
-    def on_segment(p: Point, q: Point, r: Point) -> bool:
-        return min(p.x, q.x) <= r.x <= max(p.x, q.x) and min(p.y, q.y) <= r.y <= max(
-            p.y, q.y
+
+class SegmentsIntersect:
+    """Tests whether two segments touch or cross."""
+
+    def __call__(self, a: Point, b: Point, c: Point, d: Point) -> bool:
+        """Test two segments for a shared point, including shared endpoints and collinear overlap.
+
+        Inputs:
+            a, b: Endpoints of the first segment.
+            c, d: Endpoints of the second segment.
+        Outputs:
+            True when the segments have at least one point in common.
+        """
+
+        def cross(p: Point, q: Point, r: Point) -> int:
+            """Cross product of p to q with p to r; zero when the three points are
+            collinear.
+            """
+            return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+
+        def on_segment(p: Point, q: Point, r: Point) -> bool:
+            """Whether r lies inside the bounding box of p and q."""
+            return min(p.x, q.x) <= r.x <= max(p.x, q.x) and min(
+                p.y, q.y
+            ) <= r.y <= max(p.y, q.y)
+
+        ab_c, ab_d, cd_a, cd_b = (
+            cross(a, b, c),
+            cross(a, b, d),
+            cross(c, d, a),
+            cross(c, d, b),
+        )
+        if (ab_c > 0 > ab_d or ab_d > 0 > ab_c) and (
+            cd_a > 0 > cd_b or cd_b > 0 > cd_a
+        ):
+            return True
+        return any(
+            (
+                ab_c == 0 and on_segment(a, b, c),
+                ab_d == 0 and on_segment(a, b, d),
+                cd_a == 0 and on_segment(c, d, a),
+                cd_b == 0 and on_segment(c, d, b),
+            )
         )
 
-    ab_c, ab_d, cd_a, cd_b = (
-        cross(a, b, c),
-        cross(a, b, d),
-        cross(c, d, a),
-        cross(c, d, b),
-    )
-    if (ab_c > 0 > ab_d or ab_d > 0 > ab_c) and (cd_a > 0 > cd_b or cd_b > 0 > cd_a):
-        return True
-    return any(
-        (
-            ab_c == 0 and on_segment(a, b, c),
-            ab_d == 0 and on_segment(a, b, d),
-            cd_a == 0 and on_segment(c, d, a),
-            cd_b == 0 and on_segment(c, d, b),
-        )
-    )
+
+_segments_intersect = SegmentsIntersect()
 
 
 @dataclass(frozen=True)
 class Weights:
+    """Cost weights of a route search.
+
+    Inputs:
+        length: Cost per millimetre of track.
+        bend: Cost per bend.
+        via: Cost per new via.
+        diagonal: Extra cost per millimetre of diagonal track.
+        symmetry: Cost per millimetre of track, scaled by its distance in
+            millimetres from the symmetry guide.
+    """
+
     length: float = 1.0
     bend: float = 1.0
     via: float = 10.0
@@ -265,6 +371,9 @@ class Weights:
     symmetry: float = 0.0
 
     def __post_init__(self) -> None:
+        """Raise ValueError unless every weight is finite and nonnegative and the length
+        weight is positive.
+        """
         values = (self.length, self.bend, self.via, self.diagonal, self.symmetry)
         if (
             any(not math.isfinite(value) or value < 0 for value in values)
@@ -277,6 +386,8 @@ class Weights:
 
 @dataclass(frozen=True)
 class Segment:
+    """A straight copper segment between two points on one layer."""
+
     start: Point
     end: Point
     layer: str
@@ -284,6 +395,8 @@ class Segment:
 
 @dataclass(frozen=True)
 class Via:
+    """A layer transition at a point, from one copper layer to another."""
+
     at: Point
     from_layer: str
     to_layer: str
@@ -300,12 +413,14 @@ class PadCopper:
     boxes: tuple[tuple[str, int, int, int, int], ...] = ()
 
     def holds(self, point: Point, layer: str) -> bool:
+        """Whether the point lies inside one of the boxes on the layer."""
         return any(
             name == layer and x0 <= point.x <= x1 and y0 <= point.y <= y1
             for name, x0, y0, x1, y1 in self.boxes
         )
 
     def covers(self, segment: Segment) -> bool:
+        """Whether both ends of the segment lie inside pad copper on its layer."""
         return self.holds(segment.start, segment.layer) and self.holds(
             segment.end, segment.layer
         )
@@ -313,6 +428,20 @@ class PadCopper:
 
 @dataclass(frozen=True)
 class Route:
+    """A route found by a search.
+
+    Inputs:
+        segments: Track segments in order from start to end.
+        vias: New vias the route needs.
+        reused_vias: Existing same-net vias the route passes through.
+        length_mm: Track length in millimetres.
+        bends: Number of bends.
+        cost: Total weighted cost.
+        expanded: Search states expanded to find it.
+        search_truncated: True when a limit or a shortcut ended the search, so a
+            cheaper route may exist.
+    """
+
     segments: tuple[Segment, ...]
     vias: tuple[Via, ...]
     reused_vias: tuple[Via, ...]
@@ -331,6 +460,12 @@ class SearchLimitReached(RuntimeError):
     """The search was stopped at its configured expansion limit."""
 
     def __init__(self, message: str, *, expanded: int = 0) -> None:
+        """Store the message and the work done before the limit.
+
+        Inputs:
+            message: Description of the limit.
+            expanded: Search states expanded before the stop.
+        """
         super().__init__(message)
         self.expanded = expanded
 
@@ -339,43 +474,81 @@ class NoGridRoute(RuntimeError):
     """No route exists in the supplied discrete grid and obstacle model."""
 
     def __init__(self, message: str, *, expanded: int = 0) -> None:
+        """Store the message and the work done before the search ended.
+
+        Inputs:
+            message: Description of the failure.
+            expanded: Search states expanded before the stop.
+        """
         super().__init__(message)
         self.expanded = expanded
 
 
-def mirror_points(
-    points: Iterable[Point], axis: str, coordinate: int
-) -> tuple[Point, ...]:
-    if axis == "x":
-        return tuple(Point(2 * coordinate - p.x, p.y) for p in points)
-    if axis == "y":
-        return tuple(Point(p.x, 2 * coordinate - p.y) for p in points)
-    raise ValueError("Mirror axis must be x or y")
+class MirrorPoints:
+    """Reflects points across a horizontal or vertical line."""
+
+    def __call__(
+        self, points: Iterable[Point], axis: str, coordinate: int
+    ) -> tuple[Point, ...]:
+        """Mirror points across a line.
+
+        Inputs:
+            points: Points to reflect.
+            axis: "x" reflects x coordinates about x = coordinate, "y" reflects y
+                coordinates about y = coordinate.
+            coordinate: Position of the mirror line in nanometres.
+        Outputs:
+            The reflected points as a tuple. Raises ValueError for any other axis.
+        """
+        if axis == "x":
+            return tuple(Point(2 * coordinate - p.x, p.y) for p in points)
+        if axis == "y":
+            return tuple(Point(p.x, 2 * coordinate - p.y) for p in points)
+        raise ValueError("Mirror axis must be x or y")
 
 
-def _guide_distance(point: Point, guide: tuple[Point, ...]) -> float:
-    if not guide:
-        return 0.0
-    if len(guide) == 1:
-        return math.hypot(point.x - guide[0].x, point.y - guide[0].y) / NM_PER_MM
-    best = math.inf
-    for first, last in zip(guide, guide[1:]):
-        dx, dy = last.x - first.x, last.y - first.y
-        length2 = dx * dx + dy * dy
-        t = (
-            0.0
-            if not length2
-            else max(
-                0.0,
-                min(
-                    1.0, ((point.x - first.x) * dx + (point.y - first.y) * dy) / length2
-                ),
+mirror_points = MirrorPoints()
+
+
+class GuideDistance:
+    """Measures how far a point lies from a symmetry guide."""
+
+    def __call__(self, point: Point, guide: tuple[Point, ...]) -> float:
+        """Distance from a point to a symmetry guide.
+
+        Inputs:
+            point: Position to measure.
+            guide: Points of the guide polyline; an empty guide has no distance.
+        Outputs:
+            Millimetres to the nearest guide segment, to the single guide point when
+            the guide has one point, or 0.0 for an empty guide.
+        """
+        if not guide:
+            return 0.0
+        if len(guide) == 1:
+            return math.hypot(point.x - guide[0].x, point.y - guide[0].y) / NM_PER_MM
+        best = math.inf
+        for first, last in zip(guide, guide[1:]):
+            dx, dy = last.x - first.x, last.y - first.y
+            length2 = dx * dx + dy * dy
+            t = (
+                0.0
+                if not length2
+                else max(
+                    0.0,
+                    min(
+                        1.0,
+                        ((point.x - first.x) * dx + (point.y - first.y) * dy) / length2,
+                    ),
+                )
             )
-        )
-        best = min(
-            best, math.hypot(point.x - first.x - t * dx, point.y - first.y - t * dy)
-        )
-    return best / NM_PER_MM
+            best = min(
+                best, math.hypot(point.x - first.x - t * dx, point.y - first.y - t * dy)
+            )
+        return best / NM_PER_MM
+
+
+_guide_distance = GuideDistance()
 
 
 class GridRouter:
@@ -413,6 +586,48 @@ class GridRouter:
         first_feasible: bool = False,
         pad_copper: PadCopper = PadCopper(),
     ) -> None:
+        """Build the grid and mark the cells the obstacles block.
+
+        Inputs:
+            lower, upper: Corners of the routing bounds in nanometres.
+            step: Grid pitch in nanometres.
+            layers: Distinct copper layers the search may use.
+            net: Net being routed; same-net copper is not an obstacle.
+            width: Track width in nanometres.
+            clearance: Copper clearance in nanometres.
+            via_size, via_drill: Via diameter and drill in nanometres.
+            obstacles: Copper and keepouts to avoid.
+            weights: Cost weights of the search.
+            guide: Symmetry guide polyline, required when the symmetry weight is set.
+            max_expansions: Limit on search states expanded by one search.
+            max_cells: Limit on grid cells over all layers.
+            allow_new_vias: Whether the search may add vias.
+            allowed_reused_vias: Positions of existing same-net vias that may be
+                reused, or None to allow every one.
+            layer_penalties: Extra cost per millimetre of track by layer.
+            forbid_staircase: Reject diagonal, cardinal, diagonal staircases away from
+                same-net pad copper.
+            min_segment_length: Shortest segment between bends in nanometres.
+            gentle_turns: Also refuse 135-degree turns outside pad copper; 90-degree
+                turns and reversals are always refused there.
+            initial_directions, final_directions: Headings (indices into DIRECTIONS)
+                allowed for the first and last segment, or None for any.
+            enforce_endpoint_spacing: Apply min_segment_length to the first and last
+                segment too.
+            topology_heuristic: Use a relaxed multilayer cost bound to guide the
+                search.
+            heuristic_weight: Factor of at least 1 applied to the search estimate.
+            check_budget: Called periodically; raising SearchBudgetExceeded ends the
+                search.
+            profile: Optional rule profile that supplies per-segment widths and
+                clearances.
+            first_feasible: Prefer a feasible route found quickly, by direct paths
+                and without cost refinement off the grid, over the cheapest one.
+            pad_copper: Same-net pad copper boxes.
+        Outputs:
+            Raises ValueError for an invalid dimension, option, layer or bounds, or a
+            grid larger than max_cells.
+        """
         if step <= 0 or width <= 0 or clearance < 0:
             raise ValueError(
                 "Grid step and width must be positive and clearance nonnegative"
@@ -590,6 +805,9 @@ class GridRouter:
                 self.via_blocked.update(self._covered(obstacle, via_margin))
 
     def _spatial_cells(self, first: Point, last: Point, margin: int = 0):
+        """Yield the spatial index cells that the box spanned by two points, grown by
+        margin nanometres, touches.
+        """
         step = self._spatial_step
         for x in range(
             (min(first.x, last.x) - margin) // step,
@@ -639,6 +857,9 @@ class GridRouter:
                 break
 
             def clearance(obstacle):
+                """Clearance in nanometres required between the piece and the obstacle:
+                the router's own, or the one the profile gives.
+                """
                 if profile is None:
                     return self.clearance
                 resolve = getattr(profile, "clearance_for_track", None)
@@ -665,6 +886,15 @@ class GridRouter:
         return clear
 
     def _covered(self, obstacle: Obstacle, margin: int) -> set[tuple[int, int]]:
+        """Grid cells whose vertex lies within a margin of an obstacle's copper.
+
+        Inputs:
+            obstacle: Obstacle to rasterize.
+            margin: Distance beyond the copper edge in nanometres.
+        Outputs:
+            The covered cells as (x, y) grid indices; the margin carries one nanometre
+            of slack.
+        """
         x0 = max(
             0, math.ceil((obstacle.lower.x - margin - 1 - self.lower.x) / self.step)
         )
@@ -742,6 +972,10 @@ class GridRouter:
         return result
 
     def _index(self, point: Point) -> tuple[int, int]:
+        """Grid cell (x, y) of an on-grid point.
+
+        Raises ValueError when the point is off the grid or outside the bounds.
+        """
         dx, dy = point.x - self.lower.x, point.y - self.lower.y
         if dx % self.step or dy % self.step:
             raise ValueError("Endpoint is not on the specified grid")
@@ -751,17 +985,22 @@ class GridRouter:
         return x, y
 
     def _point(self, x: int, y: int) -> Point:
+        """Board position of grid cell (x, y)."""
         return Point(self.lower.x + x * self.step, self.lower.y + y * self.step)
 
     def _inside(self, x: int, y: int, margin: int) -> bool:
         # Relative integer coordinates are exactly equivalent to creating a
         # Point and checking the absolute bounds, without a per-cell allocation.
+        """Whether grid cell (x, y) lies at least margin nanometres inside the routing
+        bounds.
+        """
         return (
             margin <= x * self.step <= self.upper.x - self.lower.x - margin
             and margin <= y * self.step <= self.upper.y - self.lower.y - margin
         )
 
     def _inside_point(self, p: Point, margin: int) -> bool:
+        """Whether the point lies at least margin nanometres inside the routing bounds."""
         return (
             self.lower.x + margin <= p.x <= self.upper.x - margin
             and self.lower.y + margin <= p.y <= self.upper.y - margin
@@ -769,6 +1008,13 @@ class GridRouter:
 
     @staticmethod
     def _direction(a: Point, b: Point) -> int:
+        """Heading of a straight segment.
+
+        Outputs:
+            The index into DIRECTIONS of the direction from a to b. Raises ValueError
+            for a zero-length segment or one that is neither axis-parallel nor at
+            45 degrees.
+        """
         dx, dy = b.x - a.x, b.y - a.y
         if not dx and not dy:
             raise ValueError("Zero-length route segment")
@@ -778,6 +1024,12 @@ class GridRouter:
 
     @staticmethod
     def _stub_paths(start: Point, end: Point) -> list[tuple[Point, ...]]:
+        """Octilinear paths from start to end.
+
+        Outputs:
+            The start point alone when both are equal, one segment when they are
+            axis-parallel or diagonal, otherwise the two paths with one bend.
+        """
         dx, dy = end.x - start.x, end.y - start.y
         if not dx and not dy:
             return [(start,)]
@@ -980,6 +1232,9 @@ class GridRouter:
                 )
 
         def estimate(cell):
+            """Sort key of a via cell: zero or the via weight, the octilinear distance
+            from start through the cell to end in nanometres, and the cell.
+            """
             at = self._point(*cell)
             reusable = {start_layer, end_layer} <= self.existing_vias.get(cell, set())
             distance = sum(
@@ -1080,6 +1335,9 @@ class GridRouter:
             return None
 
         def candidates(endpoint: Point) -> list[tuple[tuple[int, int], bool]]:
+            """Up to 96 usable via cells near the endpoint as ((x, y), reusable) pairs,
+            reusable existing vias first and then the nearest.
+            """
             cx = (endpoint.x - self.lower.x) // self.step
             cy = (endpoint.y - self.lower.y) // self.step
             cells = set()
@@ -1164,6 +1422,9 @@ class GridRouter:
             detours = {}
 
             def joined(first, last, transit, middle):
+                """Join two pad escapes and the path between their vias on the transit
+                layer into one route.
+                """
                 first_cell, first_reuse, first_path = first
                 last_cell, last_reuse, last_path = last
                 a, b = self._point(*first_cell), self._point(*last_cell)
@@ -1193,6 +1454,9 @@ class GridRouter:
                 )
 
             def accepted(result):
+                """Whether a joined route passes the staircase rule and the caller's
+                check, which runs with the caller's endpoint directions restored.
+                """
                 if self.forbid_staircase and self._staircase_off_pads(result.segments):
                     return False
                 self.initial_directions, self.final_directions = original
@@ -1299,6 +1563,9 @@ class GridRouter:
                     a, b = self._point(*first[0]), self._point(*last[0])
 
                     def compatible(middle):
+                        """Accept a transit-layer path only when the route joined with
+                        both escapes is accepted.
+                        """
                         return accepted(joined(first, last, transit, middle))
 
                     try:
@@ -1351,6 +1618,7 @@ class GridRouter:
         x1, y1 = obstacle.upper.x - corner, obstacle.upper.y - corner
 
         def intersects_rectangle(left, top, right, bottom):
+            """Whether the segment touches the axis-aligned rectangle."""
             if (
                 max(a.x, b.x) < left
                 or min(a.x, b.x) > right
@@ -1383,6 +1651,9 @@ class GridRouter:
     def _endpoint_options(
         self, endpoint: Point, layer: str, *, reverse: bool
     ) -> list[tuple[Point, ...]]:
+        """The nearest group of clear grid escapes from an endpoint, or an empty list
+        when it has none.
+        """
         return next(self._endpoint_option_groups(endpoint, layer, reverse=reverse), [])
 
     def _endpoint_inside_minimum_foreign_clearance(
@@ -1454,6 +1725,9 @@ class GridRouter:
     def _endpoint_cannot_begin_stub(self, endpoint: Point, layer: str) -> bool:
         # Longer physical tracks can activate a more permissive local rule.
         # Only minimum envelopes are monotone under every such extension.
+        """Whether every shortest grid stub from the endpoint is blocked even at the
+        minimum swept-copper envelope, so the endpoint has no escape.
+        """
         length = self._minimum_stub_leg(endpoint)
         return all(
             self._minimum_envelope_blocked(
@@ -1665,6 +1939,19 @@ class GridRouter:
         *,
         candidate_check: Callable[[Route], bool] | None = None,
     ) -> Route:
+        """Route between endpoints that are not both on the grid.
+
+        Joins each endpoint to nearby grid vertices with octilinear stubs and searches
+        between the stub ends, keeping the cheapest complete route.
+
+        Inputs:
+            start, start_layer, end, end_layer: Endpoints in nanometres and their layers.
+            candidate_check: Optional test that accepts or rejects a complete route.
+        Outputs:
+            The cheapest route found. Raises NoGridRoute when no stub pair connects,
+            SearchLimitReached when a limit leaves the answer unknown, and
+            SearchBudgetExceeded when the shared budget ends before any route exists.
+        """
         best = None
         context_rejected = False
         margin = self.clearance + math.ceil(self.width / 2)
@@ -1776,6 +2063,9 @@ class GridRouter:
         remaining = self.max_expansions
 
         def goal_seeds() -> frozenset[tuple[int, int, int]]:
+            """Grid states (x, y, layer index) at the first grid vertex of every end
+            escape, on the end layer.
+            """
             layer = self.layers.index(end_layer)
             return frozenset((*self._index(last[0]), layer) for last in ends)
 
@@ -1882,6 +2172,10 @@ class GridRouter:
                         accepted = []
 
                         def valid_join(candidate):
+                            """Join a grid route with the current escapes and accept it
+                            only when the join is legal and passes candidate_check,
+                            keeping the joined route.
+                            """
                             result = self._join_off_grid(
                                 start,
                                 start_layer,
@@ -1990,6 +2284,9 @@ class GridRouter:
                 alternatives = []
 
                 def legal_join(candidate):
+                    """Join a grid route with the current escapes and accept it when the
+                    join is legal, keeping the joined route.
+                    """
                     joined_candidate = self._join_off_grid(
                         start,
                         start_layer,
@@ -2138,7 +2435,9 @@ class GridRouter:
         return cls.staircase_count(segments) > 0
 
     def _staircase_off_pads(self, segments: Iterable[Segment]) -> bool:
-        """Judge each track chain between same-net pad copper, as the saved-board style check does."""
+        """Judge each track chain between same-net pad copper, as the saved-board style
+        check does.
+        """
         chain: list[Segment] = []
         for segment in self._runs(segments):
             if chain and self.pad_copper.holds(segment.start, segment.layer):
@@ -2166,6 +2465,20 @@ class GridRouter:
         _expansion_budget: int | None = None,
         candidate_check: Callable[[Route], bool] | None = None,
     ) -> Route:
+        """Find the cheapest route between two points.
+
+        Inputs:
+            start, start_layer, end, end_layer: Endpoints in nanometres and their layers.
+            _expansion_budget: Cap on the states this call may expand, or None for
+                max_expansions.
+            candidate_check: Optional test that accepts or rejects a complete route.
+        Outputs:
+            The route found. Raises ValueError for a disabled endpoint layer, identical
+            endpoints or a candidate_check that is not callable, NoGridRoute when no
+            route exists in the grid and obstacle model, SearchLimitReached when the
+            expansion limit or rejected candidates leave the answer unknown, and
+            SearchBudgetExceeded from check_budget.
+        """
         if start_layer not in self.layers or end_layer not in self.layers:
             raise ValueError("Endpoint layers must be enabled for routing")
         if start == end and start_layer == end_layer:
@@ -2251,6 +2564,9 @@ class GridRouter:
         max_run = math.ceil(self.min_segment_length / self.step)
 
         def long_enough(direction: int, steps: int) -> bool:
+            """Whether a run of steps grid steps in a direction reaches
+            min_segment_length; always true for no run.
+            """
             if not steps or direction == -1:
                 return True
             distance = steps * self.step * (math.sqrt(2) if direction % 2 else 1)
@@ -2285,11 +2601,17 @@ class GridRouter:
                 raise NoGridRoute("No route exists in the relaxed grid topology")
 
         def relaxed_cost(x: int, y: int, layer: int) -> float:
+            """Relaxed topology cost to the goal from a grid state, or 0 without a
+            topology bound.
+            """
             if topology is None:
                 return 0
             return topology[layer * self.nx * self.ny + y * self.nx + x]
 
         def heuristic(x: int, y: int, layer: int) -> float:
+            """Estimated remaining cost from a grid state: heuristic_weight times the
+            larger of the octilinear lower bound and the relaxed topology cost.
+            """
             dx, dy = abs(ex - x), abs(ey - y)
             straight = _octilinear_lower_bound(
                 dx,
@@ -2523,6 +2845,9 @@ class GridRouter:
     def _offer(
         queue, distances, previous, serial, current, nxt, cost, heuristic
     ) -> None:
+        """Record state nxt, reached from current at cost, and queue it when that beats
+        its best known cost.
+        """
         if cost + 1e-12 < distances.get(nxt, math.inf):
             distances[nxt] = cost
             previous[nxt] = current

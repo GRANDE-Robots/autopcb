@@ -1,7 +1,9 @@
-"""Measure selected PCB route segments using a matching board-audit snapshot.
+"""audit_pcb_paths.py: measure selected PCB route segments from a board-audit snapshot.
 
 The input folder must contain the board audit's native review and geometry;
 results exclude zone paths and do not establish electrical performance.
+
+Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 import argparse
@@ -16,184 +18,226 @@ import pcbnew
 from core.export_helpers import assert_current_inputs, sha
 
 
-def load_current_geometry(project, output_dir):
-    """Accept geometry only when its recorded board and bytes still match."""
-    review_path = output_dir / "pcb_native_review.json"
-    geometry_path = output_dir / "pcb_geometry_detail.json"
-    review = json.loads(review_path.read_text(encoding="utf-8-sig"))
-    source = review.get("source_sha256")
-    if (
-        review.get("source_unchanged") is not True
-        or not isinstance(source, dict)
-        or len([name for name in source if name.lower().endswith(".kicad_pcb")]) != 1
-    ):
-        raise RuntimeError(
-            "Stale or incomplete native PCB review; rerun the board audit"
-        )
-    try:
-        assert_current_inputs(project, source, {})
-    except (OSError, ValueError, RuntimeError) as error:
-        raise RuntimeError("Stale native PCB review; rerun the board audit") from error
-    if review.get("geometry_sha256") != sha(geometry_path):
-        raise RuntimeError(
-            "PCB geometry changed or lacks provenance; rerun the board audit"
-        )
-    geometry = json.loads(geometry_path.read_text(encoding="utf-8-sig"))
-    return review, geometry
+class GeometrySnapshot:
+    """Read the native review and geometry of a board audit once they are current."""
+
+    def __call__(self, project, output_dir):
+        """Accept geometry only when its recorded board and bytes still match.
+
+        Inputs:
+            project: Project folder.
+            output_dir: Board-audit folder with ``pcb_native_review.json`` and
+                ``pcb_geometry_detail.json``.
+        Outputs:
+            The review and the geometry. Raises RuntimeError when the review is
+            stale or incomplete or when the geometry lacks provenance.
+        """
+        review_path = output_dir / "pcb_native_review.json"
+        geometry_path = output_dir / "pcb_geometry_detail.json"
+        review = json.loads(review_path.read_text(encoding="utf-8-sig"))
+        source = review.get("source_sha256")
+        if (
+            review.get("source_unchanged") is not True
+            or not isinstance(source, dict)
+            or len([name for name in source if name.lower().endswith(".kicad_pcb")])
+            != 1
+        ):
+            raise RuntimeError(
+                "Stale or incomplete native PCB review; rerun the board audit"
+            )
+        try:
+            assert_current_inputs(project, source, {})
+        except (OSError, ValueError, RuntimeError) as error:
+            raise RuntimeError(
+                "Stale native PCB review; rerun the board audit"
+            ) from error
+        if review.get("geometry_sha256") != sha(geometry_path):
+            raise RuntimeError(
+                "PCB geometry changed or lacks provenance; rerun the board audit"
+            )
+        geometry = json.loads(geometry_path.read_text(encoding="utf-8-sig"))
+        return review, geometry
 
 
-def path_specs():
-    """List individual net segments; switched USB paths stop on each side of U28."""
-    specs = [
-        ("TEENSY_HOST_USB_DP", ("J28", "A6"), ("U28", "8")),
-        ("TEENSY_HOST_USB_DM", ("J28", "A7"), ("U28", "7")),
-        ("TEENSY_HOST_USB_DP", ("J28", "B6"), ("U28", "8")),
-        ("TEENSY_HOST_USB_DM", ("J28", "B7"), ("U28", "7")),
-        ("TEENSY_USB_DP", ("U28", "1"), ("CA1", "3")),
-        ("TEENSY_USB_DM", ("U28", "2"), ("CA1", "2")),
-        ("IMU_USB_DP", ("J30", "A6"), ("J9", "3")),
-        ("IMU_USB_DM", ("J30", "A7"), ("J9", "6")),
-        ("IMU_USB_DP", ("J30", "B6"), ("J9", "3")),
-        ("IMU_USB_DM", ("J30", "B7"), ("J9", "6")),
-    ]
-    for x, a, c in [(1, "J22", "J23"), (2, "J24", "J25")]:
-        for sig, sp, ep in [
-            ("TX_P", "1", "1"),
-            ("TX_N", "2", "2"),
-            ("RX_P", "5", "3"),
-            ("RX_N", "4", "6"),
+load_current_geometry = GeometrySnapshot()
+
+
+class JessiePathSpecs:
+    """The built-in net and pad pairs of the Jessie board."""
+
+    def __call__(self):
+        """List individual net segments; switched USB paths stop on each side of U28."""
+        specs = [
+            ("TEENSY_HOST_USB_DP", ("J28", "A6"), ("U28", "8")),
+            ("TEENSY_HOST_USB_DM", ("J28", "A7"), ("U28", "7")),
+            ("TEENSY_HOST_USB_DP", ("J28", "B6"), ("U28", "8")),
+            ("TEENSY_HOST_USB_DM", ("J28", "B7"), ("U28", "7")),
+            ("TEENSY_USB_DP", ("U28", "1"), ("CA1", "3")),
+            ("TEENSY_USB_DM", ("U28", "2"), ("CA1", "2")),
+            ("IMU_USB_DP", ("J30", "A6"), ("J9", "3")),
+            ("IMU_USB_DM", ("J30", "A7"), ("J9", "6")),
+            ("IMU_USB_DP", ("J30", "B6"), ("J9", "3")),
+            ("IMU_USB_DM", ("J30", "B7"), ("J9", "6")),
+        ]
+        for x, a, c in [(1, "J22", "J23"), (2, "J24", "J25")]:
+            for sig, sp, ep in [
+                ("TX_P", "1", "1"),
+                ("TX_N", "2", "2"),
+                ("RX_P", "5", "3"),
+                ("RX_N", "4", "6"),
+            ]:
+                specs.append((f"L{x}_ETH_{sig}", (a, sp), (c, ep)))
+        for n, a, c in [
+            ("LIGHTS_12_RAW", ("J1", "3"), ("Q7", "5")),
+            ("LIGHTS_12V", ("Q8", "5"), ("F3", "1")),
+            ("LIGHTS_12V", ("Q8", "5"), ("F4", "1")),
+            ("TOP_LAMP_PLUS", ("R73", "2"), ("J12", "1")),
+            ("FRONT_LAMP_PLUS", ("R83", "2"), ("J12", "3")),
+            ("TOP_LAMP_MINUS", ("J12", "2"), ("Q2", "5")),
+            ("FRONT_LAMP_MINUS", ("J12", "4"), ("Q3", "5")),
         ]:
-            specs.append((f"L{x}_ETH_{sig}", (a, sp), (c, ep)))
-    for n, a, c in [
-        ("LIGHTS_12_RAW", ("J1", "3"), ("Q7", "5")),
-        ("LIGHTS_12V", ("Q8", "5"), ("F3", "1")),
-        ("LIGHTS_12V", ("Q8", "5"), ("F4", "1")),
-        ("TOP_LAMP_PLUS", ("R73", "2"), ("J12", "1")),
-        ("FRONT_LAMP_PLUS", ("R83", "2"), ("J12", "3")),
-        ("TOP_LAMP_MINUS", ("J12", "2"), ("Q2", "5")),
-        ("FRONT_LAMP_MINUS", ("J12", "4"), ("Q3", "5")),
-    ]:
-        specs.append((n, a, c))
-    specs.append(("LIDAR_12_RAW", ("J1", "5"), ("Q5", "5")))
-    specs.extend(("LIDAR_12_PROT", ("Q6", "5"), (f"F{i}", "1")) for i in range(5, 9))
-    return specs
-
-
-def load_path_specs(path: Path):
-    """Read explicit net and pad pairs for another board or audit scope."""
-    data = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict) or set(data) != {"paths"}:
-        raise ValueError("Path configuration must contain only a paths list")
-    rows = data["paths"]
-    if not isinstance(rows, list) or not rows:
-        raise ValueError("Path configuration must contain at least one path")
-    result = []
-    for row in rows:
-        if not isinstance(row, dict) or set(row) != {"net", "from", "to"}:
-            raise ValueError("Each path needs net, from and to")
-        net, first, last = row["net"], row["from"], row["to"]
-        if not isinstance(net, str) or not net.strip():
-            raise ValueError("Each path needs a nonempty net name")
-        for endpoint in (first, last):
-            if (
-                not isinstance(endpoint, list)
-                or len(endpoint) != 2
-                or any(
-                    not isinstance(part, str) or not part.strip() for part in endpoint
-                )
-            ):
-                raise ValueError("Each endpoint must be [reference, pad number]")
-        if first == last:
-            raise ValueError("Path endpoints must be distinct")
-        result.append((net, tuple(first), tuple(last)))
-    return result
-
-
-def validate_path_specs(specs, pad_nets):
-    """Reject duplicate or stale paths before reporting route lengths."""
-    normalized = [(net, *sorted((first, last))) for net, first, last in specs]
-    if len(normalized) != len(set(normalized)):
-        raise ValueError("Duplicate path specification")
-    for net, first, last in specs:
-        for endpoint in (first, last):
-            actual = pad_nets.get(endpoint)
-            if actual != net:
-                raise ValueError(
-                    f"{endpoint[0]}.{endpoint[1]} is on {actual!r}; expected {net!r}"
-                )
-
-
-def main():
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        epilog=(
-            'Example --paths-file JSON: {"paths": [{"net": "SIGNAL", '
-            '"from": ["J1", "1"], "to": ["U1", "2"]}]}'
-        ),
-    )
-    ap.add_argument("--project", type=Path, required=True)
-    ap.add_argument(
-        "--manufacturing", type=Path, required=True, help="generated review folder"
-    )
-    ap.add_argument(
-        "--out", type=Path, required=True, help="existing external board-audit folder"
-    )
-    ap.add_argument(
-        "--paths-file",
-        type=Path,
-        help="JSON net and endpoint pairs; defaults to Jessie paths",
-    )
-    a = ap.parse_args()
-    P = a.project.resolve()
-    M = a.manufacturing.resolve()
-    output_dir = a.out.resolve()
-    output_file = output_dir / "pcb_paths.json"
-    if output_dir.is_relative_to(P) or output_dir.is_relative_to(M):
-        raise RuntimeError(
-            "Keep PCB path reports outside the project and manufacturing folders"
+            specs.append((n, a, c))
+        specs.append(("LIDAR_12_RAW", ("J1", "5"), ("Q5", "5")))
+        specs.extend(
+            ("LIDAR_12_PROT", ("Q6", "5"), (f"F{i}", "1")) for i in range(5, 9)
         )
-    if not output_dir.is_dir() or output_file.exists():
-        raise RuntimeError(
-            "Use the existing audit folder with a new pcb_paths.json output"
-        )
-    review, d = load_current_geometry(P, output_dir)
-    board_name = next(
-        name for name in review["source_sha256"] if name.lower().endswith(".kicad_pcb")
-    )
-    board_path = (P / board_name).resolve()
-    if not board_path.is_relative_to(P) or not board_path.is_file():
-        raise RuntimeError(
-            "PCB review refers to an unavailable or out-of-project board"
-        )
-    b = pcbnew.LoadBoard(str(board_path))
-    # The centreline graph below handles straight segments only.  Check the
-    # native board too, so older geometry snapshots cannot hide curved tracks.
-    arcs = [item for item in b.GetTracks() if isinstance(item, pcbnew.PCB_ARC)]
-    arc_nets = {item.GetNetname() for item in arcs}
-    arc_ids = {item.m_Uuid.AsString() for item in arcs}
-    tracks = d["tracks"]
-    vias = d["vias"]
-    pads = d["pads"]
-    nativepads = {
-        (f.GetReference(), p.GetNumber()): p
-        for f in b.GetFootprints()
-        for p in f.Pads()
-    }
+        return specs
 
+
+path_specs = JessiePathSpecs()
+
+
+class PathSpecFile:
+    """Read net and pad pairs from a JSON file."""
+
+    def __call__(self, path: Path):
+        """Read explicit net and pad pairs for another board or audit scope.
+
+        Inputs:
+            path: JSON file holding only a ``paths`` list of net, from and to.
+        Outputs:
+            A (net, first pad, last pad) tuple per path. Raises ValueError when the
+            file does not follow that form.
+        """
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict) or set(data) != {"paths"}:
+            raise ValueError("Path configuration must contain only a paths list")
+        rows = data["paths"]
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("Path configuration must contain at least one path")
+        result = []
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != {"net", "from", "to"}:
+                raise ValueError("Each path needs net, from and to")
+            net, first, last = row["net"], row["from"], row["to"]
+            if not isinstance(net, str) or not net.strip():
+                raise ValueError("Each path needs a nonempty net name")
+            for endpoint in (first, last):
+                if (
+                    not isinstance(endpoint, list)
+                    or len(endpoint) != 2
+                    or any(
+                        not isinstance(part, str) or not part.strip()
+                        for part in endpoint
+                    )
+                ):
+                    raise ValueError("Each endpoint must be [reference, pad number]")
+            if first == last:
+                raise ValueError("Path endpoints must be distinct")
+            result.append((net, tuple(first), tuple(last)))
+        return result
+
+
+load_path_specs = PathSpecFile()
+
+
+class PathSpecCheck:
+    """Check path specifications against the nets of the native board pads."""
+
+    def __call__(self, specs, pad_nets):
+        """Reject duplicate or stale paths before reporting route lengths.
+
+        Inputs:
+            specs: (net, first pad, last pad) tuples.
+            pad_nets: Net name of each (reference, pad number) pair on the board.
+        Outputs:
+            None. Raises ValueError for a duplicate path or a pad on another net.
+        """
+        normalized = [(net, *sorted((first, last))) for net, first, last in specs]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Duplicate path specification")
+        for net, first, last in specs:
+            for endpoint in (first, last):
+                actual = pad_nets.get(endpoint)
+                if actual != net:
+                    raise ValueError(
+                        f"{endpoint[0]}.{endpoint[1]} is on {actual!r}; expected {net!r}"
+                    )
+
+
+validate_path_specs = PathSpecCheck()
+
+
+class PathGeometry:
+    """Planar distance helpers for the centreline graph."""
+
+    @staticmethod
     def dist(a, c):
+        """Return the distance in mm between two points."""
         return math.hypot(a[0] - c[0], a[1] - c[1])
 
+    @staticmethod
     def project(p, a, c):
+        """Project a point onto a segment.
+
+        Outputs:
+            The clamped fraction along the segment from ``a`` to ``c`` and the
+            projected point.
+        """
         dx, dy = c[0] - a[0], c[1] - a[1]
         s = dx * dx + dy * dy
         t = max(0, min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / s)) if s else 0
         return t, [a[0] + t * dx, a[1] + t * dy]
 
+    @staticmethod
     def key(p, layer):
+        """Return the graph node of a point on a layer, rounded to 1e-6 mm."""
         return (round(p[0], 6), round(p[1], 6), layer)
 
-    def path(net, first, last):
-        if net in arc_nets:
+
+class PathSearch:
+    """Find the shortest centreline path between two pads of one net."""
+
+    def __init__(self, tracks, vias, pads, nativepads, arc_nets):
+        """Hold the geometry the searches run on.
+
+        Inputs:
+            tracks: Track dicts of the board-audit geometry, in mm.
+            vias: Via dicts of the board-audit geometry, in mm.
+            pads: Pad dicts of the board-audit geometry, in mm.
+            nativepads: Native pcbnew pads by (reference, pad number).
+            arc_nets: Names of the nets that carry a track arc.
+        """
+        self.tracks = tracks
+        self.vias = vias
+        self.pads = pads
+        self.nativepads = nativepads
+        self.arc_nets = arc_nets
+
+    def __call__(self, net, first, last):
+        """Measure the shortest path between two pads of a net.
+
+        Inputs:
+            net: Net name.
+            first: (reference, pad number) of the start pad.
+            last: (reference, pad number) of the end pad.
+        Outputs:
+            A dict with the approximate centreline length in mm, the track length
+            per layer and width, the vias on the route and its segments. A net
+            with a track arc is marked unsupported and an unreachable pad is
+            marked not found.
+        """
+        if net in self.arc_nets:
             return {
                 "net": net,
                 "first": first,
@@ -202,13 +246,14 @@ def main():
                 "status": "unsupported",
                 "reason": "A track arc exists on this net; curved path lengths are not supported.",
             }
-        tt = [t for t in tracks if t["net"] == net]
-        vv = [v for v in vias if v["net"] == net]
-        pp = [p for p in pads if p["net"] == net]
+        tt = [t for t in self.tracks if t["net"] == net]
+        vv = [v for v in self.vias if v["net"] == net]
+        pp = [p for p in self.pads if p["net"] == net]
         pts = collections.defaultdict(set)
         adj = collections.defaultdict(list)
 
         def add(a, c, w, kind, meta):
+            """Add an undirected weighted edge between two graph nodes."""
             adj[a].append((c, w, kind, meta))
             adj[c].append((a, w, kind, meta))
 
@@ -226,16 +271,16 @@ def main():
             layer = t["layer"]
             on = [(0, a), (1, c)]
             for q in list(pts[layer]):
-                u, r = project(q, a, c)
+                u, r = PathGeometry.project(q, a, c)
                 # Exactly connected centreline junctions and copper-overlap centres.
-                if dist(q, r) < 1e-5:
+                if PathGeometry.dist(q, r) < 1e-5:
                     on.append((u, list(q)))
             on = sorted({(round(u, 10), tuple(p)) for u, p in on})
             for (_, a), (_, c) in zip(on, on[1:]):
                 add(
-                    key(a, layer),
-                    key(c, layer),
-                    dist(a, c),
+                    PathGeometry.key(a, layer),
+                    PathGeometry.key(c, layer),
+                    PathGeometry.dist(a, c),
                     "track",
                     {
                         "width": t["width"],
@@ -250,18 +295,18 @@ def main():
             ls = v["layers"]
             for layer in ls:
                 for p in list(pts[layer]):
-                    if dist(q, p) <= v["width"] / 2 + 0.000001:
+                    if PathGeometry.dist(q, p) <= v["width"] / 2 + 0.000001:
                         add(
-                            key(q, layer),
-                            key(p, layer),
-                            dist(q, p),
+                            PathGeometry.key(q, layer),
+                            PathGeometry.key(p, layer),
+                            PathGeometry.dist(q, p),
                             "via_pad",
                             v["uuid"],
                         )
             for a, c in zip(ls, ls[1:]):
-                add(key(q, a), key(q, c), 0, "via", v["uuid"])
+                add(PathGeometry.key(q, a), PathGeometry.key(q, c), 0, "via", v["uuid"])
         for p in pp:
-            np = nativepads[(p["ref"], p["pin"])]
+            np = self.nativepads[(p["ref"], p["pin"])]
             q = p["at"]
             ls = p["layers"]
             for layer in ls:
@@ -270,9 +315,9 @@ def main():
                         pcbnew.VECTOR2I(round(r[0] * 1e6), round(r[1] * 1e6))
                     ):
                         add(
-                            key(q, layer),
-                            key(r, layer),
-                            dist(q, r),
+                            PathGeometry.key(q, layer),
+                            PathGeometry.key(r, layer),
+                            PathGeometry.dist(q, r),
                             "pad",
                             p["ref"] + "." + p["pin"],
                         )
@@ -284,25 +329,29 @@ def main():
                         round(v["width"] * 5e5),
                     ):
                         add(
-                            key(q, layer),
-                            key(v["at"], layer),
-                            dist(q, v["at"]),
+                            PathGeometry.key(q, layer),
+                            PathGeometry.key(v["at"], layer),
+                            PathGeometry.dist(q, v["at"]),
                             "via_pad_overlap",
                             p["ref"] + "." + p["pin"],
                         )
             if p["drill"] != [0, 0]:
                 for a, c in zip(ls, ls[1:]):
                     add(
-                        key(q, a), key(q, c), 0, "plated_pad", p["ref"] + "." + p["pin"]
+                        PathGeometry.key(q, a),
+                        PathGeometry.key(q, c),
+                        0,
+                        "plated_pad",
+                        p["ref"] + "." + p["pin"],
                     )
         sources = [
-            key(p["at"], layer)
+            PathGeometry.key(p["at"], layer)
             for p in pp
             if (p["ref"], p["pin"]) == first
             for layer in p["layers"]
         ]
         targets = {
-            key(p["at"], layer)
+            PathGeometry.key(p["at"], layer)
             for p in pp
             if (p["ref"], p["pin"]) == last
             for layer in p["layers"]
@@ -353,74 +402,175 @@ def main():
             "segments": out,
         }
 
-    paths_file = a.paths_file.resolve() if a.paths_file else None
-    paths_hash = sha(paths_file) if paths_file else None
-    specs = load_path_specs(paths_file) if paths_file else path_specs()
-    validate_path_specs(
-        specs, {key: pad.GetNetname() for key, pad in nativepads.items()}
-    )
-    paths = [path(*spec) for spec in specs]
-    dup = collections.defaultdict(list)
-    for t in tracks:
-        if t["uuid"] in arc_ids:
-            continue
-        dup[
-            (
-                t["net"],
-                t["layer"],
-                t["width"],
-                *sorted([tuple(t["start"]), tuple(t["end"])]),
-            )
-        ].append(t["uuid"])
-    dups = [
-        {
-            "net": k[0],
-            "layer": k[1],
-            "width": k[2],
-            "start": k[3],
-            "end": k[4],
-            "uuids": v,
-        }
-        for k, v in dup.items()
-        if len(v) > 1
-    ]
-    summary = {
-        "source_sha256": review["source_sha256"],
-        "geometry_sha256": review["geometry_sha256"],
-        "path_spec_sha256": paths_hash,
-        "method": (
-            "Shortest geometrical centreline graph through native pad "
-            "shapes and via centres. Does not model electric delay, "
-            "current spreading, branch/stub impedance or zone paths. "
-            "Nets with curved tracks are marked unsupported rather than measured as chords. "
-            "Duplicate straight track geometry is not counted twice in shortest "
-            "paths. Via barrel lengths excluded."
-        ),
-        "paths": paths,
-        "exact_duplicate_track_groups": dups,
-        "zone_connection_constants": {
-            x: getattr(pcbnew, x)
-            for x in dir(pcbnew)
-            if x.startswith("ZONE_CONNECTION_")
-        },
-    }
-    current_review, current_geometry = load_current_geometry(P, output_dir)
-    if current_review != review or current_geometry != d:
-        raise RuntimeError(
-            "PCB audit inputs changed during path analysis; discard the result"
-        )
-    if paths_file and sha(paths_file) != paths_hash:
-        raise RuntimeError(
-            "Path configuration changed during analysis; discard the result"
-        )
-    with output_file.open("x", encoding="utf-8", newline="\n") as handle:
-        json.dump(summary, handle, indent=2)
-        handle.write("\n")
-    for p in paths:
-        print(json.dumps({k: v for k, v in p.items() if k != "segments"}))
-    print("DUPLICATES", json.dumps(dups, indent=2))
-    print(summary["zone_connection_constants"])
 
+class PathAudit:
+    """Measure every path specification of a board against its audit snapshot."""
+
+    def __call__(self, project, manufacturing, out, paths_file):
+        """Measure the paths and write ``pcb_paths.json``.
+
+        Inputs:
+            project: Project folder.
+            manufacturing: Generated review folder.
+            out: Existing board-audit folder outside the project and manufacturing
+                folders that receives the new ``pcb_paths.json``.
+            paths_file: JSON net and pad pairs; None selects the Jessie paths.
+        Outputs:
+            The written summary. Raises RuntimeError when the output folder is
+            misplaced, the snapshot is stale or the audit inputs change during the
+            analysis, and ValueError for an invalid path specification.
+        """
+        P = project.resolve()
+        M = manufacturing.resolve()
+        output_dir = out.resolve()
+        output_file = output_dir / "pcb_paths.json"
+        if output_dir.is_relative_to(P) or output_dir.is_relative_to(M):
+            raise RuntimeError(
+                "Keep PCB path reports outside the project and manufacturing folders"
+            )
+        if not output_dir.is_dir() or output_file.exists():
+            raise RuntimeError(
+                "Use the existing audit folder with a new pcb_paths.json output"
+            )
+        review, d = load_current_geometry(P, output_dir)
+        board_name = next(
+            name
+            for name in review["source_sha256"]
+            if name.lower().endswith(".kicad_pcb")
+        )
+        board_path = (P / board_name).resolve()
+        if not board_path.is_relative_to(P) or not board_path.is_file():
+            raise RuntimeError(
+                "PCB review refers to an unavailable or out-of-project board"
+            )
+        b = pcbnew.LoadBoard(str(board_path))
+        # The centreline graph below handles straight segments only.  Check the
+        # native board too, so older geometry snapshots cannot hide curved tracks.
+        arcs = [item for item in b.GetTracks() if isinstance(item, pcbnew.PCB_ARC)]
+        arc_nets = {item.GetNetname() for item in arcs}
+        arc_ids = {item.m_Uuid.AsString() for item in arcs}
+        tracks = d["tracks"]
+        vias = d["vias"]
+        pads = d["pads"]
+        nativepads = {
+            (f.GetReference(), p.GetNumber()): p
+            for f in b.GetFootprints()
+            for p in f.Pads()
+        }
+        search = PathSearch(tracks, vias, pads, nativepads, arc_nets)
+
+        paths_file = paths_file.resolve() if paths_file else None
+        paths_hash = sha(paths_file) if paths_file else None
+        specs = load_path_specs(paths_file) if paths_file else path_specs()
+        validate_path_specs(
+            specs, {key: pad.GetNetname() for key, pad in nativepads.items()}
+        )
+        paths = [search(*spec) for spec in specs]
+        dup = collections.defaultdict(list)
+        for t in tracks:
+            if t["uuid"] in arc_ids:
+                continue
+            dup[
+                (
+                    t["net"],
+                    t["layer"],
+                    t["width"],
+                    *sorted([tuple(t["start"]), tuple(t["end"])]),
+                )
+            ].append(t["uuid"])
+        dups = [
+            {
+                "net": k[0],
+                "layer": k[1],
+                "width": k[2],
+                "start": k[3],
+                "end": k[4],
+                "uuids": v,
+            }
+            for k, v in dup.items()
+            if len(v) > 1
+        ]
+        summary = {
+            "source_sha256": review["source_sha256"],
+            "geometry_sha256": review["geometry_sha256"],
+            "path_spec_sha256": paths_hash,
+            "method": (
+                "Shortest geometrical centreline graph through native pad "
+                "shapes and via centres. Does not model electric delay, "
+                "current spreading, branch/stub impedance or zone paths. "
+                "Nets with curved tracks are marked unsupported rather than measured as chords. "
+                "Duplicate straight track geometry is not counted twice in shortest "
+                "paths. Via barrel lengths excluded."
+            ),
+            "paths": paths,
+            "exact_duplicate_track_groups": dups,
+            "zone_connection_constants": {
+                x: getattr(pcbnew, x)
+                for x in dir(pcbnew)
+                if x.startswith("ZONE_CONNECTION_")
+            },
+        }
+        current_review, current_geometry = load_current_geometry(P, output_dir)
+        if current_review != review or current_geometry != d:
+            raise RuntimeError(
+                "PCB audit inputs changed during path analysis; discard the result"
+            )
+        if paths_file and sha(paths_file) != paths_hash:
+            raise RuntimeError(
+                "Path configuration changed during analysis; discard the result"
+            )
+        with output_file.open("x", encoding="utf-8", newline="\n") as handle:
+            json.dump(summary, handle, indent=2)
+            handle.write("\n")
+        return summary
+
+
+class PathCommand:
+    """Command-line entry: measure the route paths of a board and print them."""
+
+    def __call__(self, argv=None):
+        """Run the measurement.
+
+        Inputs:
+            argv: Command-line arguments; the process arguments when None.
+        Outputs:
+            None; prints each path without its segments, the duplicate track groups
+            and the zone connection constants.
+        """
+        ap = argparse.ArgumentParser(
+            description=__doc__,
+            epilog=(
+                'Example --paths-file JSON: {"paths": [{"net": "SIGNAL", '
+                '"from": ["J1", "1"], "to": ["U1", "2"]}]}'
+            ),
+        )
+        ap.add_argument("--project", type=Path, required=True)
+        ap.add_argument(
+            "--manufacturing", type=Path, required=True, help="generated review folder"
+        )
+        ap.add_argument(
+            "--out",
+            type=Path,
+            required=True,
+            help="existing external board-audit folder",
+        )
+        ap.add_argument(
+            "--paths-file",
+            type=Path,
+            help="JSON net and endpoint pairs; defaults to Jessie paths",
+        )
+        a = ap.parse_args(argv)
+        summary = PathAudit()(a.project, a.manufacturing, a.out, a.paths_file)
+        for p in summary["paths"]:
+            print(json.dumps({k: v for k, v in p.items() if k != "segments"}))
+        print(
+            "DUPLICATES",
+            json.dumps(summary["exact_duplicate_track_groups"], indent=2),
+        )
+        print(summary["zone_connection_constants"])
+
+
+main = PathCommand()
 
 if __name__ == "__main__":
     main()

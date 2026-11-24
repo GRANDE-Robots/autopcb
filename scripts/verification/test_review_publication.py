@@ -42,15 +42,17 @@ class ReviewPublicationTests(unittest.TestCase):
     def test_current_gallery_requires_all_views_and_matching_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
             project, review, hashes, dependency = self.current_gallery(Path(directory))
-            self.assertTrue(refresh_gallery.gallery_is_current(project, review, hashes))
+            self.assertTrue(
+                refresh_gallery.ReviewGallery.is_current(project, review, hashes)
+            )
             dependency.write_bytes(b"changed")
             self.assertFalse(
-                refresh_gallery.gallery_is_current(project, review, hashes)
+                refresh_gallery.ReviewGallery.is_current(project, review, hashes)
             )
             dependency.write_bytes(b"library")
             (review / "PCB_top.png").unlink()
             self.assertFalse(
-                refresh_gallery.gallery_is_current(project, review, hashes)
+                refresh_gallery.ReviewGallery.is_current(project, review, hashes)
             )
 
     def test_current_gallery_tracks_long_footprint_paths(self):
@@ -62,7 +64,7 @@ class ReviewPublicationTests(unittest.TestCase):
             footprint.write_bytes(b"footprint library")
             try:
                 self.assertFalse(
-                    refresh_gallery.gallery_is_current(project, review, hashes)
+                    refresh_gallery.ReviewGallery.is_current(project, review, hashes)
                 )
                 manifest_path = review / "source.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -72,7 +74,7 @@ class ReviewPublicationTests(unittest.TestCase):
                 )
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                 self.assertTrue(
-                    refresh_gallery.gallery_is_current(project, review, hashes)
+                    refresh_gallery.ReviewGallery.is_current(project, review, hashes)
                 )
             finally:
                 footprint.unlink()
@@ -94,7 +96,7 @@ class ReviewPublicationTests(unittest.TestCase):
                 mock.patch.object(refresh_gallery, "digest", side_effect=changing),
                 self.assertRaisesRegex(RuntimeError, "changed during"),
             ):
-                refresh_gallery.gallery_is_current(project, review, hashes)
+                refresh_gallery.ReviewGallery.is_current(project, review, hashes)
 
     def folders(self, root: Path) -> tuple[Path, Path]:
         review = root / "review"

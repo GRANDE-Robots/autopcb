@@ -48,14 +48,14 @@ class GroupingTests(unittest.TestCase):
             self.assertEqual(preview.call_args.kwargs["seed"], seed.resolve())
 
     def test_progress_record_does_not_overwrite_external_edits(self):
-        from pcb.net_routing.sequence import _write_report
+        from pcb.net_routing.sequence import SequentialPreview
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sequence_preview.json"
-            previous = _write_report(path, {"status": "running"}, None)
+            previous = SequentialPreview.write_report(path, {"status": "running"}, None)
             path.write_text("owner edit")
             with self.assertRaisesRegex(RuntimeError, "changed externally"):
-                _write_report(path, {"status": "complete"}, previous)
+                SequentialPreview.write_report(path, {"status": "complete"}, previous)
             self.assertEqual(path.read_text(), "owner edit")
             self.assertEqual(list(path.parent.glob(".sequence-*.tmp")), [])
 

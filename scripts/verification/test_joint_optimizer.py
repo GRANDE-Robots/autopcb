@@ -7,7 +7,7 @@ from pathlib import Path
 import pcbnew
 
 from pcb.footprint_pose import native_pose_change, verify_native_pose_change
-from pcb.joint_optimizer import _staircase, optimize
+from pcb.joint_optimizer import JointOptimizer
 from pcb.move_scope import MoveScope
 import verification.test_route_optimizer as route_tests
 
@@ -18,7 +18,7 @@ class JointOptimizerTests(unittest.TestCase):
             return {"from_mm": a, "to_mm": b, "layer": layer}
 
         self.assertTrue(
-            _staircase(
+            JointOptimizer.has_staircase(
                 [
                     segment([0, 0], [1, 1]),
                     segment([1, 1], [1, 2]),
@@ -27,7 +27,7 @@ class JointOptimizerTests(unittest.TestCase):
             )
         )
         self.assertFalse(
-            _staircase(
+            JointOptimizer.has_staircase(
                 [
                     segment([0, 0], [1, 1]),
                     segment([1, 1], [1, 2]),
@@ -68,7 +68,7 @@ class JointOptimizerTests(unittest.TestCase):
                 "route": route,
                 "max_candidates": 2,
             }
-            result = optimize(project, config)
+            result = JointOptimizer.optimize(project, config)
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
             self.assertEqual(result["sampled"], 2)
             self.assertEqual(result["validation"]["endpoint_connectivity"], "connected")
@@ -137,7 +137,7 @@ class JointOptimizerTests(unittest.TestCase):
                     "electrical": route_tests.RouteOptimizerTests.electrical(),
                 }
             )
-            result = optimize(
+            result = JointOptimizer.optimize(
                 project,
                 {
                     "movable": [
@@ -164,7 +164,7 @@ class JointOptimizerTests(unittest.TestCase):
             route = route_tests.RouteOptimizerTests.config()
             route["layers"] = ["F.Cu"]
             route["electrical"] = route_tests.RouteOptimizerTests.electrical()
-            result = optimize(project, {"route": route})
+            result = JointOptimizer.optimize(project, {"route": route})
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
             self.assertEqual(result["placement"], {})
             self.assertEqual(result["validation"]["footprint_moves"], [])

@@ -9,7 +9,7 @@ from pathlib import Path
 import pcbnew
 
 from core.kicad_campaign import CampaignPlanner
-from pcb.footprint_text import position_change
+from pcb.footprint_text import SilkTextMove
 import verification.test_route_optimizer as fixtures
 
 
@@ -31,7 +31,7 @@ class FootprintTextTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
 
-            result = position_change(project, "R50", "Reference", 4.0, 4.5)
+            result = SilkTextMove.position_change(project, "R50", "Reference", 4.0, 4.5)
             change = result["change"]
             self.assertEqual(change["coordinate_space"], "footprint_local")
             unsafe = dict(change)
@@ -52,9 +52,9 @@ class FootprintTextTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
 
             with self.assertRaisesRegex(ValueError, "outside"):
-                position_change(project, "R50", "Reference", 50, 50)
+                SilkTextMove.position_change(project, "R50", "Reference", 50, 50)
             with self.assertRaisesRegex(ValueError, "bottom-side"):
-                position_change(project, "J1", "Reference", 4, 4)
+                SilkTextMove.position_change(project, "J1", "Reference", 4, 4)
             self.assertEqual(source.read_bytes(), original)
 
 

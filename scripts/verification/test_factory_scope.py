@@ -2,12 +2,7 @@
 
 import unittest
 
-from core.factory_scope import (
-    consolidate,
-    native_geometry,
-    partition,
-    validate_native_connections,
-)
+from core.factory_scope import FactoryScope
 
 
 def part(ref, **overrides):
@@ -49,7 +44,7 @@ def policy():
 
 class FactoryScopeTests(unittest.TestCase):
     def test_required_owner_part_retained_and_new_factory_part_included(self):
-        factory, owner, audit = partition(
+        factory, owner, audit = FactoryScope.partition(
             [part("R1"), part("U3"), part("U99")], policy(), ["U3"]
         )
         self.assertEqual({p["Designator"] for p in factory}, {"R1", "U99"})
@@ -58,11 +53,11 @@ class FactoryScopeTests(unittest.TestCase):
 
     def test_native_dnp_cannot_be_used_as_owner_scope(self):
         with self.assertRaisesRegex(RuntimeError, "DNP"):
-            partition([part("U3", DNP=True)], policy(), ["U3"])
+            FactoryScope.partition([part("U3", DNP=True)], policy(), ["U3"])
 
     def test_native_policy_conflict_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "conflicts"):
-            partition(
+            FactoryScope.partition(
                 [part("U3")],
                 policy(),
                 ["U3"],
@@ -71,26 +66,26 @@ class FactoryScopeTests(unittest.TestCase):
 
     def test_owner_policy_cannot_silently_follow_changed_mpn(self):
         with self.assertRaisesRegex(RuntimeError, "different MPN"):
-            partition([part("U3", MPN="DIFFERENT")], policy(), ["U3"])
+            FactoryScope.partition([part("U3", MPN="DIFFERENT")], policy(), ["U3"])
 
     def test_disappeared_policy_ref_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "disappeared"):
-            partition([part("R1")], policy())
+            FactoryScope.partition([part("R1")], policy())
 
     def test_new_module_requires_explicit_policy(self):
         with self.assertRaisesRegex(RuntimeError, "explicit assembly policy"):
-            partition([part("U3"), part("U99")], policy(), ["U3", "U99"])
+            FactoryScope.partition([part("U3"), part("U99")], policy(), ["U3", "U99"])
 
     def test_duplicate_system_reference_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Duplicate"):
-            partition([part("U3"), part("U3")], policy())
+            FactoryScope.partition([part("U3"), part("U3")], policy())
 
     def test_comment_and_footprint_alias_do_not_split_exact_equivalent_parts(self):
         parts = [
             part("R1"),
             part("R2", Comment="different function", Footprint="alias_b"),
         ]
-        rows, evidence, splits = consolidate(
+        rows, evidence, splits = FactoryScope.consolidate(
             parts, {"R1": "geometry", "R2": "geometry"}
         )
         self.assertEqual(
@@ -108,14 +103,14 @@ class FactoryScopeTests(unittest.TestCase):
             ("LCSC Part #", "C2"),
         ]:
             with self.subTest(field=field):
-                rows, _, _ = consolidate(
+                rows, _, _ = FactoryScope.consolidate(
                     [part("R1"), part("R2", **{field: value})],
                     {"R1": "same", "R2": "same"},
                 )
                 self.assertEqual(len(rows), 2)
 
     def test_same_mpn_different_pad_geometry_stays_separate(self):
-        rows, _, splits = consolidate(
+        rows, _, splits = FactoryScope.consolidate(
             [part("R1"), part("R2")], {"R1": "padA", "R2": "padB"}
         )
         self.assertEqual(len(rows), 2)
@@ -123,11 +118,11 @@ class FactoryScopeTests(unittest.TestCase):
 
     def test_absent_native_geometry_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Missing native footprint"):
-            consolidate([part("R1")], {})
+            FactoryScope.consolidate([part("R1")], {})
 
     def test_duplicate_factory_reference_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Duplicate factory"):
-            consolidate([part("R1"), part("R1")], {"R1": "same"})
+            FactoryScope.consolidate([part("R1"), part("R1")], {"R1": "same"})
 
 
 class NativeGeometryTests(unittest.TestCase):
@@ -157,16 +152,16 @@ class NativeGeometryTests(unittest.TestCase):
         import pcbnew
 
         board, fp = self.footprint()
-        expected = native_geometry(fp)
+        expected = FactoryScope.geometry(fp)
         fp.SetPosition(pcbnew.VECTOR2I(21000000, 32000000))
         fp.SetOrientationDegrees(90)
-        self.assertEqual(native_geometry(fp), expected)
+        self.assertEqual(FactoryScope.geometry(fp), expected)
         fp.Flip(fp.GetPosition(), False)
-        self.assertEqual(native_geometry(fp), expected)
+        self.assertEqual(FactoryScope.geometry(fp), expected)
 
     def test_pad_number_size_and_mask_difference_prevent_false_equivalence(self):
         board, fp = self.footprint()
-        expected = native_geometry(fp)
+        expected = FactoryScope.geometry(fp)
         for alteration in ("number", "mask", "size"):
             import pcbnew
 
@@ -178,7 +173,7 @@ class NativeGeometryTests(unittest.TestCase):
                 pad.SetLocalSolderMaskMargin(20000)
             if alteration == "size":
                 pad.SetSize(pcbnew.VECTOR2I(1000000, 1000000))
-            self.assertNotEqual(native_geometry(modified), expected)
+            self.assertNotEqual(FactoryScope.geometry(modified), expected)
 
     def test_owner_stock_bridge_policy_rejects_live_host_vbus_at_ca1(self):
         import pcbnew
@@ -193,7 +188,7 @@ class NativeGeometryTests(unittest.TestCase):
             ]
         }
         with self.assertRaisesRegex(RuntimeError, "connection failed"):
-            validate_native_connections(rule, {"CA1": fp})
+            FactoryScope.validate_connections(rule, {"CA1": fp})
 
     def test_owner_stock_bridge_policy_accepts_unconnected_host_vbus(self):
         board, fp = self.footprint()
@@ -202,7 +197,9 @@ class NativeGeometryTests(unittest.TestCase):
                 {"connector": "CA1", "cavity": "1", "condition": "UNCONNECTED"}
             ]
         }
-        self.assertTrue(validate_native_connections(rule, {"CA1": fp})[0]["passed"])
+        self.assertTrue(
+            FactoryScope.validate_connections(rule, {"CA1": fp})[0]["passed"]
+        )
 
 
 if __name__ == "__main__":

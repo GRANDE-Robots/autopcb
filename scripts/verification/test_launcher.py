@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from core import launcher as run
+from core.compat import file_sha256
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 
@@ -156,7 +157,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_test_output_keeps_failures_and_summarizes_only_duplicate_handlers(self):
         output = io.StringIO()
-        run._relay_test_output(
+        run.RegressionRun.relay(
             [
                 "Adding duplicate image handler for 'PNG file'\n",
                 "other warning\n",
@@ -231,8 +232,8 @@ class LauncherTests(unittest.TestCase):
             with mock.patch.object(run.sys, "executable", str(current)):
                 with mock.patch("shutil.which", return_value=str(fallback)):
                     with mock.patch.object(
-                        run,
-                        "_has_document_dependency",
+                        run.DocumentPython,
+                        "has_dependency",
                         side_effect=lambda candidate: (
                             candidate.resolve() == fallback.resolve()
                         ),
@@ -245,7 +246,9 @@ class LauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             requested = Path(directory) / "python.exe"
             requested.touch()
-            with mock.patch.object(run, "_has_document_dependency", return_value=False):
+            with mock.patch.object(
+                run.DocumentPython, "has_dependency", return_value=False
+            ):
                 with self.assertRaisesRegex(ValueError, "markdown-it-py"):
                     run.resolve_document_python(requested)
 
@@ -299,7 +302,7 @@ class LauncherTests(unittest.TestCase):
             for name in run.REVIEW_FILES:
                 (review / name).write_text("view")
             sources = {
-                name: run.sha(project / name)
+                name: file_sha256(project / name)
                 for name in ("v4.1.kicad_sch", "v4.1.kicad_pcb")
             }
             (review / "source.json").write_text(
@@ -325,8 +328,10 @@ class LauncherTests(unittest.TestCase):
             renderer = project / "scripts" / "review" / "render_views.py"
             renderer.parent.mkdir(parents=True)
             renderer.write_text("renderer")
-            dependencies = {renderer.relative_to(project).as_posix(): run.sha(renderer)}
-            source = {"v4.1.kicad_pcb": run.sha(project / "v4.1.kicad_pcb")}
+            dependencies = {
+                renderer.relative_to(project).as_posix(): file_sha256(renderer)
+            }
+            source = {"v4.1.kicad_pcb": file_sha256(project / "v4.1.kicad_pcb")}
             (review / "source.json").write_text(
                 json.dumps({"sha256": source, "dependency_sha256": dependencies})
             )
@@ -344,7 +349,7 @@ class LauncherTests(unittest.TestCase):
             outside = Path(tmp) / "outside"
             outside.write_text("outside")
             self.assertFalse(
-                run.matching_hashes(root, {"../outside": run.sha(outside)})
+                run.matching_hashes(root, {"../outside": file_sha256(outside)})
             )
 
     def test_status_reports_stale_release_without_writing(self):

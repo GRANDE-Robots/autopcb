@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from core.campaign_cli import apply_plan, main
+from core.campaign_cli import CampaignApplier, main
 from core.kicad_campaign import CampaignFile, CampaignForms, CampaignPlanner
 from core.kicad_sexpr import Form, parse
 
@@ -423,13 +423,13 @@ class CampaignTests(unittest.TestCase):
         plan = self.planner.plan("pcb", [change])
         self.board.write_bytes(PCB.encode() + b" ")
         with self.assertRaisesRegex(RuntimeError, "changed"):
-            apply_plan(plan, self.project, plan.source_sha256)
+            CampaignApplier.apply(plan, self.project, plan.source_sha256)
         self.assertEqual(self.board.read_bytes(), PCB.encode() + b" ")
         self.board.write_bytes(PCB.encode())
         lock = self.board.with_name("~v4.1.kicad_pcb.lck")
         lock.write_text("editor")
         with self.assertRaisesRegex(RuntimeError, "lock"):
-            apply_plan(plan, self.project, plan.source_sha256)
+            CampaignApplier.apply(plan, self.project, plan.source_sha256)
         self.assertEqual(self.board.read_bytes(), PCB.encode())
         self.assertEqual(lock.read_text(), "editor")
 
@@ -445,7 +445,7 @@ class CampaignTests(unittest.TestCase):
         plan = self.planner.plan(
             "pcb", [CampaignFile.move("pcb", "footprint", "TP1", 4, 5)]
         )
-        result = apply_plan(plan, self.project, plan.source_sha256)
+        result = CampaignApplier.apply(plan, self.project, plan.source_sha256)
         self.assertEqual(result["status"], "applied")
         self.assertEqual(Path(result["checkpoint"]).read_bytes(), plan.before)
         moved = pcbnew.LoadBoard(str(self.board)).FindFootprintByReference("TP1")
@@ -512,7 +512,7 @@ class CampaignTests(unittest.TestCase):
             "expression": '(paper "A3")',
         }
         plan = self.planner.plan("schematic", [change])
-        result = apply_plan(plan, self.project, plan.source_sha256)
+        result = CampaignApplier.apply(plan, self.project, plan.source_sha256)
         self.assertEqual(result["status"], "applied")
         self.assertIn('(paper "A3")', self.schematic.read_text())
         self.assertEqual(Path(result["checkpoint"]).read_bytes(), plan.before)
@@ -530,7 +530,7 @@ class CampaignTests(unittest.TestCase):
         lock = self.schematic.with_name("~v4.1.kicad_sch.lck")
         lock.write_text("editor")
         with self.assertRaisesRegex(RuntimeError, "lock"):
-            apply_plan(plan, self.project, plan.source_sha256)
+            CampaignApplier.apply(plan, self.project, plan.source_sha256)
         self.assertEqual(self.schematic.read_bytes(), SCHEMATIC.encode())
         self.assertEqual(self.board.read_bytes(), PCB.encode())
 

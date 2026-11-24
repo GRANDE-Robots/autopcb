@@ -13,7 +13,7 @@ from unittest import mock
 
 from core.kicad_campaign import CampaignFile
 from core import toolchain
-from core.library_campaign_cli import apply, main, prepare
+from core.library_campaign_cli import LibraryCampaign, main
 from core.library_edits import LibraryInputs, library_path, plan_library
 from core.library_validation import validate_library
 
@@ -75,7 +75,9 @@ class LibraryCampaignTests(unittest.TestCase):
 
     def prepare_mocked(self):
         with mock.patch("core.library_campaign_cli.validate_library"):
-            return prepare(self.root, self.campaign.name, self.document, self.fake_cli)
+            return LibraryCampaign.prepare(
+                self.root, self.campaign.name, self.document, self.fake_cli
+            )
 
     def apply_arguments(self, edit):
         return {"preview_sha256": edit.preview_sha256}
@@ -123,7 +125,9 @@ class LibraryCampaignTests(unittest.TestCase):
         edit = self.prepare_mocked()
         self.assertFalse(edit.plan.edits)
         with mock.patch("core.library_campaign_cli.os.replace") as replace:
-            self.assertEqual(apply(edit, **self.apply_arguments(edit)), "no_changes")
+            self.assertEqual(
+                LibraryCampaign.apply(edit, **self.apply_arguments(edit)), "no_changes"
+            )
         replace.assert_not_called()
         self.assertEqual(self.footprint.read_text(encoding="utf-8"), FOOTPRINT)
 
@@ -168,9 +172,9 @@ class LibraryCampaignTests(unittest.TestCase):
         native_before = (self.board.read_bytes(), self.schematic.read_bytes())
         args = self.apply_arguments(edit)
         with self.assertRaisesRegex(RuntimeError, "Preview hash"):
-            apply(edit, **{**args, "preview_sha256": "0" * 64})
+            LibraryCampaign.apply(edit, **{**args, "preview_sha256": "0" * 64})
         self.assertEqual(self.footprint.read_text(encoding="utf-8"), FOOTPRINT)
-        self.assertEqual(apply(edit, **args), "applied")
+        self.assertEqual(LibraryCampaign.apply(edit, **args), "applied")
         self.assertIn("(size 2 1)", self.footprint.read_text(encoding="utf-8"))
         self.assertEqual(
             (self.board.read_bytes(), self.schematic.read_bytes()), native_before
@@ -180,19 +184,19 @@ class LibraryCampaignTests(unittest.TestCase):
         edit = self.prepare_mocked()
         self.board.write_text("(kicad_pcb changed)", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "inputs changed"):
-            apply(edit, **self.apply_arguments(edit))
+            LibraryCampaign.apply(edit, **self.apply_arguments(edit))
         edit = self.prepare_mocked()
         self.campaign.write_text(self.campaign.read_text() + " ", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "Campaign changed"):
-            apply(edit, **self.apply_arguments(edit))
+            LibraryCampaign.apply(edit, **self.apply_arguments(edit))
         edit = self.prepare_mocked()
         self.fake_cli.write_text("changed CLI", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "KiCad CLI changed"):
-            apply(edit, **self.apply_arguments(edit))
+            LibraryCampaign.apply(edit, **self.apply_arguments(edit))
         edit = self.prepare_mocked()
         (self.root / "~v4.1.kicad_pcb.lck").write_text("open", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "KiCad lock"):
-            apply(edit, **self.apply_arguments(edit))
+            LibraryCampaign.apply(edit, **self.apply_arguments(edit))
         self.assertEqual(self.footprint.read_text(encoding="utf-8"), FOOTPRINT)
 
     def test_preview_rejects_source_changes_during_native_validation(self) -> None:
@@ -203,7 +207,9 @@ class LibraryCampaignTests(unittest.TestCase):
             "core.library_campaign_cli.validate_library", side_effect=change_source
         ):
             with self.assertRaisesRegex(RuntimeError, "inputs changed"):
-                prepare(self.root, self.campaign.name, self.document, self.fake_cli)
+                LibraryCampaign.prepare(
+                    self.root, self.campaign.name, self.document, self.fake_cli
+                )
         self.assertEqual(self.footprint.read_text(encoding="utf-8"), FOOTPRINT)
 
     def test_refuses_zero_exit_without_a_real_export(self) -> None:

@@ -32,7 +32,7 @@ from core.export_helpers import (
     writecsv,
     writejson,
 )
-from core.factory_scope import export_factory_scope
+from core.factory_scope import FactoryScope
 from core.pcb_io import copper_width
 from core.toolchain import kicad_cli
 
@@ -468,9 +468,7 @@ def main():
             [r for r in cpl if r["Layer"] == side],
             CPL_FIELDS,
         )
-    scope = export_factory_scope(
-        P, M, parts, cpl, fs, module_refs, native_fields_by_ref
-    )
+    scope = FactoryScope.export(P, M, parts, cpl, fs, module_refs, native_fields_by_ref)
     owner_finish = {r["Designator"]: r for r in readcsv(M / "07_OWNER_FINISHING.csv")}
     for row in module_rows:
         if row["Designator"] in owner_finish:

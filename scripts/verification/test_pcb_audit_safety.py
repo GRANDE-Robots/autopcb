@@ -1,4 +1,9 @@
-"""PCB audits must preserve design files and reject stale geometry."""
+"""test_pcb_audit_safety.py: tests of PCB audit safety.
+
+PCB audits must preserve design files and reject stale geometry.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import contextlib
 import hashlib
@@ -16,13 +21,30 @@ import pcbnew
 
 
 class PcbAuditSafetyTests(unittest.TestCase):
+    """Tests that the PCB audits never change design files and refuse stale inputs."""
+
     def board(self, folder: Path) -> Path:
+        """Save an empty board named ``v4.1.kicad_pcb`` in a folder that is created if
+        needed.
+
+        Outputs:
+            Path of the saved board.
+        """
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "v4.1.kicad_pcb"
         pcbnew.SaveBoard(str(path), pcbnew.BOARD())
         return path
 
     def manufacturing_fixture(self, root: Path):
+        """Build a project folder and a manufacturing folder for the board audit.
+
+        Inputs:
+            root: Folder that receives ``project`` and ``manufacturing``.
+        Outputs:
+            The project folder, the board with one silkscreen text and the manufacturing
+            folder with empty BOM, placement and via schedule tables and an empty
+            archive.
+        """
         project = root / "project"
         board = self.board(project)
         model = pcbnew.LoadBoard(str(board))
@@ -58,6 +80,11 @@ class PcbAuditSafetyTests(unittest.TestCase):
         return project, board, manufacturing
 
     def run_module(self, module, *arguments):
+        """Run a Python module in a subprocess with the given arguments.
+
+        Outputs:
+            The completed process with its text output captured.
+        """
         return subprocess.run(
             [sys.executable, "-B", "-m", module, *map(str, arguments)],
             text=True,

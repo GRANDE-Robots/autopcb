@@ -1,4 +1,9 @@
-"""Independent exact-geometry checks for native tracks, turns and editability."""
+"""test_autoroute_style.py: tests of the exact-geometry routing style checks.
+
+Independent exact-geometry checks for native tracks, turns and editability.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,10 @@ from pcb.route_optimizer import mm
 
 
 class RoutingStyleTests(unittest.TestCase):
+    """Tests that the style checks find bends, staircases, duplicates and locked tracks
+    exactly.
+    """
+
     def test_dangling_single_layer_via_cannot_hide_an_existing_staircase(self):
         api = self.api()
         board = self.board()
@@ -26,17 +35,28 @@ class RoutingStyleTests(unittest.TestCase):
         self.assertEqual(len(api.audit_style(board).staircases), 1)
 
     def api(self):
+        """Return the ``pcb.net_routing.style`` module, which must exist."""
         self.assertIsNotNone(importlib.util.find_spec("pcb.net_routing.style"))
         from pcb.net_routing import style
 
         return style
 
     def board(self):
+        """Build a board that has the net N."""
         board = pcbnew.BOARD()
         board.Add(pcbnew.NETINFO_ITEM(board, "N"))
         return board
 
     def trace(self, board, start, end):
+        """Add a 0.2 mm F.Cu track on net N.
+
+        Inputs:
+            board: Board that receives the track.
+            start: (x, y) of the start, in mm.
+            end: (x, y) of the end, in mm.
+        Outputs:
+            The added track.
+        """
         track = pcbnew.PCB_TRACK(board)
         track.SetStart(pcbnew.VECTOR2I(mm(start[0]), mm(start[1])))
         track.SetEnd(pcbnew.VECTOR2I(mm(end[0]), mm(end[1])))
@@ -194,13 +214,23 @@ class RoutingStyleTests(unittest.TestCase):
 
 
 class StandaloneRouteStyleTests(unittest.TestCase):
+    """Tests of the segment identities and the native style validation of saved boards."""
+
     def test_segment_identity_only_matches_unambiguous_exact_properties(self):
         from pcb.route_validation import _segment_identities
 
         def board(*items):
+            """Return the bytes of a board file that holds the given expressions."""
             return ("(kicad_pcb " + " ".join(items) + ")").encode()
 
         def track(identifier, width=".2", extra=""):
+            """Return the text of one F.Cu segment of net N from (1, 2) to (3, 2).
+
+            Inputs:
+                identifier: UUID of the segment.
+                width: Track width text in mm.
+                extra: Text inserted before the UUID.
+            """
             return (
                 f'(segment (start 1 2) (end 3 2) (width {width}) (layer "F.Cu") '
                 f'(net "N") {extra} (uuid "{identifier}"))'
@@ -229,6 +259,18 @@ class StandaloneRouteStyleTests(unittest.TestCase):
         from pcb.route_validation import _dangling_track_identities
 
         def identity(start, end, *, width=0.2, layer=pcbnew.F_Cu, net="N"):
+            """Build a one-track board and read the identity of its dangling track.
+
+            Inputs:
+                start: (x, y) of the track start, in mm.
+                end: (x, y) of the track end, in mm.
+                width: Track width in mm.
+                layer: pcbnew copper layer id.
+                net: Net name.
+            Outputs:
+                The identity recorded for the track that a track_dangling violation
+                names. Also checks that the track keeps its start and end.
+            """
             board = pcbnew.BOARD()
             netinfo = pcbnew.NETINFO_ITEM(board, net)
             board.Add(netinfo)

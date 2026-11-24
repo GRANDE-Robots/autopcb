@@ -1,4 +1,9 @@
-"""Check that autorouting trials cannot overwrite the live design."""
+"""test_freeroute_preview.py: tests of autorouting trials on private snapshots.
+
+Check that autorouting trials cannot overwrite the live design.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -16,6 +21,10 @@ from pcb import freeroute_preview
 
 
 class FreerouteSnapshotTests(unittest.TestCase):
+    """Tests that router trials run on private snapshots and never overwrite the live
+    design.
+    """
+
     def test_compiled_named_width_splits_only_its_net_and_inherits_pair_clearances(
         self,
     ):
@@ -109,6 +118,12 @@ class FreerouteSnapshotTests(unittest.TestCase):
 
     @staticmethod
     def _export_test_dsn(_board, destination):
+        """Write a minimal two-layer DSN file and report success.
+
+        Inputs:
+            _board: Ignored.
+            destination: File that receives the DSN text.
+        """
         Path(destination).write_text(
             "(pcb example (structure (layer F.Cu (type signal)) "
             "(layer B.Cu (type signal))))",
@@ -117,6 +132,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         return True
 
     def setUp(self):
+        """Create a temporary project with board files, a library and a trial folder."""
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -152,6 +168,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         copy_inputs = freeroute_preview._copy_inputs
 
         def change_after_copy(files, source, destination):
+            """Copy the inputs as usual, then rewrite the source file."""
             copy_inputs(files, source, destination)
             source.write_text("changed", encoding="utf-8")
 
@@ -324,6 +341,13 @@ class FreerouteSnapshotTests(unittest.TestCase):
         board = pcbnew.BOARD()
 
         def export(_board, destination):
+            """Write a three-layer DSN file that has a GND plane on In1.Cu and report
+            success.
+
+            Inputs:
+                _board: Ignored.
+                destination: File that receives the DSN text.
+            """
             Path(destination).write_text(
                 "(pcb example (structure (layer F.Cu (type signal)) "
                 "(layer In1.Cu (type signal)) (layer B.Cu (type signal)) "
@@ -683,6 +707,17 @@ class FreerouteSnapshotTests(unittest.TestCase):
         }
 
         def route(command, **kwargs):
+            """Stand in for the router process: check its options and environment, then
+            write a session.
+
+            Inputs:
+                command: Router command line, checked for the isolation and strictness
+                    options.
+                kwargs: Process options; the router log goes to ``stdout``.
+            Outputs:
+                A result with return code 0 after the session file named by ``-do`` is
+                written.
+            """
             self.assertEqual(
                 kwargs["env"]["APPDATA"], str(self.trial / "router-home" / "appdata")
             )
@@ -776,6 +811,7 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **_kwargs):
+            """Stand in for the router process: write a session file and return code 0."""
             Path(command[command.index("-do") + 1]).write_text(
                 "(session candidate (base_design candidate) (placement (component FOO)) (routes (network_out)))",
                 encoding="utf-8",
@@ -834,6 +870,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **_kwargs):
+            """Stand in for the router process: check the neckdown and strictness
+            options, log a version line and write a session.
+            """
             self.assertIn("--router.automatic_neckdown=true", command)
             self.assertIn("--router.strict_drc=true", command)
             self.assertIn("--router.fanout.enabled=false", command)
@@ -899,6 +938,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **kwargs):
+            """Stand in for the fast router: check its item limit, start count and
+            options, log a version line and write a session.
+            """
             self.assertIn("--router.autorouter.max_items=80", command)
             self.assertIn("--multi-start=2", command)
             self.assertIn(
@@ -990,6 +1032,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def timeout(command, **kwargs):
+            """Stand in for a fast router that logs a version line, writes a complete
+            session and then times out after 30 s.
+            """
             kwargs["stdout"].write(
                 "fastroute 0.1.14\nparsed input: 4 layers, 1 components\n"
             )
@@ -1052,6 +1097,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def timeout(command, **_kwargs):
+            """Stand in for a router that writes a truncated session and then times out
+            after 30 s.
+            """
             Path(command[command.index("-do") + 1]).write_text(
                 "(session broken", encoding="utf-8"
             )
@@ -1105,6 +1153,9 @@ class FreerouteSnapshotTests(unittest.TestCase):
         native.GetTracks.return_value = []
 
         def route(command, **_kwargs):
+            """Stand in for the router process: write a session file, then rewrite the
+            board as a newer edit.
+            """
             Path(command[command.index("-do") + 1]).write_text(
                 "(session candidate (base_design candidate) (placement (component FOO)) (routes (network_out)))",
                 encoding="utf-8",

@@ -1,4 +1,9 @@
-"""The phone page: token on every API call, workspace-only projects, one job per project."""
+"""test_serve.py: tests of the phone page server.
+
+The phone page: token on every API call, workspace-only projects, one job per project.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 from __future__ import annotations
 
@@ -18,11 +23,17 @@ class HeldRunner(JobRunner):
     """Record jobs without starting KiCad; finishing is left to the test."""
 
     def _run(self, job, run_id):
+        """Remember the job and the run id instead of running them."""
         self.last = (job, run_id)
 
 
 class ServeTests(unittest.TestCase):
+    """Tests of the phone page: the token, the workspace projects and the job limits."""
+
     def setUp(self):
+        """Create a temporary workspace with one project, a held runner and an app with
+        the token ``secret``.
+        """
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
         root = Path(self.folder.name)
@@ -37,6 +48,16 @@ class ServeTests(unittest.TestCase):
         self.auth = {"Authorization": "Bearer secret"}
 
     def call(self, method, url, body=None, headers=None):
+        """Send one request to the app.
+
+        Inputs:
+            method: HTTP method.
+            url: Request path.
+            body: Object sent as JSON, or None for an empty body.
+            headers: Request headers; the bearer-token headers when None.
+        Outputs:
+            The response status and payload.
+        """
         status, _, payload = self.app.handle(
             method,
             url,

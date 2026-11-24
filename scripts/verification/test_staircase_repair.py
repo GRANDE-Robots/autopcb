@@ -1,4 +1,9 @@
-"""Guarded cleanup of existing staircase-shaped signal copper."""
+"""test_staircase_repair.py: tests of the guarded staircase cleanup.
+
+Guarded cleanup of existing staircase-shaped signal copper.
+
+Copyright: GRANDE Robots and Aaron John Sabu
+"""
 
 import tempfile
 import unittest
@@ -13,7 +18,18 @@ from pcb.net_routing.style import audit_style
 
 
 class StaircaseRepairTests(unittest.TestCase):
+    """Tests that staircase shortcuts keep the chain ends and are proved before they are
+    applied.
+    """
+
     def add_chain(self, board, name, offset):
+        """Add a net with two pads joined by a staircase of three F.Cu tracks.
+
+        Inputs:
+            board: Board that receives the net, a footprint, the pads and the tracks.
+            name: Net name.
+            offset: Y offset of the whole chain, in nm.
+        """
         net = pcbnew.NETINFO_ITEM(board, name)
         board.Add(net)
         footprint = pcbnew.FOOTPRINT(board)
@@ -42,6 +58,7 @@ class StaircaseRepairTests(unittest.TestCase):
             board.Add(track)
 
     def board(self):
+        """Build a four-copper-layer board with one staircase chain on the net SIG."""
         board = pcbnew.BOARD()
         board.SetCopperLayerCount(4)
         self.add_chain(board, "SIG", 0)

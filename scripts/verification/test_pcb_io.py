@@ -34,8 +34,11 @@ class BoardSaveGuardTests(unittest.TestCase):
         board.Add(track)
         connection = board.GetConnectivity()
         connection.Build(board)
-        wrapped = next(x for x in connection.GetConnectedTracks(track)
-                       if x.Type() == pcbnew.PCB_VIA_T)
+        wrapped = next(
+            x
+            for x in connection.GetConnectedTracks(track)
+            if x.Type() == pcbnew.PCB_VIA_T
+        )
         self.assertEqual(wrapped.GetClass(), "PCB_VIA")
         with self.assertRaisesRegex(ValueError, "layer is required"):
             copper_width(wrapped)

@@ -21,7 +21,11 @@ from pcb.route_optimizer import mm
 
 
 def native_pose_change(
-    source: Path, reference: str, x_mm: float, y_mm: float, rotation_deg: float,
+    source: Path,
+    reference: str,
+    x_mm: float,
+    y_mm: float,
+    rotation_deg: float,
     scope: MoveScope = MoveScope(),
 ) -> dict[str, Any]:
     """Return an exact native pose replacement for one footprint the scope lets move."""
@@ -59,8 +63,9 @@ def native_pose_change(
     }
 
 
-def verify_native_pose_change(source: Path, change: dict[str, Any],
-                              scope: MoveScope = MoveScope()) -> None:
+def verify_native_pose_change(
+    source: Path, change: dict[str, Any], scope: MoveScope = MoveScope()
+) -> None:
     """Reject any replacement other than the native transform of the same part."""
     target = change.get("target")
     if (

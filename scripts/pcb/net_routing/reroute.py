@@ -16,8 +16,14 @@ from pcb.net_routing.native import discover
 from pcb.net_routing.recovery import RecoveryPolicy
 from pcb.net_routing.rework import ReworkWeights, capture_removals
 from pcb.route_optimizer import (
-    GridRouter, Obstacle, Point, Route, Segment,
-    is_staircase_triplet, is_standard_dogleg, mm,
+    GridRouter,
+    Obstacle,
+    Point,
+    Route,
+    Segment,
+    is_staircase_triplet,
+    is_standard_dogleg,
+    mm,
 )
 
 
@@ -40,7 +46,10 @@ class Obstruction:
 
 
 def staircase_support(
-    segments: dict[str, tuple[str, Segment]], selected: frozenset[str], *, max_items: int,
+    segments: dict[str, tuple[str, Segment]],
+    selected: frozenset[str],
+    *,
+    max_items: int,
     selectable: frozenset[str] | None = None,
     anchors: frozenset[tuple[str, str, Point]] = frozenset(),
 ) -> frozenset[str]:
@@ -62,8 +71,11 @@ def staircase_support(
             adjacency[(net, segment.layer, point)].append(uid)
     windows = set()
     for middle_uid, (net, middle) in valid.items():
-        if ((net, middle.layer, middle.start) in anchors
-                or (net, middle.layer, middle.end) in anchors):
+        if (net, middle.layer, middle.start) in anchors or (
+            net,
+            middle.layer,
+            middle.end,
+        ) in anchors:
             continue
         left = adjacency[(net, middle.layer, middle.start)]
         right = adjacency[(net, middle.layer, middle.end)]
@@ -81,19 +93,40 @@ def staircase_support(
             GridRouter._direction(middle.start, middle.end),
             GridRouter._direction(middle.end, last_point),
         )
-        before = [uid for uid in adjacency[(net, middle.layer, first_point)] if uid != left_uid]
-        after = [uid for uid in adjacency[(net, middle.layer, last_point)] if uid != right_uid]
+        before = [
+            uid
+            for uid in adjacency[(net, middle.layer, first_point)]
+            if uid != left_uid
+        ]
+        after = [
+            uid
+            for uid in adjacency[(net, middle.layer, last_point)]
+            if uid != right_uid
+        ]
         dogleg = False
-        if (len(before) == len(after) == 1
-                and (net, middle.layer, first_point) not in anchors
-                and (net, middle.layer, last_point) not in anchors):
+        if (
+            len(before) == len(after) == 1
+            and (net, middle.layer, first_point) not in anchors
+            and (net, middle.layer, last_point) not in anchors
+        ):
             before_segment, after_segment = valid[before[0]][1], valid[after[0]][1]
-            before_point = before_segment.end if before_segment.start == first_point else before_segment.start
-            after_point = after_segment.end if after_segment.start == last_point else after_segment.start
-            dogleg = is_standard_dogleg((
-                GridRouter._direction(before_point, first_point), *directions,
-                GridRouter._direction(last_point, after_point),
-            ))
+            before_point = (
+                before_segment.end
+                if before_segment.start == first_point
+                else before_segment.start
+            )
+            after_point = (
+                after_segment.end
+                if after_segment.start == last_point
+                else after_segment.start
+            )
+            dogleg = is_standard_dogleg(
+                (
+                    GridRouter._direction(before_point, first_point),
+                    *directions,
+                    GridRouter._direction(last_point, after_point),
+                )
+            )
         if is_staircase_triplet(*directions) and not dogleg:
             windows.add(frozenset((left_uid, middle_uid, right_uid)))
     result = set(selected)
@@ -103,15 +136,23 @@ def staircase_support(
     while changed:
         changed = False
         for window in sorted(windows, key=lambda item: tuple(sorted(item))):
-            if (window & result and not window <= result and window <= allowed
-                    and len(result | window) <= max_items):
+            if (
+                window & result
+                and not window <= result
+                and window <= allowed
+                and len(result | window) <= max_items
+            ):
                 result.update(window)
                 changed = True
     return frozenset(result)
 
 
 def compile_reroutes(
-    board, request: dict, policy: dict, critical_nets: tuple[str, ...], *,
+    board,
+    request: dict,
+    policy: dict,
+    critical_nets: tuple[str, ...],
+    *,
     reference_nets: tuple[str, ...] | None = None,
 ) -> dict:
     """Keep the target and all repairs in one independently checked transaction.
@@ -173,13 +214,18 @@ def compile_reroutes(
             position = item.GetPosition()
             via_anchors.update(
                 (name, layer, Point(position.x, position.y))
-                for layer in layers if item.IsOnLayer(board.GetLayerID(layer))
+                for layer in layers
+                if item.IsOnLayer(board.GetLayerID(layer))
             )
         elif not isinstance(item, pcbnew.PCB_ARC):
             start, end = item.GetStart(), item.GetEnd()
             topology_segments[uid] = (
-                name, Segment(Point(start.x, start.y), Point(end.x, end.y),
-                              board.GetLayerName(item.GetLayer())),
+                name,
+                Segment(
+                    Point(start.x, start.y),
+                    Point(end.x, end.y),
+                    board.GetLayerName(item.GetLayer()),
+                ),
             )
         if name in excluded or name.startswith("unconnected-"):
             continue
@@ -202,17 +248,17 @@ def compile_reroutes(
             "via" if is_via else "segment",
             obstacle,
             0 if is_via else copper_width(item, layer=item.GetLayer()),
-            max(
-                copper_width(item, layer=board.GetLayerID(layer))
-                for layer in physical
-            )
+            max(copper_width(item, layer=board.GetLayerID(layer)) for layer in physical)
             if is_via
             else 0,
             item.GetDrillValue() if is_via else 0,
         )
         nearby = not (
-            min(record.distance(first), record.distance(last)) > mm(recovery.wide_margin_mm)
-            and not GridRouter._intersects_box(first, last, obstacle, width // 2 + clearance)
+            min(record.distance(first), record.distance(last))
+            > mm(recovery.wide_margin_mm)
+            and not GridRouter._intersects_box(
+                first, last, obstacle, width // 2 + clearance
+            )
         )
         related = pads[name]
         reason = None
@@ -238,9 +284,14 @@ def compile_reroutes(
         else:
             eligible.append(record)
 
-    target_group = tuple(sorted(target_records, key=lambda item: item.uuid)) if (
-        target_supported and 0 < len(target_records) <= recovery.whole_net_rip_up_items
-    ) else ()
+    target_group = (
+        tuple(sorted(target_records, key=lambda item: item.uuid))
+        if (
+            target_supported
+            and 0 < len(target_records) <= recovery.whole_net_rip_up_items
+        )
+        else ()
+    )
     eligible.sort(
         key=lambda item: (min(item.distance(first), item.distance(last)), item.uuid)
     )
@@ -270,28 +321,48 @@ def compile_reroutes(
             clusters.append(tuple(cluster))
     weights = ReworkWeights.from_config(request.get("rework"))
     witnesses = []
-    if recovery.rip_up_candidates and recovery.obstruction_trials and eligible and board.GetFileName():
+    if (
+        recovery.rip_up_candidates
+        and recovery.obstruction_trials
+        and eligible
+        and board.GetFileName()
+    ):
         from pcb.net_routing.obstructions import diagnose
-        witnesses, diagnosis_notes = diagnose(board, choice.anchors, eligible,
-                                              {**settings, "name": target}, recovery, reference_nets, weights)
+
+        witnesses, diagnosis_notes = diagnose(
+            board,
+            choice.anchors,
+            eligible,
+            {**settings, "name": target},
+            recovery,
+            reference_nets,
+            weights,
+        )
         blockers.extend(diagnosis_notes)
     by_id = {item.uuid: item for item in (*eligible, *target_group)}
     eligible_names = {item.net for item in by_id.values()}
-    topology_segments = {uid: value for uid, value in topology_segments.items()
-                         if value[0] in eligible_names}
+    topology_segments = {
+        uid: value
+        for uid, value in topology_segments.items()
+        if value[0] in eligible_names
+    }
     anchors = set(via_anchors)
     for name, segment in topology_segments.values():
         layer_id = board.GetLayerID(segment.layer)
         for point in (segment.start, segment.end):
             key = (name, segment.layer, point)
             if key not in anchors and any(
-                pad.IsOnLayer(layer_id) and pad.HitTest(pcbnew.VECTOR2I(point.x, point.y))
+                pad.IsOnLayer(layer_id)
+                and pad.HitTest(pcbnew.VECTOR2I(point.x, point.y))
                 for pad in pads[name]
             ):
                 anchors.add(key)
-    diagnosed = [tuple(by_id[uid] for uid in sorted(witness.identifiers)) for witness in witnesses
-                 if len(witness.identifiers) <= recovery.rip_up_items
-                 and len({by_id[uid].net for uid in witness.identifiers}) <= recovery.rip_up_nets]
+    diagnosed = [
+        tuple(by_id[uid] for uid in sorted(witness.identifiers))
+        for witness in witnesses
+        if len(witness.identifiers) <= recovery.rip_up_items
+        and len({by_id[uid].net for uid in witness.identifiers}) <= recovery.rip_up_nets
+    ]
     # Reserve a distinct whole-target alternative alongside the first
     # diagnosed obstruction; neither alternative bypasses downstream checks.
     base_patterns = [
@@ -308,19 +379,27 @@ def compile_reroutes(
         identifiers = frozenset(item.uuid for item in selected)
         if settings.get("forbid_staircase", True):
             expanded = staircase_support(
-                topology_segments, identifiers, max_items=recovery.rip_up_items,
-                selectable=frozenset(by_id), anchors=frozenset(anchors),
+                topology_segments,
+                identifiers,
+                max_items=recovery.rip_up_items,
+                selectable=frozenset(by_id),
+                anchors=frozenset(anchors),
             )
             if expanded != identifiers:
-                patterns.append((tuple(by_id[uid] for uid in sorted(expanded)),
-                                 "staircase_context"))
-        selection = ("whole_target" if target_ids and identifiers == target_ids
-                     else "path_obstructions" if identifiers in witnesses_by_id
-                     else "local_hypothesis")
+                patterns.append(
+                    (tuple(by_id[uid] for uid in sorted(expanded)), "staircase_context")
+                )
+        selection = (
+            "whole_target"
+            if target_ids and identifiers == target_ids
+            else "path_obstructions"
+            if identifiers in witnesses_by_id
+            else "local_hypothesis"
+        )
         patterns.append((selected, selection))
     requests, descriptions, seen = [], [], set()
     empty = Route((), (), (), 0.0, 0, 0.0, 0)
-    for selected, selection in (patterns if recovery.rip_up_candidates else []):
+    for selected, selection in patterns if recovery.rip_up_candidates else []:
         identifiers = frozenset(item.uuid for item in selected)
         if identifiers in seen:
             continue
@@ -419,22 +498,37 @@ def compile_reroutes(
         )
         if len(requests) >= recovery.rip_up_candidates:
             break
-    from pcb.net_routing.relocation import (ground_anchor_requests, placement_requests,
-                                             protected_anchor_requests)
+    from pcb.net_routing.relocation import (
+        ground_anchor_requests,
+        placement_requests,
+        protected_anchor_requests,
+    )
+
     if policy.get("_ground_anchor_candidates"):
         anchored, anchored_descriptions = ground_anchor_requests(
-            board, request, policy, recovery, choice.anchors, tuple(sorted(protected_nets))
+            board,
+            request,
+            policy,
+            recovery,
+            choice.anchors,
+            tuple(sorted(protected_nets)),
         )
         requests.extend(anchored)
         descriptions.extend(anchored_descriptions)
     if policy.get("_protected_anchor_candidates"):
         anchored, anchored_descriptions = protected_anchor_requests(
-            board, request, policy, recovery, choice.anchors, tuple(sorted(protected_nets))
+            board,
+            request,
+            policy,
+            recovery,
+            choice.anchors,
+            tuple(sorted(protected_nets)),
         )
         requests.extend(anchored)
         descriptions.extend(anchored_descriptions)
-    moved, move_descriptions = placement_requests(board, request, policy, recovery,
-                                                  choice.anchors, tuple(sorted(protected_nets)))
+    moved, move_descriptions = placement_requests(
+        board, request, policy, recovery, choice.anchors, tuple(sorted(protected_nets))
+    )
     requests.extend(moved)
     descriptions.extend(move_descriptions)
     return {

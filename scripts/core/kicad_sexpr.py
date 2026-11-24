@@ -107,7 +107,7 @@ def select_direct_children(source: str, name: str) -> tuple[str, ...]:
             if not pending or pending[-1]:
                 raise ValueError(f"Invalid closing expression at {token.start()}")
             if len(pending) == 2 and selected[-1]:
-                result.append(source[starts[-1]:token.end()])
+                result.append(source[starts[-1] : token.end()])
             starts.pop()
             pending.pop()
             selected.pop()
@@ -115,7 +115,9 @@ def select_direct_children(source: str, name: str) -> tuple[str, ...]:
                 root_closed = True
         else:
             if not pending:
-                raise ValueError(f"Unexpected text outside S-expression at {token.start()}")
+                raise ValueError(
+                    f"Unexpected text outside S-expression at {token.start()}"
+                )
             if pending[-1] and len(pending) == 2:
                 atom = token.group()
                 selected[-1] = (_unquote(atom) if first == '"' else atom) == name

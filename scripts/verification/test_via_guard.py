@@ -32,7 +32,9 @@ class ViaPadGuardTests(unittest.TestCase):
 
     def test_drill_intersection_is_detected_but_nearby_via_is_allowed(self):
         hit = via_pad_overlaps(self.board(600_000))
-        self.assertEqual([(item.reference, item.pad_number) for item in hit], [("U1", "1")])
+        self.assertEqual(
+            [(item.reference, item.pad_number) for item in hit], [("U1", "1")]
+        )
         self.assertEqual(via_pad_overlaps(self.board(700_000)), ())
 
     def test_existing_overlap_is_not_a_new_regression(self):

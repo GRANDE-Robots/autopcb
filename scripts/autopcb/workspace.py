@@ -43,8 +43,11 @@ class Workspace:
         recorded = ()
         if self.projects.is_dir():
             recorded = tuple(
-                project.resolve() for directory in self.projects.iterdir()
-                if directory.is_dir() and not directory.is_symlink() and not directory.name.startswith(".")
+                project.resolve()
+                for directory in self.projects.iterdir()
+                if directory.is_dir()
+                and not directory.is_symlink()
+                and not directory.name.startswith(".")
                 for project in project_entries(directory)
             )
         return tuple(sorted({*project_entries(self.root), *recorded}))
@@ -54,16 +57,27 @@ class Workspace:
             return ProjectPaths(selected)
         entries = self.entries()
         if len(entries) != 1:
-            detail = ", ".join(path.relative_to(self.root).as_posix() for path in entries)
-            message = f"Several KiCad projects are available. Use --project to select one: {detail}" if entries else (
-                "Use --project to open an existing design or create a project from requirements."
+            detail = ", ".join(
+                path.relative_to(self.root).as_posix() for path in entries
+            )
+            message = (
+                f"Several KiCad projects are available. Use --project to select one: {detail}"
+                if entries
+                else (
+                    "Use --project to open an existing design or create a project from requirements."
+                )
             )
             raise ValueError(message)
         return ProjectPaths(entries[0])
 
     def project_output(self, name: str) -> Path:
-        if (not isinstance(name, str) or "/" in name or "\\" in name
-                or Path(name).name != name or name in ("", ".", "..")):
+        if (
+            not isinstance(name, str)
+            or "/" in name
+            or "\\" in name
+            or Path(name).name != name
+            or name in ("", ".", "..")
+        ):
             raise ValueError("Use a project name without directory separators.")
         self.projects.mkdir(parents=True, exist_ok=True)
         return self.projects / name
@@ -74,4 +88,6 @@ class Workspace:
     def export_output(self, project: ProjectPaths, draft: bool) -> Path:
         root = self.results / "exports"
         root.mkdir(parents=True, exist_ok=True)
-        return root / (self.storage(project.entry).key + ("-draft" if draft else "-checked"))
+        return root / (
+            self.storage(project.entry).key + ("-draft" if draft else "-checked")
+        )

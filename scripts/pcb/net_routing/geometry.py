@@ -140,7 +140,9 @@ def intersection(first: Segment, second: Segment) -> Point | None:
         return None
     x, y = a.x + t * ux, a.y + t * uy
     if x.denominator != 1 or y.denominator != 1:
-        raise RouteGeometryError("A copper junction falls between native integer coordinates")
+        raise RouteGeometryError(
+            "A copper junction falls between native integer coordinates"
+        )
     return Point(int(x), int(y))
 
 
@@ -188,27 +190,39 @@ def _existing_lines(existing: tuple[Segment, ...]):
     return merged, indexed
 
 
-def _staircase_context(added: tuple[Segment, ...], existing: tuple[Segment, ...]) -> tuple[Segment, ...]:
+def _staircase_context(
+    added: tuple[Segment, ...], existing: tuple[Segment, ...]
+) -> tuple[Segment, ...]:
     """Include the two old bends on either side of each new copper contact."""
     merged, indexed = _existing_lines(existing)
     relevant = {
-        old for old in merged for new in added if old.layer == new.layer
-        and (any(on_segment(p, old) for p in (new.start, new.end))
-             or any(on_segment(p, new) for p in (old.start, old.end))
-             or intersection(new, old) is not None)
+        old
+        for old in merged
+        for new in added
+        if old.layer == new.layer
+        and (
+            any(on_segment(p, old) for p in (new.start, new.end))
+            or any(on_segment(p, new) for p in (old.start, old.end))
+            or intersection(new, old) is not None
+        )
     }
     frontier = relevant.copy()
     for _ in range(2):
         neighbors = set()
         for segment in frontier:
             for point in (segment.start, segment.end):
-                for key, coordinate in (((segment.layer, "v", point.x), point.y),
-                                        ((segment.layer, 0, point.y), point.x),
-                                        ((segment.layer, 1, point.y - point.x), point.x),
-                                        ((segment.layer, -1, point.y + point.x), point.x)):
+                for key, coordinate in (
+                    ((segment.layer, "v", point.x), point.y),
+                    ((segment.layer, 0, point.y), point.x),
+                    ((segment.layer, 1, point.y - point.x), point.x),
+                    ((segment.layer, -1, point.y + point.x), point.x),
+                ):
                     starts, intervals = indexed.get(key, ((), ()))
                     index = bisect_right(starts, coordinate) - 1
-                    if index >= 0 and intervals[index][0] <= coordinate <= intervals[index][1]:
+                    if (
+                        index >= 0
+                        and intervals[index][0] <= coordinate <= intervals[index][1]
+                    ):
                         neighbors.add(intervals[index][2])
         frontier = neighbors - relevant
         relevant.update(neighbors)
@@ -243,7 +257,11 @@ def aggregate(
     anchors = set(via_sites)
 
     def anchored(site: Site) -> bool:
-        return site in pad_sites or site in via_sites or pad_copper.holds(site.point, site.layer)
+        return (
+            site in pad_sites
+            or site in via_sites
+            or pad_copper.holds(site.point, site.layer)
+        )
 
     # Inspect only contacts involving new copper; avoid quadratic rescanning of
     # a large pre-existing net and do not judge its unrelated legacy bends.
@@ -295,13 +313,21 @@ def aggregate(
             # of two tracks that is not anchored on pad or via copper.
             run = []
             site = Site(point, segment.layer)
-            while len(graph.get(site, ())) == 2 and len(ends[site]) == 2 and not anchored(site):
+            while (
+                len(graph.get(site, ())) == 2
+                and len(ends[site]) == 2
+                and not anchored(site)
+            ):
                 following = next(s for s in ends[site] if s != segment)
                 if following in visited:
                     break
                 visited.add(following)
                 other = following.end if following.start == point else following.start
-                run.append(Segment(other, point, site.layer) if backwards else Segment(point, other, site.layer))
+                run.append(
+                    Segment(other, point, site.layer)
+                    if backwards
+                    else Segment(point, other, site.layer)
+                )
                 segment, point = following, other
                 site = Site(point, segment.layer)
             return run
@@ -310,8 +336,11 @@ def aggregate(
             if seed in visited:
                 continue
             visited.add(seed)
-            chain = [*reversed(extend(seed, seed.start, backwards=True)), seed,
-                     *extend(seed, seed.end, backwards=False)]
+            chain = [
+                *reversed(extend(seed, seed.start, backwards=True)),
+                seed,
+                *extend(seed, seed.end, backwards=False),
+            ]
             for window in GridRouter.staircase_windows(chain):
                 witnesses, touched = [], False
                 for run in window:
@@ -320,7 +349,10 @@ def aggregate(
                         overlap_lo, overlap_hi = max(lo, added_lo), min(hi, added_hi)
                         touched = touched or overlap_lo < overlap_hi
                         if overlap_hi - overlap_lo >= 2:
-                            witness = (run.layer, _point(key, (overlap_lo + overlap_hi) // 2))
+                            witness = (
+                                run.layer,
+                                _point(key, (overlap_lo + overlap_hi) // 2),
+                            )
                             if witness not in witnesses:
                                 witnesses.append(witness)
                 if touched:
@@ -337,7 +369,9 @@ def aggregate(
         and not pad_copper.covers(s)
         for s in segments
     ):
-        raise RouteGeometryError("A combined segment is shorter than the configured minimum")
+        raise RouteGeometryError(
+            "A combined segment is shorter than the configured minimum"
+        )
     length = sum(
         math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / 1e6 for s in segments
     )

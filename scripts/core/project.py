@@ -32,7 +32,10 @@ def _sheet_references(document: Path, root: Path) -> tuple[Path, ...]:
     for sheet in select_direct_children(text, "sheet"):
         for prop in parse(sheet).children("property"):
             atoms = prop.atoms()
-            if len(atoms) >= 3 and atoms[1].value.lower().replace(" ", "") == "sheetfile":
+            if (
+                len(atoms) >= 3
+                and atoms[1].value.lower().replace(" ", "") == "sheetfile"
+            ):
                 references.append(_contained(root, document.parent / atoms[2].value))
     return tuple(references)
 
@@ -48,7 +51,8 @@ def project_entries(root: Path) -> tuple[Path, ...]:
     if anchors:
         return tuple(sorted(anchors.values()))
     sheets = {
-        path for path in root.glob("*.kicad_sch")
+        path
+        for path in root.glob("*.kicad_sch")
         if path.is_file() and not path.name.startswith(("_autosave-", "~"))
     }
     if len(sheets) > 1:
@@ -64,7 +68,11 @@ def read_profile(root: Path) -> dict:
     if path.stat().st_size > 2_000_000:
         raise ValueError("AutoPCB project profile is too large")
     data = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data["schema_version"] != 1:
+    if (
+        not isinstance(data, dict)
+        or type(data.get("schema_version")) is not int
+        or data["schema_version"] != 1
+    ):
         raise ValueError(f"Unsupported AutoPCB project profile: {path}")
     return data
 
@@ -81,7 +89,9 @@ class ProjectPaths:
         explicit = not location.is_dir() and location.suffix.lower() in NATIVE_SUFFIXES
         root = location.parent if explicit else location
         entry = location if explicit else None
-        forwarded = Path(os.environ[ENTRY_ENV]).resolve() if ENTRY_ENV in os.environ else None
+        forwarded = (
+            Path(os.environ[ENTRY_ENV]).resolve() if ENTRY_ENV in os.environ else None
+        )
         if entry is None and forwarded is not None and forwarded.parent == root:
             entry = forwarded
         marker = root / SNAPSHOT_ENTRY
@@ -92,7 +102,9 @@ class ProjectPaths:
             entry = root / name
         if entry is None and (selected := read_profile(root).get("entry")) is not None:
             if not isinstance(selected, str) or Path(selected).name != selected:
-                raise ValueError("Profile entry must be the name of a KiCad file in the project directory")
+                raise ValueError(
+                    "Profile entry must be the name of a KiCad file in the project directory"
+                )
             entry = root / selected
             if not entry.is_file():
                 raise ValueError(f"Profile entry is missing: {entry}")
@@ -100,7 +112,9 @@ class ProjectPaths:
             entries = project_entries(root)
             if len(entries) > 1:
                 names = ", ".join(item.name for item in entries)
-                raise ValueError(f"Multiple KiCad projects in {root}: {names}. Select a native file with --project.")
+                raise ValueError(
+                    f"Multiple KiCad projects in {root}: {names}. Select a native file with --project."
+                )
             entry = entries[0] if entries else root / f"{root.name}.kicad_pro"
         entry = _contained(root, entry)
         if entry.suffix.lower() not in NATIVE_SUFFIXES:
@@ -173,30 +187,44 @@ class ProjectPaths:
                         else:
                             raise ValueError(f"Missing project library: {target}")
         paths.update(
-            path for directory in directories for path in directory.rglob("*")
-            if path.is_file() and path.suffix.lower() in {".kicad_sym", ".kicad_mod", ".kicad_wks"}
+            path
+            for directory in directories
+            for path in directory.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() in {".kicad_sym", ".kicad_mod", ".kicad_wks"}
         )
         return tuple(sorted(_contained(self.root, path) for path in paths))
 
 
-def declared_pairs(root: Path, native_nets: set[str]) -> tuple[tuple[str, str], ...] | None:
+def declared_pairs(
+    root: Path, native_nets: set[str]
+) -> tuple[tuple[str, str], ...] | None:
     profile = read_profile(root)
     if profile.get("high_speed_reviewed") is not True:
         return None
     pairs = profile.get("differential_pairs")
     if not isinstance(pairs, list):
-        raise ValueError("High-speed review requires an explicit differential-pair list")
+        raise ValueError(
+            "High-speed review requires an explicit differential-pair list"
+        )
     selected = set()
     resolved = []
     for pair in pairs:
-        if (not isinstance(pair, list) or len(pair) != 2
-                or not all(isinstance(name, str) and name.strip() for name in pair)):
-            raise ValueError("A differential pair requires two nonempty native net names")
+        if (
+            not isinstance(pair, list)
+            or len(pair) != 2
+            or not all(isinstance(name, str) and name.strip() for name in pair)
+        ):
+            raise ValueError(
+                "A differential pair requires two nonempty native net names"
+            )
         names = []
         for name in pair:
             matches = native_nets & {name, "/" + name}
             if len(matches) != 1 or matches & selected:
-                raise ValueError(f"Missing, ambiguous or repeated differential net: {name}")
+                raise ValueError(
+                    f"Missing, ambiguous or repeated differential net: {name}"
+                )
             actual = matches.pop()
             selected.add(actual)
             names.append(actual)
@@ -216,15 +244,21 @@ def native_path(location: Path, suffix: str) -> Path:
     except ValueError:
         root = location.resolve()
         selection = os.environ.get(ENTRY_ENV)
-        if (not root.is_dir() or (root / PROFILE_NAME).exists() or (root / SNAPSHOT_ENTRY).exists()
-                or (selection and Path(selection).resolve().parent == root)):
+        if (
+            not root.is_dir()
+            or (root / PROFILE_NAME).exists()
+            or (root / SNAPSHOT_ENTRY).exists()
+            or (selection and Path(selection).resolve().parent == root)
+        ):
             raise
         entries = project_entries(root)
         if len(entries) <= 1:
             raise
         # Legacy native workers sometimes share a directory with disposable
         # PCB-only candidates. Prefer the single complete native source family.
-        complete = [entry for entry in entries if entry.with_suffix(".kicad_sch").is_file()]
+        complete = [
+            entry for entry in entries if entry.with_suffix(".kicad_sch").is_file()
+        ]
         if len(complete) == 1:
             return complete[0].with_suffix(suffix)
         configured = [entry for entry in entries if entry.suffix == ".kicad_pro"]
@@ -242,10 +276,13 @@ class SourceSnapshot:
 
     @classmethod
     def capture(cls, project: ProjectPaths) -> SourceSnapshot:
-        return cls(project, {
-            path.relative_to(project.root).as_posix(): sha(path)
-            for path in project.audit_inputs()
-        })
+        return cls(
+            project,
+            {
+                path.relative_to(project.root).as_posix(): sha(path)
+                for path in project.audit_inputs()
+            },
+        )
 
     def verify_unchanged(self) -> None:
         if self.hashes != self.capture(self.project).hashes:

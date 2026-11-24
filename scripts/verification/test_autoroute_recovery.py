@@ -15,13 +15,22 @@ from verification import test_net_routing as fixtures
 
 def request():
     return {
-        "shared": {"bounds_mm": [0, 0, 20, 20], "layers": ["F.Cu"],
-                   "step_mm": 1, "width_mm": 0.2, "clearance_mm": 0.2,
-                   "via": {"size_mm": 0.6, "drill_mm": 0.3},
-                   "gentle_turns": True, "forbid_staircase": True,
-                   "current_model": {"unchanged": "evidence"}},
-        "nets": [{"name": "SIGNAL"}], "search": {"seconds": 30},
-        "max_islands": 3, "checkpoint_offset": 0, "recovery_stage": 0,
+        "shared": {
+            "bounds_mm": [0, 0, 20, 20],
+            "layers": ["F.Cu"],
+            "step_mm": 1,
+            "width_mm": 0.2,
+            "clearance_mm": 0.2,
+            "via": {"size_mm": 0.6, "drill_mm": 0.3},
+            "gentle_turns": True,
+            "forbid_staircase": True,
+            "current_model": {"unchanged": "evidence"},
+        },
+        "nets": [{"name": "SIGNAL"}],
+        "search": {"seconds": 30},
+        "max_islands": 3,
+        "checkpoint_offset": 0,
+        "recovery_stage": 0,
         "recovery_bounds_mm": [-10, -10, 40, 40],
     }
 
@@ -33,23 +42,37 @@ class RecoveryTests(unittest.TestCase):
         previous = {
             "outcome": "rejected",
             "attempts": [
-                {"status": "geometric_candidate_only", "checkpoints": [
-                    {"net": "SIGNAL", "stage": 3, "index": 1,
-                     "bounds_mm": [99, 99, 100, 100]},
-                ]},
+                {
+                    "status": "geometric_candidate_only",
+                    "checkpoints": [
+                        {
+                            "net": "SIGNAL",
+                            "stage": 3,
+                            "index": 1,
+                            "bounds_mm": [99, 99, 100, 100],
+                        },
+                    ],
+                },
                 {"status": "native_validation_rejected"},
             ],
         }
-        retries = runner._rejected_checkpoint_retries([[request()]], previous, RecoveryPolicy())
+        retries = runner._rejected_checkpoint_retries(
+            [[request()]], previous, RecoveryPolicy()
+        )
         self.assertEqual(len(retries), 1)
         rebuilt = retries[0][0]
         self.assertEqual(rebuilt["recovery_stage"], 3)
         self.assertEqual(rebuilt["checkpoint_offset"], 1)
         self.assertEqual(rebuilt["shared"]["bounds_mm"], [-10, -10, 40, 40])
         self.assertNotIn("99", str(rebuilt))
-        self.assertEqual(runner._rejected_checkpoint_retries(
-            [[request()]], {**previous, "outcome": "no_candidate_found"}, RecoveryPolicy()
-        ), [])
+        self.assertEqual(
+            runner._rejected_checkpoint_retries(
+                [[request()]],
+                {**previous, "outcome": "no_candidate_found"},
+                RecoveryPolicy(),
+            ),
+            [],
+        )
 
     def test_renewed_repair_prefers_the_pending_kind_without_replaying_geometry(self):
         from pcb.net_routing.recovery import renew_queue, prioritize_recovery_requests
@@ -67,10 +90,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("movable", marker)
         self.assertNotIn("obsolete", str(marker))
         self.assertNotIn("99", str(marker))
-        fresh_copper = {**copy.deepcopy(request()), "nets": [{"name": "SIGNAL"}, {"name": "GND"}],
-                        "rip_up": {"GND": [{"kind": "segment", "uuid": "new-a"}]}}
-        fresh_move = {**copy.deepcopy(fresh_copper),
-                      "movable": [{"reference": "R1", "positions_mm": [[2, 3]]}]}
+        fresh_copper = {
+            **copy.deepcopy(request()),
+            "nets": [{"name": "SIGNAL"}, {"name": "GND"}],
+            "rip_up": {"GND": [{"kind": "segment", "uuid": "new-a"}]},
+        }
+        fresh_move = {
+            **copy.deepcopy(fresh_copper),
+            "movable": [{"reference": "R1", "positions_mm": [[2, 3]]}],
+        }
         ordered = prioritize_recovery_requests(
             [fresh_copper, fresh_move], marker["recovery_preference"]
         )
@@ -81,17 +109,30 @@ class RecoveryTests(unittest.TestCase):
     def test_failed_transaction_explains_which_order_stopped_where(self):
         from pcb.net_routing.presentation import _attempts
 
-        report = summarize_attempts({"attempts": [{
-            "status": "no_complete_candidate_found",
-            "search": {"path_calls": 2, "elapsed_seconds": 3},
-            "trials": [{"orders": [{
-                "order": ["GND", "TPS_SS"], "nets_reached": 1,
-                "searches": [
-                    {"net": "GND", "candidates": 1},
-                    {"net": "TPS_SS", "candidates": 0},
-                ],
-            }]}],
-        }]})
+        report = summarize_attempts(
+            {
+                "attempts": [
+                    {
+                        "status": "no_complete_candidate_found",
+                        "search": {"path_calls": 2, "elapsed_seconds": 3},
+                        "trials": [
+                            {
+                                "orders": [
+                                    {
+                                        "order": ["GND", "TPS_SS"],
+                                        "nets_reached": 1,
+                                        "searches": [
+                                            {"net": "GND", "candidates": 1},
+                                            {"net": "TPS_SS", "candidates": 0},
+                                        ],
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
         output = io.StringIO()
         _attempts(Console(stream=output, verbose=True), report)
         self.assertIn("GND", output.getvalue())
@@ -101,11 +142,17 @@ class RecoveryTests(unittest.TestCase):
     def test_failed_transaction_reports_ignored_zone_connectivity(self):
         from pcb.net_routing.presentation import _attempts
 
-        report = summarize_attempts({"attempts": [{
-            "status": "no_complete_candidate_found",
-            "search": {"path_calls": 2, "elapsed_seconds": 3},
-            "trials": [{"ignored_zone_count": 2, "orders": []}],
-        }]})
+        report = summarize_attempts(
+            {
+                "attempts": [
+                    {
+                        "status": "no_complete_candidate_found",
+                        "search": {"path_calls": 2, "elapsed_seconds": 3},
+                        "trials": [{"ignored_zone_count": 2, "orders": []}],
+                    }
+                ]
+            }
+        )
         output = io.StringIO()
         _attempts(Console(stream=output, verbose=True), report)
         self.assertIn("zone", output.getvalue().lower())
@@ -114,11 +161,23 @@ class RecoveryTests(unittest.TestCase):
     def test_refilled_zone_search_is_not_reported_as_uncredited(self):
         from pcb.net_routing.presentation import _attempts
 
-        report = summarize_attempts({"attempts": [{
-            "status": "no_complete_candidate_found",
-            "search": {"path_calls": 1, "elapsed_seconds": 1},
-            "trials": [{"ignored_zone_count": 2, "zone_connectivity": "refilled", "orders": []}],
-        }]})
+        report = summarize_attempts(
+            {
+                "attempts": [
+                    {
+                        "status": "no_complete_candidate_found",
+                        "search": {"path_calls": 1, "elapsed_seconds": 1},
+                        "trials": [
+                            {
+                                "ignored_zone_count": 2,
+                                "zone_connectivity": "refilled",
+                                "orders": [],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
         output = io.StringIO()
         _attempts(Console(stream=output, verbose=True), report)
         self.assertIn("refilled", output.getvalue().lower())
@@ -130,11 +189,13 @@ class RecoveryTests(unittest.TestCase):
         output = io.StringIO()
         _attempts(
             Console(stream=output, verbose=True),
-            [{
-                "limits_hit": ["net_seconds", "path_expansions"],
-                "failures": {"no_path_in_grid": 2},
-                "failure_details": {},
-            }],
+            [
+                {
+                    "limits_hit": ["net_seconds", "path_expansions"],
+                    "failures": {"no_path_in_grid": 2},
+                    "failure_details": {},
+                }
+            ],
         )
         text = output.getvalue()
         self.assertIn("Net time slice reached", text)
@@ -143,13 +204,25 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("no_path_in_grid", text)
 
     def test_native_rejections_keep_counts_and_bounded_human_readable_evidence(self):
-        result = {"status": "rejected", "attempts": [], "validation": {
-            "new_violations": [{"severity": "warning", "type": "track_dangling",
-                                "description": "Unconnected end at X 5 mm", "items": [{"uuid": "t"}]}] * 20,
-            "broken_existing_connections": [{"net": "N"}],
-            "baseline_unconnected": 3, "candidate_unconnected": 4,
-            "reference_comparison": {"status": "degraded"},
-        }}
+        result = {
+            "status": "rejected",
+            "attempts": [],
+            "validation": {
+                "new_violations": [
+                    {
+                        "severity": "warning",
+                        "type": "track_dangling",
+                        "description": "Unconnected end at X 5 mm",
+                        "items": [{"uuid": "t"}],
+                    }
+                ]
+                * 20,
+                "broken_existing_connections": [{"net": "N"}],
+                "baseline_unconnected": 3,
+                "candidate_unconnected": 4,
+                "reference_comparison": {"status": "degraded"},
+            },
+        }
         report = summarize_attempts(result)[0]
         self.assertIn("20 new warning track_dangling", report["reason"])
         self.assertIn("1 broken existing connections", report["reason"])
@@ -157,9 +230,12 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("reference copper degraded", report["reason"])
         self.assertEqual(len(report["rejected_candidates"]), 2)
         self.assertIn("track_dangling", report["rejected_candidates"][0]["reason"])
-        self.assertIn("Existing connection on N", report["rejected_candidates"][1]["reason"])
+        self.assertIn(
+            "Existing connection on N", report["rejected_candidates"][1]["reason"]
+        )
         output = io.StringIO()
         from pcb.net_routing.presentation import _attempts
+
         _attempts(Console(stream=output, verbose=True), [report])
         self.assertIn("Unconnected end at X 5 mm", output.getvalue())
 
@@ -172,18 +248,36 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(current["recovery_stage"], stage)
             self.assertEqual(current["max_islands"], 2)
             self.assertEqual(current["search"]["seconds"], 30)
-            for key in ("layers", "width_mm", "clearance_mm", "via", "current_model", "gentle_turns", "forbid_staircase"):
+            for key in (
+                "layers",
+                "width_mm",
+                "clearance_mm",
+                "via",
+                "current_model",
+                "gentle_turns",
+                "forbid_staircase",
+            ):
                 self.assertEqual(current["shared"][key], initial["shared"][key])
         self.assertEqual(initial, preserved)
         self.assertEqual(current["shared"]["bounds_mm"], initial["recovery_bounds_mm"])
         reroute = next_stage(current, RecoveryPolicy())
         self.assertEqual(reroute["recovery_stage"], 4)
         self.assertIsNone(next_stage(reroute, RecoveryPolicy()))
-        self.assertIsNone(next_stage(current, RecoveryPolicy(rip_up_candidates=0, placement_candidates=0)))
-        self.assertEqual(next_stage(current, RecoveryPolicy(rip_up_candidates=0))["recovery_stage"], 4)
+        self.assertIsNone(
+            next_stage(
+                current, RecoveryPolicy(rip_up_candidates=0, placement_candidates=0)
+            )
+        )
+        self.assertEqual(
+            next_stage(current, RecoveryPolicy(rip_up_candidates=0))["recovery_stage"],
+            4,
+        )
 
     def test_repair_fragments_are_never_dropped_to_make_a_pair(self):
-        repair = {**request(), "rip_up": {"SIGNAL": [{"uuid": "old-copper", "kind": "segment"}]}}
+        repair = {
+            **request(),
+            "rip_up": {"SIGNAL": [{"uuid": "old-copper", "kind": "segment"}]},
+        }
         result = next_stage(repair, RecoveryPolicy())
         self.assertEqual(result["max_islands"], 3)
         self.assertEqual(result["rip_up"], repair["rip_up"])
@@ -200,12 +294,20 @@ class RecoveryTests(unittest.TestCase):
     def test_exhausted_and_unsupported_requests_do_not_spin(self):
         current = request()
         queue = []
-        _split_failed(queue, [current], {"SIGNAL": 100},
-                      {"attempts": [{"status": "checkpoint_exhausted"}]})
+        _split_failed(
+            queue,
+            [current],
+            {"SIGNAL": 100},
+            {"attempts": [{"status": "checkpoint_exhausted"}]},
+        )
         self.assertEqual(queue[0][0]["recovery_stage"], 1)
         queue = []
-        _split_failed(queue, [current], {"SIGNAL": 100},
-                      {"attempts": [{"status": "unsupported_request"}]})
+        _split_failed(
+            queue,
+            [current],
+            {"SIGNAL": 100},
+            {"attempts": [{"status": "unsupported_request"}]},
+        )
         self.assertFalse(queue)
 
     def test_recovery_does_not_wait_behind_the_entire_board(self):
@@ -223,8 +325,9 @@ class RecoveryTests(unittest.TestCase):
         other = [{"nets": [{"name": "OTHER"}], "recovery_stage": 0}]
         queue = [other]
         result = {"attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]}
-        _split_failed(queue, [request()], {"SIGNAL": 3}, result,
-                      RecoveryPolicy(early_rework=True))
+        _split_failed(
+            queue, [request()], {"SIGNAL": 3}, result, RecoveryPolicy(early_rework=True)
+        )
         self.assertEqual({batch[0].get("recovery_stage") for batch in queue}, {0, 1, 4})
         chosen = _pop_fair_round(queue, {"SIGNAL": 1}, {})
         self.assertEqual(chosen[0]["recovery_stage"], 4)
@@ -241,24 +344,41 @@ class RecoveryTests(unittest.TestCase):
             with self.subTest(field=field):
                 failed = {**request(), field: value}
                 queue = []
-                result = {"attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]}
-                _split_failed(queue, [failed], {"SIGNAL": 2}, result,
-                              RecoveryPolicy(early_rework=True))
-                marker = next(batch[0] for batch in queue if batch[0].get("early_rework"))
+                result = {
+                    "attempts": [{"checkpoints": [{"net": "SIGNAL", "count": 1}]}]
+                }
+                _split_failed(
+                    queue,
+                    [failed],
+                    {"SIGNAL": 2},
+                    result,
+                    RecoveryPolicy(early_rework=True),
+                )
+                marker = next(
+                    batch[0] for batch in queue if batch[0].get("early_rework")
+                )
                 self.assertNotIn("rip_up", marker)
                 self.assertNotIn("movable", marker)
                 self.assertNotIn("old", str(marker))
                 self.assertNotIn("3, 4", str(marker))
-                self.assertEqual(marker["recovery_preference"],
-                                 {"neighbors": [], "moving": ["R1"] if field == "movable" else []})
+                self.assertEqual(
+                    marker["recovery_preference"],
+                    {"neighbors": [], "moving": ["R1"] if field == "movable" else []},
+                )
 
     def test_renewal_preserves_early_rework_and_wider_search_without_old_geometry(self):
         from pcb.net_routing.recovery import renew_queue
 
-        early = {**copy.deepcopy(request()), "recovery_stage": 4, "early_rework": True,
-                 "rip_up": {"SIGNAL": [{"kind": "segment", "uuid": "obsolete"}]}}
+        early = {
+            **copy.deepcopy(request()),
+            "recovery_stage": 4,
+            "early_rework": True,
+            "rip_up": {"SIGNAL": [{"kind": "segment", "uuid": "obsolete"}]},
+        }
         wider = next_stage(request(), RecoveryPolicy())
-        rebuilt = renew_queue([[request()]], [[early], [wider]], RecoveryPolicy(early_rework=True))
+        rebuilt = renew_queue(
+            [[request()]], [[early], [wider]], RecoveryPolicy(early_rework=True)
+        )
         self.assertEqual({batch[0]["recovery_stage"] for batch in rebuilt}, {1, 4})
         marker = next(batch[0] for batch in rebuilt if batch[0]["recovery_stage"] == 4)
         self.assertTrue(marker["early_rework"])
@@ -269,9 +389,11 @@ class RecoveryTests(unittest.TestCase):
         from pcb.net_routing.recovery import renew_queue
 
         early = {**copy.deepcopy(request()), "recovery_stage": 4, "early_rework": True}
-        fresh = {**copy.deepcopy(request()),
-                 "rip_up": {"SIGNAL": [{"kind": "segment", "uuid": "fresh-track"}]},
-                 "movable": [{"reference": "R1", "positions_mm": [[3, 4]]}]}
+        fresh = {
+            **copy.deepcopy(request()),
+            "rip_up": {"SIGNAL": [{"kind": "segment", "uuid": "fresh-track"}]},
+            "movable": [{"reference": "R1", "positions_mm": [[3, 4]]}],
+        }
         rebuilt = renew_queue([[fresh]], [[early]], RecoveryPolicy(early_rework=True))
         marker = next(batch[0] for batch in rebuilt if batch[0].get("early_rework"))
         self.assertNotIn("rip_up", marker)
@@ -281,24 +403,42 @@ class RecoveryTests(unittest.TestCase):
     def test_renewal_keeps_geometry_free_early_repair_preference(self):
         from pcb.net_routing.recovery import renew_queue
 
-        early = {**copy.deepcopy(request()), "recovery_stage": 4, "early_rework": True,
-                 "recovery_preference": {"neighbors": [], "moving": ["R1"]}}
-        rebuilt = renew_queue([[request()]], [[early]], RecoveryPolicy(early_rework=True))
+        early = {
+            **copy.deepcopy(request()),
+            "recovery_stage": 4,
+            "early_rework": True,
+            "recovery_preference": {"neighbors": [], "moving": ["R1"]},
+        }
+        rebuilt = renew_queue(
+            [[request()]], [[early]], RecoveryPolicy(early_rework=True)
+        )
         marker = next(batch[0] for batch in rebuilt if batch[0].get("early_rework"))
-        self.assertEqual(marker["recovery_preference"], {"neighbors": [], "moving": ["R1"]})
+        self.assertEqual(
+            marker["recovery_preference"], {"neighbors": [], "moving": ["R1"]}
+        )
 
     def test_repair_alternatives_are_interleaved_with_other_pending_nets(self):
         from pcb.net_routing import runner
 
         self.assertTrue(hasattr(runner, "_defer_repair_alternatives"))
         queue = [[{"pending": index}] for index in range(6)]
-        candidates = [{**request(), "candidate": index, "recovery_stage": 4}
-                      for index in range(3)]
+        candidates = [
+            {**request(), "candidate": index, "recovery_stage": 4} for index in range(3)
+        ]
         runner._defer_repair_alternatives(queue, candidates, defer_rounds=2)
         self.assertEqual(
             [(item[0].get("pending"), item[0].get("candidate")) for item in queue],
-            [(0, None), (1, None), (None, 0), (2, None), (3, None),
-             (None, 1), (4, None), (5, None), (None, 2)],
+            [
+                (0, None),
+                (1, None),
+                (None, 0),
+                (2, None),
+                (3, None),
+                (None, 1),
+                (4, None),
+                (5, None),
+                (None, 2),
+            ],
         )
 
     def test_repair_deferral_counts_distinct_other_targets(self):
@@ -311,9 +451,18 @@ class RecoveryTests(unittest.TestCase):
         alternative = {**request(), "nets": [{"name": "A"}], "candidate": "repair"}
         runner._defer_repair_alternatives(queue, [alternative], defer_rounds=2)
         self.assertEqual(
-            [(batch[0]["nets"][0]["name"], batch[0].get("candidate")) for batch in queue],
-            [("A", None), ("A", None), ("B", None), ("B", None),
-             ("C", None), ("A", "repair")],
+            [
+                (batch[0]["nets"][0]["name"], batch[0].get("candidate"))
+                for batch in queue
+            ],
+            [
+                ("A", None),
+                ("A", None),
+                ("B", None),
+                ("B", None),
+                ("C", None),
+                ("A", "repair"),
+            ],
         )
 
     def test_escalation_waits_for_distinct_other_targets(self):
@@ -322,7 +471,10 @@ class RecoveryTests(unittest.TestCase):
         result = {"attempts": [{"checkpoints": [{"net": "A", "count": 1}]}]}
         _split_failed(queue, [current], {"A": 2}, result)
         self.assertEqual(
-            [(batch[0]["nets"][0]["name"], batch[0].get("recovery_stage")) for batch in queue],
+            [
+                (batch[0]["nets"][0]["name"], batch[0].get("recovery_stage"))
+                for batch in queue
+            ],
             [("A", None), ("A", None), ("B", None), ("B", None), ("C", None), ("A", 1)],
         )
 
@@ -330,12 +482,15 @@ class RecoveryTests(unittest.TestCase):
         from pcb.net_routing import runner
 
         self.assertTrue(hasattr(runner, "_invalidate_compiled_repairs"))
-        first = {**copy.deepcopy(request()), "recovery_stage": 4,
-                 "nets": [{"name": "SIGNAL"}, {"name": "GND"}],
-                 "rip_up": {"GND": [{"kind": "segment", "uuid": "old"}]},
-                 "movable": [{"reference": "R1", "positions_mm": [[2, 3]]}],
-                 "recovery_preference": {"neighbors": ["GND"], "moving": ["R1"]},
-                 "orders": [["SIGNAL", "GND"]]}
+        first = {
+            **copy.deepcopy(request()),
+            "recovery_stage": 4,
+            "nets": [{"name": "SIGNAL"}, {"name": "GND"}],
+            "rip_up": {"GND": [{"kind": "segment", "uuid": "old"}]},
+            "movable": [{"reference": "R1", "positions_mm": [[2, 3]]}],
+            "recovery_preference": {"neighbors": ["GND"], "moving": ["R1"]},
+            "orders": [["SIGNAL", "GND"]],
+        }
         second = copy.deepcopy(first)
         other = {**copy.deepcopy(first), "nets": [{"name": "OTHER"}, {"name": "GND"}]}
         queue = [[first], [{"pending": 1}], [second], [other]]
@@ -355,39 +510,69 @@ class RecoveryTests(unittest.TestCase):
     def test_search_identity_is_stable_but_changes_with_budget_or_recovery(self):
         original = request()
         self.assertEqual(search_key(original), search_key(copy.deepcopy(original)))
-        self.assertNotEqual(search_key(original), search_key(next_stage(original, RecoveryPolicy())))
+        self.assertNotEqual(
+            search_key(original), search_key(next_stage(original, RecoveryPolicy()))
+        )
         changed = copy.deepcopy(original)
         changed["search"]["seconds"] = 60
         self.assertNotEqual(search_key(original), search_key(changed))
 
     def test_wider_recovery_finds_a_detour_outside_the_initial_local_window(self):
         anchors = (fixtures.site(2, 7), fixtures.site(8, 7))
-        blocked = Obstacle(Point.from_mm([4, 0]), Point.from_mm([5, 14]), ("F.Cu",), "FOREIGN")
+        blocked = Obstacle(
+            Point.from_mm([4, 0]), Point.from_mm([5, 14]), ("F.Cu",), "FOREIGN"
+        )
 
         def solve(margin):
-            window, step = search_window(anchors, (0., 0., 20., 20.), margin, 1., 1, 10000)
-            router = GridRouter(Point.from_mm(window[:2]), Point.from_mm(window[2:]),
-                                mm(step), ("F.Cu",), "SIGNAL", mm(.2), mm(.2),
-                                mm(.6), mm(.3), (blocked,), max_expansions=100000,
-                                forbid_staircase=True, gentle_turns=True)
+            window, step = search_window(
+                anchors, (0.0, 0.0, 20.0, 20.0), margin, 1.0, 1, 10000
+            )
+            router = GridRouter(
+                Point.from_mm(window[:2]),
+                Point.from_mm(window[2:]),
+                mm(step),
+                ("F.Cu",),
+                "SIGNAL",
+                mm(0.2),
+                mm(0.2),
+                mm(0.6),
+                mm(0.3),
+                (blocked,),
+                max_expansions=100000,
+                forbid_staircase=True,
+                gentle_turns=True,
+            )
             return router.route(anchors[0].point, "F.Cu", anchors[1].point, "F.Cu")
 
         with self.assertRaises(NoGridRoute):
             solve(4)
-        recovered = solve(next_stage(request(), RecoveryPolicy())["checkpoint_margin_mm"])
+        recovered = solve(
+            next_stage(request(), RecoveryPolicy())["checkpoint_margin_mm"]
+        )
         self.assertTrue(recovered.segments)
-        self.assertGreater(max(max(s.start.y, s.end.y) for s in recovered.segments), mm(14))
+        self.assertGreater(
+            max(max(s.start.y, s.end.y) for s in recovered.segments), mm(14)
+        )
 
     def test_endpoint_headings_exclude_right_angle_end_joins_but_allow_branches(self):
-        net = Net("SIGNAL", (Island("a", (fixtures.site(4, 3),)), Island("b", (fixtures.site(8, 5),))),
-                  existing=(fixtures.segment((1, 3), (4, 3)),))
-        backend = fixtures.synthetic_backend(net, Budget(Limits(seconds=3, smoothing_trials=0)))
+        net = Net(
+            "SIGNAL",
+            (Island("a", (fixtures.site(4, 3),)), Island("b", (fixtures.site(8, 5),))),
+            existing=(fixtures.segment((1, 3), (4, 3)),),
+        )
+        backend = fixtures.synthetic_backend(
+            net, Budget(Limits(seconds=3, smoothing_trials=0))
+        )
         empty = fixtures.route()
-        directions = backend.endpoint_headings(net, empty, fixtures.site(4, 3), arriving=False)
+        directions = backend.endpoint_headings(
+            net, empty, fixtures.site(4, 3), arriving=False
+        )
         self.assertNotIn(2, directions)
         self.assertNotIn(6, directions)
         self.assertIn(0, directions)
-        self.assertIsNone(backend.endpoint_headings(net, empty, fixtures.site(2, 3), arriving=False))
+        self.assertIsNone(
+            backend.endpoint_headings(net, empty, fixtures.site(2, 3), arriving=False)
+        )
         router = backend.settings[net.name].router(())
         try:
             backend._path(router, net, empty, fixtures.site(4, 3), fixtures.site(8, 5))
@@ -424,9 +609,15 @@ class RecoveryTests(unittest.TestCase):
             self.fail("A new route must not create a bend on off-angle copper")
 
         # A pad is a terminal rather than a two-segment copper bend.
-        pad_net = Net("SIGNAL", net.islands, existing=(old,), pad_sites=frozenset({end}))
-        self.assertIsNone(backend.endpoint_headings(pad_net, fixtures.route(), end, arriving=False))
-        combined = fixtures.combine(fixtures.route(new), existing=(old,), pad_sites=frozenset({end}))
+        pad_net = Net(
+            "SIGNAL", net.islands, existing=(old,), pad_sites=frozenset({end})
+        )
+        self.assertIsNone(
+            backend.endpoint_headings(pad_net, fixtures.route(), end, arriving=False)
+        )
+        combined = fixtures.combine(
+            fixtures.route(new), existing=(old,), pad_sites=frozenset({end})
+        )
         self.assertTrue(combined.segments)
 
     def test_failure_details_are_bounded_and_survive_the_round_summary(self):
@@ -441,6 +632,8 @@ class RecoveryTests(unittest.TestCase):
 
     def test_terminal_commands_remain_one_copyable_line(self):
         stream = io.StringIO()
-        command = "python run.py pcb autoroute run --resume " + "a" * 32 + " --memory-gib 3"
+        command = (
+            "python run.py pcb autoroute run --resume " + "a" * 32 + " --memory-gib 3"
+        )
         Console(stream=stream, width=36).command(command)
         self.assertEqual(stream.getvalue(), command + "\n")

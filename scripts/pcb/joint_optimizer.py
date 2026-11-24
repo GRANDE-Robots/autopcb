@@ -303,9 +303,7 @@ def optimize(project: Path, config: dict[str, Any]) -> dict[str, Any]:
                         if angle is None
                         else {"at_mm": [x, y], "rotation_deg": angle}
                     )
-                    for name, (x, y, angle) in strict_zip(
-                        names, candidate["placement"]
-                    )
+                    for name, (x, y, angle) in strict_zip(names, candidate["placement"])
                 },
                 "cost": candidate["cost"],
                 "adjacent_pad_estimate_mm": candidate["adjacent_pad_estimate_mm"],

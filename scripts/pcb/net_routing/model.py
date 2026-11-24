@@ -58,8 +58,12 @@ class NetPlan:
                 for s in self.route.segments
             ),
             tuple(sorted((v.at.x, v.at.y) for v in self.route.vias)),
-            tuple(sorted((s.layer, s.start.x, s.start.y, s.end.x, s.end.y, width)
-                         for s, width in self.restored_widths)),
+            tuple(
+                sorted(
+                    (s.layer, s.start.x, s.start.y, s.end.x, s.end.y, width)
+                    for s, width in self.restored_widths
+                )
+            ),
         )
 
 
@@ -91,7 +95,10 @@ class Limits:
         values = dict(raw)
         # Older configurations used this as a hard cap. Preserve that meaning
         # unless they explicitly opt into a wider fallback sample.
-        if "connections_per_step" in values and "fallback_connections_per_step" not in values:
+        if (
+            "connections_per_step" in values
+            and "fallback_connections_per_step" not in values
+        ):
             values["fallback_connections_per_step"] = values["connections_per_step"]
         result = cls(**values)
         for item in fields(cls):
@@ -199,15 +206,19 @@ class Budget:
     def endpoint_slice(self, count: int):
         """Leave time for other access points on the same copper island."""
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-            raise ValueError('An endpoint time slice requires a positive choice count')
+            raise ValueError("An endpoint time slice requires a positive choice count")
         previous, previous_limit = self.slice_deadline, self.slice_limit
         if count > 1:
             now = time.monotonic()
-            deadline = min(self.started + self.limits.seconds,
-                           previous if previous is not None else math.inf)
-            share = min(self.limits.endpoint_seconds, max(0.0, deadline - now) / min(count, 4))
+            deadline = min(
+                self.started + self.limits.seconds,
+                previous if previous is not None else math.inf,
+            )
+            share = min(
+                self.limits.endpoint_seconds, max(0.0, deadline - now) / min(count, 4)
+            )
             self.slice_deadline = now + share
-            self.slice_limit = 'endpoint_seconds'
+            self.slice_limit = "endpoint_seconds"
         try:
             yield
         finally:
@@ -246,7 +257,9 @@ class Budget:
             "pruned_candidates": self.pruned,
             "limits_hit": sorted(observed_limits),
             "failures": dict(self.failures),
-            "failure_details": {key: list(values) for key, values in self.failure_details.items()},
+            "failure_details": {
+                key: list(values) for key, values in self.failure_details.items()
+            },
             "elapsed_seconds": round(elapsed, 3),
             "optimality": "not_proven",
         }

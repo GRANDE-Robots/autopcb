@@ -25,7 +25,7 @@ class JointRoundingTests(unittest.TestCase):
         item = pcbnew.PCB_TRACK(self.board)
         item.SetStart(pcbnew.VECTOR2I(*start))
         item.SetEnd(pcbnew.VECTOR2I(*end))
-        item.SetWidth(mm(.2))
+        item.SetWidth(mm(0.2))
         item.SetLayer(pcbnew.B_Cu)
         item.SetNetCode(self.board.FindNet("SIGNAL").GetNetCode())
         self.board.Add(item)
@@ -41,7 +41,12 @@ class JointRoundingTests(unittest.TestCase):
         after = CampaignPlanner(self.project).plan("pcb", changes).after
         other = self.project / "candidate.kicad_pcb"
         other.write_bytes(after)
-        return before, after, pcbnew.LoadBoard(str(self.path)), pcbnew.LoadBoard(str(other))
+        return (
+            before,
+            after,
+            pcbnew.LoadBoard(str(self.path)),
+            pcbnew.LoadBoard(str(other)),
+        )
 
     def test_eligible_joint_is_repaired_without_mutating_the_input(self):
         bad = self.pair()
@@ -61,9 +66,13 @@ class JointRoundingTests(unittest.TestCase):
         original = [(track.GetStart(), track.GetEnd()) for track in (first, second)]
         proposal = find_candidate(self.board, {"SIGNAL"})
         self.assertIsNotNone(proposal)
-        self.assertEqual([(track.GetStart(), track.GetEnd()) for track in (first, second)], original)
+        self.assertEqual(
+            [(track.GetStart(), track.GetEnd()) for track in (first, second)], original
+        )
         before, after, old, new = self.snapshots(proposal["changes"])
-        self.assertEqual(verify_candidate(before, after, old, new, {"SIGNAL"})["corrected"], 1)
+        self.assertEqual(
+            verify_candidate(before, after, old, new, {"SIGNAL"})["corrected"], 1
+        )
         self.assertEqual(len(audit_style(new).non_octilinear), 0)
 
     def test_joint_beyond_the_distance_limit_is_not_moved(self):
@@ -82,8 +91,13 @@ class JointRoundingTests(unittest.TestCase):
         changed = self.project / "over-distance.kicad_pcb"
         pcbnew.SaveBoard(str(changed), self.board)
         with self.assertRaisesRegex(ValueError, "exceeded"):
-            verify_candidate(before, changed.read_bytes(), pcbnew.LoadBoard(str(self.path)),
-                             pcbnew.LoadBoard(str(changed)), {"SIGNAL"})
+            verify_candidate(
+                before,
+                changed.read_bytes(),
+                pcbnew.LoadBoard(str(self.path)),
+                pcbnew.LoadBoard(str(changed)),
+                {"SIGNAL"},
+            )
 
     def test_a_protected_net_and_a_branched_joint_are_not_modified(self):
         self.pair()
@@ -116,7 +130,7 @@ class JointRoundingTests(unittest.TestCase):
         pad = pcbnew.PAD(footprint)
         pad.SetNumber("1")
         pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
-        pad.SetSize(pcbnew.VECTOR2I(mm(.5), mm(.5)))
+        pad.SetSize(pcbnew.VECTOR2I(mm(0.5), mm(0.5)))
         pad.SetPosition(pcbnew.VECTOR2I(mm(3), mm(2)))
         layers = pcbnew.LSET()
         layers.AddLayer(pcbnew.B_Cu)
@@ -132,12 +146,20 @@ class JointRoundingTests(unittest.TestCase):
         before, after, old, new = self.snapshots(proposal["changes"])
         with self.assertRaisesRegex(ValueError, "protected"):
             verify_candidate(before, after, old, new, set())
-        track = next(item for item in new.GetTracks() if isinstance(item, pcbnew.PCB_TRACK))
-        track.SetWidth(mm(.3))
+        track = next(
+            item for item in new.GetTracks() if isinstance(item, pcbnew.PCB_TRACK)
+        )
+        track.SetWidth(mm(0.3))
         changed = self.project / "changed.kicad_pcb"
         pcbnew.SaveBoard(str(changed), new)
         with self.assertRaisesRegex(ValueError, "attribute|another board item"):
-            verify_candidate(before, changed.read_bytes(), old, pcbnew.LoadBoard(str(changed)), {"SIGNAL"})
+            verify_candidate(
+                before,
+                changed.read_bytes(),
+                old,
+                pcbnew.LoadBoard(str(changed)),
+                {"SIGNAL"},
+            )
 
     def test_independent_proof_rejects_moving_a_joint_beyond_the_distance_limit(self):
         self.pair()
@@ -152,4 +174,10 @@ class JointRoundingTests(unittest.TestCase):
         changed = self.project / "changed.kicad_pcb"
         pcbnew.SaveBoard(str(changed), new)
         with self.assertRaises(ValueError):
-            verify_candidate(before, changed.read_bytes(), old, pcbnew.LoadBoard(str(changed)), {"SIGNAL"})
+            verify_candidate(
+                before,
+                changed.read_bytes(),
+                old,
+                pcbnew.LoadBoard(str(changed)),
+                {"SIGNAL"},
+            )

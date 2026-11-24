@@ -144,23 +144,39 @@ class RouteConstraintTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not established"):
             limits.check_vias(route, "SIGNAL", mm(0.6), mm(0.3), ())
 
-    def test_via_reuse_checks_every_real_layer_without_requiring_nonexistent_layers(self):
+    def test_via_reuse_checks_every_real_layer_without_requiring_nonexistent_layers(
+        self,
+    ):
         limits = ElectricalConstraints.from_config(self.config()["electrical"])
         at = Point(mm(1), mm(2))
         layers = ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu")
-        valid = ExistingVia(at, "SIGNAL", tuple((layer, mm(.6)) for layer in layers), mm(.3), True)
+        valid = ExistingVia(
+            at, "SIGNAL", tuple((layer, mm(0.6)) for layer in layers), mm(0.3), True
+        )
         self.assertEqual(limits.eligible_existing_vias((valid,), "SIGNAL"), {at})
         route = Route((), (), (Via(at, "F.Cu", "B.Cu"),), 0, 0, 0, 0)
-        self.assertEqual(limits.check_vias(route, "SIGNAL", mm(.6), mm(.3), (valid,))[0]["kind"],
-                         "existing")
-        narrow = ExistingVia(at, "SIGNAL", tuple((layer, limits.via.minimum_size - 1
-                                if layer == "In3.Cu" else size) for layer, size in valid.sizes), mm(.3), True)
+        self.assertEqual(
+            limits.check_vias(route, "SIGNAL", mm(0.6), mm(0.3), (valid,))[0]["kind"],
+            "existing",
+        )
+        narrow = ExistingVia(
+            at,
+            "SIGNAL",
+            tuple(
+                (layer, limits.via.minimum_size - 1 if layer == "In3.Cu" else size)
+                for layer, size in valid.sizes
+            ),
+            mm(0.3),
+            True,
+        )
         self.assertEqual(limits.eligible_existing_vias((narrow,), "SIGNAL"), set())
         with self.assertRaisesRegex(ValueError, "below"):
-            limits.check_vias(route, "SIGNAL", mm(.6), mm(.3), (narrow,))
-        missing = ExistingVia(at, "SIGNAL", valid.sizes[:-1], mm(.3), True)
+            limits.check_vias(route, "SIGNAL", mm(0.6), mm(0.3), (narrow,))
+        missing = ExistingVia(at, "SIGNAL", valid.sizes[:-1], mm(0.3), True)
         self.assertEqual(limits.eligible_existing_vias((missing,), "SIGNAL"), set())
-        duplicate = ExistingVia(at, "SIGNAL", (*valid.sizes, valid.sizes[0]), mm(.3), True)
+        duplicate = ExistingVia(
+            at, "SIGNAL", (*valid.sizes, valid.sizes[0]), mm(0.3), True
+        )
         self.assertEqual(limits.eligible_existing_vias((duplicate,), "SIGNAL"), set())
 
     def test_invalid_or_unknown_electrical_inputs_fail_closed(self):
@@ -208,9 +224,20 @@ class RouteConstraintTests(unittest.TestCase):
             board.SetCopperLayerCount(6)
             pcbnew.SaveBoard(str(source), board)
             six = read_native_obstacles(source, "SIGNAL")
-            self.assertEqual(dict(six.vias[0].sizes),
-                             {layer: mm(.6) for layer in
-                              ("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu")})
+            self.assertEqual(
+                dict(six.vias[0].sizes),
+                {
+                    layer: mm(0.6)
+                    for layer in (
+                        "F.Cu",
+                        "In1.Cu",
+                        "In2.Cu",
+                        "In3.Cu",
+                        "In4.Cu",
+                        "B.Cu",
+                    )
+                },
+            )
 
     def test_native_diagonal_envelopes_cover_copper_without_blocking_full_box(self):
         import pcbnew
@@ -257,8 +284,8 @@ class RouteConstraintTests(unittest.TestCase):
         valid = b'(kicad_pcb (setup (stackup (layer "F.Cu" (type "copper") (thickness 0.035)))))'
         self.assertEqual(_configured_copper_thicknesses(valid), (("F.Cu", 35000),))
         bad = (
-            b'(kicad_pcb (setup) (setup))',
-            b'(kicad_pcb (setup (stackup) (stackup)))',
+            b"(kicad_pcb (setup) (setup))",
+            b"(kicad_pcb (setup (stackup) (stackup)))",
             b'(kicad_pcb (setup (stackup (layer "F.Cu" (thickness 0.035)) (layer "F.Cu" (thickness 0.035)))))',
             b'(kicad_pcb (setup (stackup (layer "F.Cu"))))',
             b'(kicad_pcb (setup (stackup (layer "F.Cu" (thickness 0)))))',

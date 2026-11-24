@@ -7,8 +7,11 @@ from pathlib import Path
 
 import pcbnew
 
-from pcb.net_routing.export_reservations import (temporary_router_reservations,
-                                                reserved_native_input, strip_native_reservations)
+from pcb.net_routing.export_reservations import (
+    temporary_router_reservations,
+    reserved_native_input,
+    strip_native_reservations,
+)
 from pcb.route_optimizer import mm
 
 
@@ -19,8 +22,17 @@ class ExportReservationTests(unittest.TestCase):
             board = pcbnew.BOARD()
             board.SetCopperLayerCount(6)
             board.SetFileName(str(root / "board.kicad_pcb"))
-            (root / "board.kicad_pro").write_text(json.dumps({"net_settings": {
-                "netclass_patterns": [{"netclass": "USB_DATA", "pattern": "DATA"}]}}))
+            (root / "board.kicad_pro").write_text(
+                json.dumps(
+                    {
+                        "net_settings": {
+                            "netclass_patterns": [
+                                {"netclass": "USB_DATA", "pattern": "DATA"}
+                            ]
+                        }
+                    }
+                )
+            )
             for name in ("GND", "DATA"):
                 board.Add(pcbnew.NETINFO_ITEM(board, name))
             corners = ((0, 0), (30, 0), (30, 30), (0, 30))
@@ -51,7 +63,7 @@ class ExportReservationTests(unittest.TestCase):
             board.Add(zone)
             track = pcbnew.PCB_TRACK(board)
             track.SetLayer(pcbnew.B_Cu)
-            track.SetWidth(mm(.2))
+            track.SetWidth(mm(0.2))
             track.SetNetCode(board.FindNet("DATA").GetNetCode())
             track.SetStart(pcbnew.VECTOR2I(mm(5), mm(5)))
             track.SetEnd(pcbnew.VECTOR2I(mm(10), mm(5)))
@@ -59,20 +71,33 @@ class ExportReservationTests(unittest.TestCase):
             board.GetConnectivity().Build(board)
             self.assertTrue(pcbnew.ZONE_FILLER(board).Fill(board.Zones()))
             areas = []
-            for margin in (.5, 0):
-                with temporary_router_reservations(board, ground_contact_margin_mm=margin) as counts:
+            for margin in (0.5, 0):
+                with temporary_router_reservations(
+                    board, ground_contact_margin_mm=margin
+                ) as counts:
                     self.assertEqual(counts["reference_areas"], 1)
-                    areas.append(sum(z.GetBoundingBox().GetWidth() * z.GetBoundingBox().GetHeight()
-                                     for z in board.Zones() if z.GetIsRuleArea() and z.IsOnLayer(pcbnew.F_Cu)))
-                self.assertEqual({z.m_Uuid.AsString() for z in board.Zones()}, {zone.m_Uuid.AsString()})
+                    areas.append(
+                        sum(
+                            z.GetBoundingBox().GetWidth()
+                            * z.GetBoundingBox().GetHeight()
+                            for z in board.Zones()
+                            if z.GetIsRuleArea() and z.IsOnLayer(pcbnew.F_Cu)
+                        )
+                    )
+                self.assertEqual(
+                    {z.m_Uuid.AsString() for z in board.Zones()},
+                    {zone.m_Uuid.AsString()},
+                )
             self.assertGreater(areas[0], areas[1])
             self.assertEqual(len(list(board.GetPads())), 1)
             self.assertEqual(len(list(board.GetTracks())), 1)
 
     def test_ground_margin_rejects_invalid_search_settings(self):
-        for value in (-.1, 3, float("inf"), float("nan"), True, "0.5"):
+        for value in (-0.1, 3, float("inf"), float("nan"), True, "0.5"):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                with temporary_router_reservations(object(), ground_contact_margin_mm=value):
+                with temporary_router_reservations(
+                    object(), ground_contact_margin_mm=value
+                ):
                     self.fail("Invalid margin entered the search context")
 
     def test_native_router_input_guards_are_removed_without_touching_user_zones(self):
@@ -88,7 +113,7 @@ class ExportReservationTests(unittest.TestCase):
             track.SetNetCode(board.FindNet("DATA").GetNetCode())
             track.SetStart(pcbnew.VECTOR2I(mm(10), mm(10)))
             track.SetEnd(pcbnew.VECTOR2I(mm(20), mm(20)))
-            track.SetWidth(mm(.2))
+            track.SetWidth(mm(0.2))
             board.Add(track)
             user = pcbnew.ZONE(board)
             user.SetLayer(pcbnew.F_Cu)
@@ -99,21 +124,38 @@ class ExportReservationTests(unittest.TestCase):
                 user.Outline().Append(mm(x), mm(y))
             board.Add(user)
             pcbnew.SaveBoard(str(path), board)
-            path.with_suffix(".kicad_pro").write_text(json.dumps({
-                "net_settings": {"netclass_patterns": [{"netclass": "USB_DATA", "pattern": "DATA"}]}}))
+            path.with_suffix(".kicad_pro").write_text(
+                json.dumps(
+                    {
+                        "net_settings": {
+                            "netclass_patterns": [
+                                {"netclass": "USB_DATA", "pattern": "DATA"}
+                            ]
+                        }
+                    }
+                )
+            )
             original, temporary, evidence = reserved_native_input(path)
             self.assertEqual(evidence["reference_areas"], 1)
             self.assertEqual(len(temporary), 1)
             guarded = path.read_bytes()
             strip_native_reservations(path, original, temporary)
             cleaned = pcbnew.LoadBoard(str(path))
-            self.assertEqual({zone.m_Uuid.AsString() for zone in cleaned.Zones()}, {user.m_Uuid.AsString()})
+            self.assertEqual(
+                {zone.m_Uuid.AsString() for zone in cleaned.Zones()},
+                {user.m_Uuid.AsString()},
+            )
             self.assertEqual(len(list(cleaned.GetTracks())), 1)
             # Corrupt original-zone preservation must fail before rewriting.
             path.write_bytes(guarded)
             damaged = pcbnew.LoadBoard(str(path))
-            damaged.Remove(next(zone for zone in damaged.Zones()
-                                if zone.m_Uuid.AsString() == user.m_Uuid.AsString()))
+            damaged.Remove(
+                next(
+                    zone
+                    for zone in damaged.Zones()
+                    if zone.m_Uuid.AsString() == user.m_Uuid.AsString()
+                )
+            )
             pcbnew.SaveBoard(str(path), damaged)
             before_failure = path.read_bytes()
             with self.assertRaisesRegex(RuntimeError, "original zone definitions"):
@@ -126,8 +168,17 @@ class ExportReservationTests(unittest.TestCase):
             board = pcbnew.BOARD()
             board.SetCopperLayerCount(6)
             board.SetFileName(str(root / "board.kicad_pcb"))
-            (root / "board.kicad_pro").write_text(json.dumps({
-                "net_settings": {"netclass_patterns": [{"netclass": "USB_DATA", "pattern": "DATA"}]}}))
+            (root / "board.kicad_pro").write_text(
+                json.dumps(
+                    {
+                        "net_settings": {
+                            "netclass_patterns": [
+                                {"netclass": "USB_DATA", "pattern": "DATA"}
+                            ]
+                        }
+                    }
+                )
+            )
             board.Add(pcbnew.NETINFO_ITEM(board, "DATA"))
             track = pcbnew.PCB_TRACK(board)
             track.SetLayer(pcbnew.B_Cu)

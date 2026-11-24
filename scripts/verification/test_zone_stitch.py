@@ -14,14 +14,27 @@ from pcb.checkpoints import read_config
 from pcb.net_routing.electrical import Branch, Evidence, Quantity, Scenario
 from pcb.net_routing.runner import _source_hashes
 from pcb.net_routing import zone_stitch
-from pcb.net_routing.zone_stitch import (StitchDimensions, StitchProof, candidate_paths, candidate_sites,
-                                         StitchAllowance, _island_matches, verified_pad_limits, via_clear_of_planned)
+from pcb.net_routing.zone_stitch import (
+    StitchDimensions,
+    StitchProof,
+    candidate_paths,
+    candidate_sites,
+    StitchAllowance,
+    _island_matches,
+    verified_pad_limits,
+    via_clear_of_planned,
+)
 
 
 class ZoneStitchGeometryTests(unittest.TestCase):
     def test_native_shapes_accept_exact_clearance_without_changing_the_rules(self):
-        from pcb.freeroute_delta import (Trace, Via, native_clearance_checker,
-                                        native_shortcut_obstacles, shortcut_clearance_checker)
+        from pcb.freeroute_delta import (
+            Trace,
+            Via,
+            native_clearance_checker,
+            native_shortcut_obstacles,
+            shortcut_clearance_checker,
+        )
         from pcb.route_optimizer import mm
 
         board = pcbnew.BOARD()
@@ -33,27 +46,36 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         pad = pcbnew.PAD(fp)
         pad.SetNumber("1")
         pad.SetShape(pcbnew.PAD_SHAPE_RECT)
-        pad.SetSize(pcbnew.VECTOR2I(mm(.4), mm(4)))
+        pad.SetSize(pcbnew.VECTOR2I(mm(0.4), mm(4)))
         pad.SetPosition(pcbnew.VECTOR2I(mm(10.65), mm(10)))
         pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
         pad.SetLayerSet(pcbnew.LSET.FrontMask())
         pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
         fp.Add(pad)
         board.Add(fp)
-        profile = SimpleNamespace(maximum_clearance=mm(.2), clearance_at=lambda *args, **kw: mm(.2))
-        trace = Trace("GND", "F.Cu", mm(.5), (mm(10), mm(10)), (mm(10), mm(11)))
-        via = Via("GND", (mm(10), mm(10)), mm(.5), mm(.3))
+        profile = SimpleNamespace(
+            maximum_clearance=mm(0.2), clearance_at=lambda *args, **kw: mm(0.2)
+        )
+        trace = Trace("GND", "F.Cu", mm(0.5), (mm(10), mm(10)), (mm(10), mm(11)))
+        via = Via("GND", (mm(10), mm(10)), mm(0.5), mm(0.3))
         # Integer bounding envelopes include a safety inflation. The actual
         # native shapes have exactly the required 0.2 mm physical gap.
-        self.assertFalse(shortcut_clearance_checker(native_shortcut_obstacles(board),
-                                                   profile_for=lambda _: profile)((trace,)))
-        check = native_clearance_checker(board, clearance=mm(.2), profile_for=lambda _: profile)
+        self.assertFalse(
+            shortcut_clearance_checker(
+                native_shortcut_obstacles(board), profile_for=lambda _: profile
+            )((trace,))
+        )
+        check = native_clearance_checker(
+            board, clearance=mm(0.2), profile_for=lambda _: profile
+        )
         self.assertTrue(check((trace,)))
         self.assertTrue(check((via,)))
-        inner = Trace("GND", "In3.Cu", mm(.5), trace.start, trace.end)
+        inner = Trace("GND", "In3.Cu", mm(0.5), trace.start, trace.end)
         self.assertTrue(check((inner,)))
         pad.SetPosition(pcbnew.VECTOR2I(mm(10.64), mm(10)))
-        changed = native_clearance_checker(board, clearance=mm(.2), profile_for=lambda _: profile)
+        changed = native_clearance_checker(
+            board, clearance=mm(0.2), profile_for=lambda _: profile
+        )
         self.assertFalse(changed((trace,)))
         self.assertFalse(changed((via,)))
         self.assertTrue(changed((inner,)))
@@ -73,17 +95,27 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             pad.SetNumber("1")
             pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
             pad.SetLayerSet(pcbnew.LSET.FrontMask())
-            pad.SetSize(pcbnew.VECTOR2I(mm(.6), mm(.6)))
+            pad.SetSize(pcbnew.VECTOR2I(mm(0.6), mm(0.6)))
             pad.SetPosition(pcbnew.VECTOR2I(mm(x), mm(2)))
             pad.SetNetCode(net.GetNetCode())
             footprint.Add(pad)
             board.Add(footprint)
-        useless = zone_stitch._new_via(board, net, (mm(10), mm(10)),
-                                       StitchDimensions(200000, 200000, 600000, 300000, 250000))
+        useless = zone_stitch._new_via(
+            board,
+            net,
+            (mm(10), mm(10)),
+            StitchDimensions(200000, 200000, 600000, 300000, 250000),
+        )
         self.assertFalse(zone_stitch._join_if_improved(board, [useless]))
         self.assertEqual(len(list(board.GetTracks())), 0)
-        trace = zone_stitch.Trace("GND", "F.Cu", mm(.2), (mm(2), mm(2)), (mm(5), mm(2)))
-        self.assertTrue(zone_stitch._join_if_improved(board, zone_stitch._native_tracks(board, net, (trace,))))
+        trace = zone_stitch.Trace(
+            "GND", "F.Cu", mm(0.2), (mm(2), mm(2)), (mm(5), mm(2))
+        )
+        self.assertTrue(
+            zone_stitch._join_if_improved(
+                board, zone_stitch._native_tracks(board, net, (trace,))
+            )
+        )
         self.assertEqual(board.GetConnectivity().GetUnconnectedCount(False), 0)
 
     def test_zone_to_zone_drc_also_searches_the_small_pad_islands(self):
@@ -94,16 +126,40 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         board.GetPads.return_value = [pad]
         board.GetNetsByName.return_value = {"GND": 1}
         board.Zones.return_value = []
-        inventory = SimpleNamespace(nets=(SimpleNamespace(name="GND", zone_ids=("zone",),
-            copper_islands=(("main-pad", "main-track"), ("pad-a",))),))
+        inventory = SimpleNamespace(
+            nets=(
+                SimpleNamespace(
+                    name="GND",
+                    zone_ids=("zone",),
+                    copper_islands=(("main-pad", "main-track"), ("pad-a",)),
+                ),
+            )
+        )
         allowance = StitchAllowance(2400000, frozenset({"pad-a"}))
-        with (mock.patch.object(zone_stitch, "_dimensions", return_value=StitchDimensions(500000, 200000, 800000, 400000, 250000)),
-              mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
-              mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
-              mock.patch.object(zone_stitch, "reference_corridors", return_value=SimpleNamespace(unsupported_items=())),
-              mock.patch.object(zone_stitch, "native_shortcut_obstacles", return_value=())):
-            result = zone_stitch.propose(board, {"unconnected_items": [{"items": [{"uuid": "zone"}]}]},
-                                        b"{}", rules, eligible={"pad-a": allowance})
+        with (
+            mock.patch.object(
+                zone_stitch,
+                "_dimensions",
+                return_value=StitchDimensions(500000, 200000, 800000, 400000, 250000),
+            ),
+            mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
+            mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
+            mock.patch.object(
+                zone_stitch,
+                "reference_corridors",
+                return_value=SimpleNamespace(unsupported_items=()),
+            ),
+            mock.patch.object(
+                zone_stitch, "native_shortcut_obstacles", return_value=()
+            ),
+        ):
+            result = zone_stitch.propose(
+                board,
+                {"unconnected_items": [{"items": [{"uuid": "zone"}]}]},
+                b"{}",
+                rules,
+                eligible={"pad-a": allowance},
+            )
         self.assertEqual(result["open_pads"], 1)
 
     def test_island_proof_must_cover_all_current_contributors(self):
@@ -121,16 +177,31 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         board.GetPads.return_value = [pad]
         board.GetNetsByName.return_value = {"GND": 1}
         board.Zones.return_value = []
-        inventory = SimpleNamespace(nets=(SimpleNamespace(name="GND", copper_islands=(("pad-a", "pad-b"),)),))
+        inventory = SimpleNamespace(
+            nets=(SimpleNamespace(name="GND", copper_islands=(("pad-a", "pad-b"),)),)
+        )
         report = {"unconnected_items": [{"items": [{"uuid": "pad-a"}]}]}
         dimensions = StitchDimensions(500_000, 200_000, 800_000, 400_000, 250_000)
-        with (mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
-              mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
-              mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
-              mock.patch.object(zone_stitch, "reference_corridors", return_value=SimpleNamespace(obstacles=(), unsupported_items=())),
-              mock.patch.object(zone_stitch, "native_shortcut_obstacles", return_value=())):
-            result = zone_stitch.propose(board, report, b"{}", rules,
-                                         eligible={"pad-a": StitchAllowance(2_000_000, frozenset({"pad-a"}))})
+        with (
+            mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
+            mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
+            mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
+            mock.patch.object(
+                zone_stitch,
+                "reference_corridors",
+                return_value=SimpleNamespace(obstacles=(), unsupported_items=()),
+            ),
+            mock.patch.object(
+                zone_stitch, "native_shortcut_obstacles", return_value=()
+            ),
+        ):
+            result = zone_stitch.propose(
+                board,
+                report,
+                b"{}",
+                rules,
+                eligible={"pad-a": StitchAllowance(2_000_000, frozenset({"pad-a"}))},
+            )
         self.assertEqual(result["proposed_stitches"], 0)
         self.assertEqual(result["unassessed_pads"], 1)
         board.Add.assert_not_called()
@@ -143,16 +214,28 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         board.GetPads.return_value = [pad]
         board.GetNetsByName.return_value = {"GND": 1}
         board.Zones.return_value = []
-        inventory = SimpleNamespace(nets=(SimpleNamespace(name="GND", copper_islands=(("pad-a", "track-a"),)),))
+        inventory = SimpleNamespace(
+            nets=(SimpleNamespace(name="GND", copper_islands=(("pad-a", "track-a"),)),)
+        )
         report = {"unconnected_items": [{"items": [{"uuid": "track-a"}]}]}
         dimensions = StitchDimensions(500_000, 200_000, 800_000, 400_000, 250_000)
         allowance = StitchAllowance(2_000_000, frozenset({"pad-a", "track-a"}))
-        with (mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
-              mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
-              mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
-              mock.patch.object(zone_stitch, "reference_corridors", return_value=SimpleNamespace(obstacles=(), unsupported_items=())),
-              mock.patch.object(zone_stitch, "native_shortcut_obstacles", return_value=())):
-            result = zone_stitch.propose(board, report, b"{}", rules, eligible={"pad-a": allowance})
+        with (
+            mock.patch.object(zone_stitch, "_dimensions", return_value=dimensions),
+            mock.patch.object(zone_stitch, "inventory_board", return_value=inventory),
+            mock.patch.object(zone_stitch, "high_speed_nets", return_value={"USB_DP"}),
+            mock.patch.object(
+                zone_stitch,
+                "reference_corridors",
+                return_value=SimpleNamespace(obstacles=(), unsupported_items=()),
+            ),
+            mock.patch.object(
+                zone_stitch, "native_shortcut_obstacles", return_value=()
+            ),
+        ):
+            result = zone_stitch.propose(
+                board, report, b"{}", rules, eligible={"pad-a": allowance}
+            )
             unqualified = zone_stitch.propose(board, report, b"{}", rules, eligible={})
         self.assertEqual(result["open_pads"], 1)
         self.assertEqual(result["unassessed_pads"], 0)
@@ -160,7 +243,9 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         board.Add.assert_not_called()
 
     def test_candidate_sites_are_octilinear_and_outside_the_pad(self):
-        sites = candidate_sites((1_000_000, 2_000_000), (500_000, 1_500_000, 1_500_000, 2_500_000), 800_000)
+        sites = candidate_sites(
+            (1_000_000, 2_000_000), (500_000, 1_500_000, 1_500_000, 2_500_000), 800_000
+        )
         self.assertEqual(len(sites), 8)
         for x, y in sites:
             dx, dy = x - 1_000_000, y - 2_000_000
@@ -175,14 +260,23 @@ class ZoneStitchGeometryTests(unittest.TestCase):
         self.assertFalse(via_clear_of_planned((900_000, 0), [(0, 0)], drill_limited))
 
     def test_extended_paths_have_only_valid_chamfers_and_reach_beyond_the_pad(self):
-        paths = candidate_paths((0, 0), (-100_000, -100_000, 100_000, 100_000), 400_000,
-                                step=200_000, max_distance=1_000_000)
+        paths = candidate_paths(
+            (0, 0),
+            (-100_000, -100_000, 100_000, 100_000),
+            400_000,
+            step=200_000,
+            max_distance=1_000_000,
+        )
         self.assertTrue(any(len(path) == 3 for path in paths))
-        self.assertTrue(any(max(abs(v) for v in path[-1]) == 1_000_000 for path in paths))
+        self.assertTrue(
+            any(max(abs(v) for v in path[-1]) == 1_000_000 for path in paths)
+        )
         for path in paths:
             vectors = [(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:])]
             for dx, dy in vectors:
-                self.assertTrue((dx or dy) and (dx == 0 or dy == 0 or abs(dx) == abs(dy)))
+                self.assertTrue(
+                    (dx or dy) and (dx == 0 or dy == 0 or abs(dx) == abs(dy))
+                )
             if len(vectors) == 2:
                 first, second = vectors
                 dot = first[0] * second[0] + first[1] * second[1]
@@ -191,9 +285,11 @@ class ZoneStitchGeometryTests(unittest.TestCase):
                 self.assertEqual(abs(cross), dot)
 
     def test_missing_or_inconsistent_rules_fail_closed(self):
-        for values in ((0, 200_000, 800_000, 400_000, 250_000),
-                       (500_000, -1, 800_000, 400_000, 250_000),
-                       (500_000, 200_000, 400_000, 400_000, 250_000)):
+        for values in (
+            (0, 200_000, 800_000, 400_000, 250_000),
+            (500_000, -1, 800_000, 400_000, 250_000),
+            (500_000, 200_000, 400_000, 400_000, 250_000),
+        ):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 StitchDimensions(*values)
 
@@ -203,34 +299,68 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             project = Path(temporary)
             data = b"reviewed capacity and load evidence"
             (project / "evidence.txt").write_bytes(data)
-            evidence = Evidence("evidence.txt", hashlib.sha256(data).hexdigest(), "section 2", "verified")
+            evidence = Evidence(
+                "evidence.txt",
+                hashlib.sha256(data).hexdigest(),
+                "section 2",
+                "verified",
+            )
             capacity = Quantity(1, "A", evidence)
             resistance = Quantity(0.01, "ohm", evidence)
             load = Quantity(0.1, "A", evidence)
             drop = Quantity(0.1, "V", evidence)
-            branches = (Branch("track", "pad", "via", "track", capacity, resistance),
-                        Branch("via", "via", "plane", "via", capacity, resistance))
-            scenarios = tuple(Scenario(name, (("plane", load),), drop)
-                              for name in ("normal", "transient", "fault"))
+            branches = (
+                Branch("track", "pad", "via", "track", capacity, resistance),
+                Branch("via", "via", "plane", "via", capacity, resistance),
+            )
+            scenarios = tuple(
+                Scenario(name, (("plane", load),), drop)
+                for name in ("normal", "transient", "fault")
+            )
             board_hash = hashlib.sha256(b"board source").hexdigest()
             island = ("pad-id", "other-pad-id", "track-id")
-            proof = StitchProof("pad-id", dimensions, 4_000_000, branches, scenarios, island, board_hash)
+            proof = StitchProof(
+                "pad-id", dimensions, 4_000_000, branches, scenarios, island, board_hash
+            )
+
             def assess(proofs, source=board_hash):
-                return verified_pad_limits(project, proofs, dimensions, board_sha256=source)
+                return verified_pad_limits(
+                    project, proofs, dimensions, board_sha256=source
+                )
+
             self.assertEqual(assess(()), {})
             # A source label and a matching hash do not verify the numbers or
             # show that the cited values apply to the proposed copper.
             self.assertEqual(assess((proof,)), {})
             self.assertEqual(assess((proof, proof)), {})
-            self.assertEqual(assess((proof,), hashlib.sha256(b"changed board").hexdigest()), {})
-            self.assertEqual(assess((StitchProof("pad-id", dimensions, 4_000_000, branches, scenarios),)), {})
-            bypass = tuple(Scenario(name, (("pad", load),), drop)
-                           for name in ("normal", "transient", "fault"))
-            bypass_proof = StitchProof("pad-id", dimensions, 4_000_000, branches, bypass, island, board_hash)
+            self.assertEqual(
+                assess((proof,), hashlib.sha256(b"changed board").hexdigest()), {}
+            )
+            self.assertEqual(
+                assess(
+                    (StitchProof("pad-id", dimensions, 4_000_000, branches, scenarios),)
+                ),
+                {},
+            )
+            bypass = tuple(
+                Scenario(name, (("pad", load),), drop)
+                for name in ("normal", "transient", "fault")
+            )
+            bypass_proof = StitchProof(
+                "pad-id", dimensions, 4_000_000, branches, bypass, island, board_hash
+            )
             self.assertEqual(assess((bypass_proof,)), {})
             (project / "evidence.txt").write_text("changed")
             self.assertEqual(assess((proof,)), {})
-            incomplete = StitchProof("pad-id", dimensions, 4_000_000, branches, scenarios[:1], island, board_hash)
+            incomplete = StitchProof(
+                "pad-id",
+                dimensions,
+                4_000_000,
+                branches,
+                scenarios[:1],
+                island,
+                board_hash,
+            )
             self.assertEqual(assess((incomplete,)), {})
 
     def test_policy_accepts_zone_evidence_and_fingerprints_its_sources(self):
@@ -240,10 +370,17 @@ class ZoneStitchGeometryTests(unittest.TestCase):
             (assets / "config").mkdir(parents=True)
             source = project / "evidence.txt"
             source.write_text("first")
-            policy = {"schema": 1, "max_pins": 3,
-                      "zone_stitch": {"proofs": [{"capacity": {"evidence": {"source": "evidence.txt"}}}]}}
+            policy = {
+                "schema": 1,
+                "max_pins": 3,
+                "zone_stitch": {
+                    "proofs": [{"capacity": {"evidence": {"source": "evidence.txt"}}}]
+                },
+            }
             (assets / "config" / "autopcb.json").write_text(json.dumps(policy))
-            self.assertIn("zone_stitch", read_config(assets / "config" / "autopcb.json")[0])
+            self.assertIn(
+                "zone_stitch", read_config(assets / "config" / "autopcb.json")[0]
+            )
             snapshot = SimpleNamespace(fingerprints={})
             before = _source_hashes(snapshot, project, assets)
             source.write_text("changed")

@@ -45,8 +45,16 @@ class Corridor:
     clearance: int
 
     def blocked_by(self, shapes) -> bool:
-        return bool(obstruction_hits(self.route, {"shapes": tuple(shapes)}, self.profile,
-                                     self.target, self.via_size, self.clearance))
+        return bool(
+            obstruction_hits(
+                self.route,
+                {"shapes": tuple(shapes)},
+                self.profile,
+                self.target,
+                self.via_size,
+                self.clearance,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -69,7 +77,9 @@ class BoardObstacles:
     fixed: tuple
 
     @classmethod
-    def read(cls, board, critical_nets=(), *, assume_zone_refill=False, footprints=None) -> BoardObstacles:
+    def read(
+        cls, board, critical_nets=(), *, assume_zone_refill=False, footprints=None
+    ) -> BoardObstacles:
         """``footprints`` maps a footprint UUID to a detached copy at another pose, or None."""
         import pcbnew
 
@@ -79,12 +89,24 @@ class BoardObstacles:
             owner = footprint.m_Uuid.AsString()
             part = (footprints or {}).get(owner, footprint)
             for pad in () if part is None else part.Pads():
-                active = physical if pad.GetDrillSize().x or pad.GetDrillSize().y else tuple(
-                    layer for layer in physical if pad.IsOnLayer(board.GetLayerID(layer)))
+                active = (
+                    physical
+                    if pad.GetDrillSize().x or pad.GetDrillSize().y
+                    else tuple(
+                        layer
+                        for layer in physical
+                        if pad.IsOnLayer(board.GetLayerID(layer))
+                    )
+                )
                 if active:
-                    pads[owner] = (*pads.get(owner, ()), _pad_obstacle(board, pad, active))
+                    pads[owner] = (
+                        *pads.get(owner, ()),
+                        _pad_obstacle(board, pad, active),
+                    )
         for item in board.GetTracks():
-            active = tuple(layer for layer in physical if item.IsOnLayer(board.GetLayerID(layer)))
+            active = tuple(
+                layer for layer in physical if item.IsOnLayer(board.GetLayerID(layer))
+            )
             if not active:
                 continue
             is_via = isinstance(item, pcbnew.PCB_VIA)
@@ -94,13 +116,23 @@ class BoardObstacles:
                 shapes = (_box(item, active, item.GetNetname(), "copper"),)
             else:
                 shapes = tuple(_track_boxes(item, active, item.GetNetname()))
-            copper[item.m_Uuid.AsString()] = CopperItem(shapes, is_via, 0 if is_via else item.GetLength())
+            copper[item.m_Uuid.AsString()] = CopperItem(
+                shapes, is_via, 0 if is_via else item.GetLength()
+            )
         for zone in board.Zones():
-            active = tuple(layer for layer in physical if zone.IsOnLayer(board.GetLayerID(layer)))
+            active = tuple(
+                layer for layer in physical if zone.IsOnLayer(board.GetLayerID(layer))
+            )
             if active and (zone.GetIsRuleArea() or not assume_zone_refill):
                 rule = zone.GetIsRuleArea()
-                fixed.append(_box(zone, active, "" if rule else zone.GetNetname(),
-                                  "keepout" if rule else "copper"))
+                fixed.append(
+                    _box(
+                        zone,
+                        active,
+                        "" if rule else zone.GetNetname(),
+                        "keepout" if rule else "copper",
+                    )
+                )
         fixed.extend(reference_corridors(board, set(critical_nets)).obstacles)
         return cls(pads, copper, tuple(fixed))
 
@@ -122,11 +154,16 @@ def obstruction_hits(route, soft, profile, target, via_size, clearance):
     hit = set()
     for uid, shapes in soft.items():
         if any(
-            shape.net != target and segment.layer in shape.layers
+            shape.net != target
+            and segment.layer in shape.layers
             and GridRouter._intersects_box(
-                piece.start, piece.end, shape,
-                (width + 1) // 2 + max(
-                    shape.min_track_clearance, profile.clearance_at(piece, shape, width=width)
+                piece.start,
+                piece.end,
+                shape,
+                (width + 1) // 2
+                + max(
+                    shape.min_track_clearance,
+                    profile.clearance_at(piece, shape, width=width),
                 ),
             )
             for segment in route.segments
@@ -137,9 +174,11 @@ def obstruction_hits(route, soft, profile, target, via_size, clearance):
         if any(
             (shape.net != target or shape.kind in {"pad", "via"})
             and GridRouter._intersects_box(
-                via.at, via.at, shape, (via_size + 1) // 2 + max(
-                    clearance, shape.min_track_clearance, shape.min_via_clearance
-                ),
+                via.at,
+                via.at,
+                shape,
+                (via_size + 1) // 2
+                + max(clearance, shape.min_track_clearance, shape.min_via_clearance),
             )
             for via in route.vias
             for shape in shapes
@@ -180,14 +219,19 @@ def local_escape_witnesses(router, anchor, soft, costs, check, *, max_expanded=5
             check()
         x, y = cell
         at = router._point(x, y)
-        if (at != endpoint and cell not in router.via_blocked
-                and router._inside(x, y, via_margin)):
+        if (
+            at != endpoint
+            and cell not in router.via_blocked
+            and router._inside(x, y, via_margin)
+        ):
             trail = [cell]
             while trail[-1] in previous:
                 trail.append(previous[trail[-1]])
             trail.reverse()
             points = (*paths[trail[0]], *(router._point(*item) for item in trail[1:]))
-            segments = tuple(Segment(a, b, layer) for a, b in zip(points, points[1:]) if a != b)
+            segments = tuple(
+                Segment(a, b, layer) for a, b in zip(points, points[1:]) if a != b
+            )
             hit = set()
             for index, (uid, shapes) in enumerate(soft.items()):
                 if index % 16 == 0:
@@ -195,21 +239,41 @@ def local_escape_witnesses(router, anchor, soft, costs, check, *, max_expanded=5
                 for shape in shapes:
                     if shape.net != router.net and layer in shape.layers:
                         for segment in segments:
-                            pieces = (router.profile.pieces(segment) if router.profile
-                                      else ((segment, router.width),))
-                            if any(GridRouter._intersects_box(
-                                part.start, part.end, shape,
-                                (width + 1) // 2 + max(
-                                    shape.min_track_clearance,
-                                    router.profile.clearance_at(part, shape, width=width)
-                                    if router.profile else router.clearance,
-                                ),
-                            ) for part, width in pieces):
+                            pieces = (
+                                router.profile.pieces(segment)
+                                if router.profile
+                                else ((segment, router.width),)
+                            )
+                            if any(
+                                GridRouter._intersects_box(
+                                    part.start,
+                                    part.end,
+                                    shape,
+                                    (width + 1) // 2
+                                    + max(
+                                        shape.min_track_clearance,
+                                        router.profile.clearance_at(
+                                            part, shape, width=width
+                                        )
+                                        if router.profile
+                                        else router.clearance,
+                                    ),
+                                )
+                                for part, width in pieces
+                            ):
                                 hit.add(uid)
                                 break
-                    if (shape.net != router.net or shape.kind == "via") and GridRouter._intersects_box(
-                        at, at, shape, (router.via_size + 1) // 2 + max(
-                            router.clearance, shape.min_track_clearance, shape.min_via_clearance
+                    if (
+                        shape.net != router.net or shape.kind == "via"
+                    ) and GridRouter._intersects_box(
+                        at,
+                        at,
+                        shape,
+                        (router.via_size + 1) // 2
+                        + max(
+                            router.clearance,
+                            shape.min_track_clearance,
+                            shape.min_via_clearance,
                         ),
                     ):
                         hit.add(uid)
@@ -220,29 +284,55 @@ def local_escape_witnesses(router, anchor, soft, costs, check, *, max_expanded=5
                 # is not justified by this hypothesis.
                 return []
             identity = frozenset(hit)
-            length = sum(math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)
-                         for s in segments) / 1e6
-            witness = RepairWitness(identity, router.weights.length * length + router.weights.via,
-                                    sum(costs[uid] for uid in identity))
+            length = (
+                sum(
+                    math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)
+                    for s in segments
+                )
+                / 1e6
+            )
+            witness = RepairWitness(
+                identity,
+                router.weights.length * length + router.weights.via,
+                sum(costs[uid] for uid in identity),
+            )
             found.setdefault(identity, witness)
             if len(found) >= 4:
                 break
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
             next_cell = (nx, ny)
-            if (not 0 <= nx < router.nx or not 0 <= ny < router.ny
-                    or next_cell in paths or next_cell in previous
-                    or next_cell in router.blocked[layer]
-                    or not router._inside(nx, ny, router.clearance + (router.width + 1) // 2)):
+            if (
+                not 0 <= nx < router.nx
+                or not 0 <= ny < router.ny
+                or next_cell in paths
+                or next_cell in previous
+                or next_cell in router.blocked[layer]
+                or not router._inside(
+                    nx, ny, router.clearance + (router.width + 1) // 2
+                )
+            ):
                 continue
             if router.edge_clear(at, router._point(nx, ny), layer):
                 previous[next_cell] = cell
                 queue.append(next_cell)
-    return sorted(found.values(), key=lambda item: (item.score, sorted(item.identifiers)))
+    return sorted(
+        found.values(), key=lambda item: (item.score, sorted(item.identifiers))
+    )
 
 
-def diagnose(board, anchors, records, settings, recovery, critical_nets, weights, *, movable=None,
-             first_feasible=False):
+def diagnose(
+    board,
+    anchors,
+    records,
+    settings,
+    recovery,
+    critical_nets,
+    weights,
+    *,
+    movable=None,
+    first_feasible=False,
+):
     """Sample alternate corridors, retaining exact obstructing copper UUIDs.
 
     ``movable`` maps footprint UUIDs to a move cost. Their pads are relaxed
@@ -262,8 +352,11 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
     layers = tuple(settings.get("layers", enabled_copper_layers(board)))
     ids = {record.uuid for record in records}
     movable = movable or {}
-    model = BoardObstacles.read(board, critical_nets,
-                                assume_zone_refill=settings.get("assume_zone_refill", False))
+    model = BoardObstacles.read(
+        board,
+        critical_nets,
+        assume_zone_refill=settings.get("assume_zone_refill", False),
+    )
     hard, soft, costs = [], {}, {}
     for owner, shapes in model.pads.items():
         if owner in movable:
@@ -273,7 +366,11 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
     for uid, item in model.copper.items():
         if uid in ids:
             soft[uid] = item.shapes
-            costs[uid] = weights.via if item.via else weights.track + weights.length_mm * item.length / 1e6
+            costs[uid] = (
+                weights.via
+                if item.via
+                else weights.track + weights.length_mm * item.length / 1e6
+            )
         else:
             hard.extend(item.shapes)
     hard.extend(model.fixed)
@@ -348,7 +445,9 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
             identity = frozenset(hit)
             if identity:
                 witness = RepairWitness(
-                    identity, route.cost, sum(costs[uid] for uid in identity),
+                    identity,
+                    route.cost,
+                    sum(costs[uid] for uid in identity),
                     Corridor(route, profile, target, size, clearance),
                 )
                 found.setdefault(identity, witness)
@@ -379,42 +478,71 @@ def diagnose(board, anchors, records, settings, recovery, critical_nets, weights
                 raise SearchBudgetExceeded("Local obstruction diagnosis time limit")
 
         board_bounds = (
-            box.GetX() / 1e6, box.GetY() / 1e6,
-            box.GetRight() / 1e6, box.GetBottom() / 1e6,
+            box.GetX() / 1e6,
+            box.GetY() / 1e6,
+            box.GetRight() / 1e6,
+            box.GetBottom() / 1e6,
         )
         try:
             for anchor in anchors:
                 local_check()
                 window, local_step = search_window(
-                    (anchor,), board_bounds, 4.0, settings.get("step_mm", 0.1), 1,
-                    min(recovery.max_cells, 100000), access_inset=route_access_inset(settings),
+                    (anchor,),
+                    board_bounds,
+                    4.0,
+                    settings.get("step_mm", 0.1),
+                    1,
+                    min(recovery.max_cells, 100000),
+                    access_inset=route_access_inset(settings),
                 )
                 lower, upper = Point.from_mm(window[:2]), Point.from_mm(window[2:])
 
                 def in_window(shape):
                     margin = max(
-                        (size + 1) // 2 + max(clearance, shape.min_track_clearance,
-                                               shape.min_via_clearance),
-                        (profile.maximum_width + 1) // 2 + max(
-                            profile.maximum_clearance, shape.min_track_clearance
+                        (size + 1) // 2
+                        + max(
+                            clearance,
+                            shape.min_track_clearance,
+                            shape.min_via_clearance,
                         ),
+                        (profile.maximum_width + 1) // 2
+                        + max(profile.maximum_clearance, shape.min_track_clearance),
                     )
-                    return not (shape.upper.x + margin < lower.x or shape.lower.x - margin > upper.x
-                                or shape.upper.y + margin < lower.y or shape.lower.y - margin > upper.y)
+                    return not (
+                        shape.upper.x + margin < lower.x
+                        or shape.lower.x - margin > upper.x
+                        or shape.upper.y + margin < lower.y
+                        or shape.lower.y - margin > upper.y
+                    )
 
-                local_soft = {uid: tuple(shape for shape in shapes if in_window(shape))
-                              for uid, shapes in soft.items()}
-                local_soft = {uid: shapes for uid, shapes in local_soft.items() if shapes}
+                local_soft = {
+                    uid: tuple(shape for shape in shapes if in_window(shape))
+                    for uid, shapes in soft.items()
+                }
+                local_soft = {
+                    uid: shapes for uid, shapes in local_soft.items() if shapes
+                }
                 if not local_soft:
                     continue
                 router = GridRouter(
-                    lower, upper, mm(local_step), (anchor.layer,), target, width, clearance,
-                    size, drill, tuple(shape for shape in hard if in_window(shape)),
+                    lower,
+                    upper,
+                    mm(local_step),
+                    (anchor.layer,),
+                    target,
+                    width,
+                    clearance,
+                    size,
+                    drill,
+                    tuple(shape for shape in hard if in_window(shape)),
                     weights=Weights(**settings.get("weights", {})),
-                    max_cells=min(recovery.max_cells, 100000), check_budget=local_check,
+                    max_cells=min(recovery.max_cells, 100000),
+                    check_budget=local_check,
                     profile=profile,
                 )
-                for witness in local_escape_witnesses(router, anchor, local_soft, costs, local_check):
+                for witness in local_escape_witnesses(
+                    router, anchor, local_soft, costs, local_check
+                ):
                     found.setdefault(witness.identifiers, witness)
         except (NoGridRoute, SearchBudgetExceeded) as error:
             notes.append(str(error))

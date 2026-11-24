@@ -95,8 +95,7 @@ def main():
     orefs = {r["Designator"] for r in owner}
     require(
         scope["source_sha256"] == source
-        and scope["policy_sha256"]
-        == sha(data_path(P, "ASSEMBLY_POLICY.json")),
+        and scope["policy_sha256"] == sha(data_path(P, "ASSEMBLY_POLICY.json")),
         "Assembly scope/source policy mismatch",
     )
     require(

@@ -26,7 +26,9 @@ class BoardInventoryTests(unittest.TestCase):
 
     def test_discovers_disconnected_pads_and_copper_only_nets(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp), crossing=True)
+            source = route_fixtures.RouteOptimizerTests.make_board(
+                Path(tmp), crossing=True
+            )
             board = pcbnew.LoadBoard(str(source))
             inventory = self.inventory(board)
             nets = {net.name: net for net in inventory.nets}
@@ -104,10 +106,15 @@ class BoardInventoryTests(unittest.TestCase):
                 track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                 board.Add(track)
             pcbnew.SaveBoard(str(source), board)
-            result = plan_nets(net_fixtures.NativeNetRoutingTests.config(), project, validate=True)
+            result = plan_nets(
+                net_fixtures.NativeNetRoutingTests.config(), project, validate=True
+            )
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
             self.assertIn("whole_net_copper_connectivity", result["validation"])
-            self.assertEqual(result["validation"]["whole_net_copper_connectivity"], "all_requested_copper_connected")
+            self.assertEqual(
+                result["validation"]["whole_net_copper_connectivity"],
+                "all_requested_copper_connected",
+            )
             self.assertEqual(result["validation"]["candidate_unconnected"], 0)
 
     def test_whole_net_validation_rejects_a_remaining_orphan_island(self):
@@ -115,7 +122,9 @@ class BoardInventoryTests(unittest.TestCase):
         from pcb.route_optimizer import Point, Route, Segment
         from pcb.route_validation import RouteContract, validate_routes
 
-        self.assertIn("require_full_nets", inspect.signature(validate_routes).parameters)
+        self.assertIn(
+            "require_full_nets", inspect.signature(validate_routes).parameters
+        )
         with tempfile.TemporaryDirectory() as tmp:
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
             board = pcbnew.LoadBoard(str(source))
@@ -133,7 +142,13 @@ class BoardInventoryTests(unittest.TestCase):
             changes = campaign_changes(candidate, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
             contract = RouteContract("SIGNAL", a, "F.Cu", b, "F.Cu")
             with self.assertRaisesRegex(RuntimeError, "copper.*island"):
-                validate_routes(source, hashlib.sha256(source.read_bytes()).hexdigest(), changes, [contract], require_full_nets=True)
+                validate_routes(
+                    source,
+                    hashlib.sha256(source.read_bytes()).hexdigest(),
+                    changes,
+                    [contract],
+                    require_full_nets=True,
+                )
 
     def test_single_pad_net_still_gets_a_whole_net_contract(self):
         from pcb.net_routing.native import contracts
@@ -156,7 +171,9 @@ class BoardInventoryTests(unittest.TestCase):
             track.SetWidth(mm(0.2))
             track.SetLayer(pcbnew.F_Cu)
             board.Add(track)
-            self.assertIn(track.m_Uuid.AsString(), self.inventory(board).unassigned_copper_ids)
+            self.assertIn(
+                track.m_Uuid.AsString(), self.inventory(board).unassigned_copper_ids
+            )
 
     def test_unconnected_name_is_not_evidence_of_intent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,26 +209,35 @@ class BoardInventoryTests(unittest.TestCase):
             layer_set = pcbnew.LSET()
             layer_set.AddLayer(pcbnew.B_Paste)
             pad.SetLayerSet(layer_set)
-            self.assertNotIn(pad.m_Uuid.AsString(), self.inventory(board).unassigned_pad_ids)
+            self.assertNotIn(
+                pad.m_Uuid.AsString(), self.inventory(board).unassigned_pad_ids
+            )
 
     def test_only_unambiguous_schematic_marker_proves_a_no_connect(self):
-        schematic = '''(kicad_sch
+        schematic = """(kicad_sch
           (lib_symbols (symbol "Test:Pin" (symbol "Pin_1_1"
             (pin passive line (at 0 0 0) (name "A") (number "1")))))
           (symbol (lib_id "Test:Pin") (at 4 5 0) (unit 1) (property "Reference" "J3"))
-          (no_connect (at 4 5)))'''
+          (no_connect (at 4 5)))"""
         with tempfile.TemporaryDirectory() as tmp:
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
             board = pcbnew.LoadBoard(str(source))
             name = "unconnected-(J3-Pad1)"
             board.Add(pcbnew.NETINFO_ITEM(board, name))
-            footprint = net_fixtures.NativeNetRoutingTests.add_pad(board, "J3", (4, 5), net_name=name)
+            footprint = net_fixtures.NativeNetRoutingTests.add_pad(
+                board, "J3", (4, 5), net_name=name
+            )
             uid = next(iter(footprint.Pads())).m_Uuid.AsString()
             inventory = self.inventory(board, schematic)
             self.assertIn(uid, inventory.verified_no_connect_pad_ids)
             self.assertNotIn(uid, inventory.unverified_no_connect_pad_ids)
-            conflicting = schematic.replace('(no_connect (at 4 5))', '(wire (pts (xy 4 5) (xy 6 5))) (no_connect (at 4 5))')
-            self.assertIn(uid, self.inventory(board, conflicting).unverified_no_connect_pad_ids)
+            conflicting = schematic.replace(
+                "(no_connect (at 4 5))",
+                "(wire (pts (xy 4 5) (xy 6 5))) (no_connect (at 4 5))",
+            )
+            self.assertIn(
+                uid, self.inventory(board, conflicting).unverified_no_connect_pad_ids
+            )
 
 
 if __name__ == "__main__":

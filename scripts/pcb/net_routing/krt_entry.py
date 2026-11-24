@@ -38,7 +38,9 @@ def main() -> None:
     differential = os.environ.get("AUTOPCB_KRT_DIFFERENTIAL", "0")
     if differential not in {"0", "1"}:
         raise ValueError("Invalid KRT differential-router selection")
-    source = root / "py_router" / ("route_diff.py" if differential == "1" else "route.py")
+    source = (
+        root / "py_router" / ("route_diff.py" if differential == "1" else "route.py")
+    )
     if not source.is_file():
         raise RuntimeError("The pinned KRT entry point is unavailable")
     sys.path.insert(0, str(root / "py_router"))
@@ -47,7 +49,9 @@ def main() -> None:
     from bga_fanout import flip_frame, rotate_frame
 
     flip_frame.to_front_frame = uncached_transform(flip_frame.to_front_frame)
-    rotate_frame.to_axis_aligned_frame = uncached_transform(rotate_frame.to_axis_aligned_frame)
+    rotate_frame.to_axis_aligned_frame = uncached_transform(
+        rotate_frame.to_axis_aligned_frame
+    )
     sys.argv[0] = str(source)
     runpy.run_path(str(source), run_name="__main__")
 

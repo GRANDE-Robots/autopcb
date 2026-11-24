@@ -21,18 +21,31 @@ class PrivateCopy:
     so a change during the run is an error.
     """
 
-    def __init__(self, project: ProjectPaths, storage: ProjectStorage, snapshot: SourceSnapshot | None = None):
-        self.project, self.snapshot = project, snapshot or SourceSnapshot.capture(project)
+    def __init__(
+        self,
+        project: ProjectPaths,
+        storage: ProjectStorage,
+        snapshot: SourceSnapshot | None = None,
+    ):
+        self.project, self.snapshot = (
+            project,
+            snapshot or SourceSnapshot.capture(project),
+        )
         caller = storage.legacy.relative_to(project.root)
         self.policy = caller / "config/autopcb.json"
-        sources = {self.policy: storage.config_file("autopcb.json"),
-                   **{caller / "design" / name: storage.data_file(name) for name in EVIDENCE}}
+        sources = {
+            self.policy: storage.config_file("autopcb.json"),
+            **{caller / "design" / name: storage.data_file(name) for name in EVIDENCE},
+        }
         self.inputs = {name: path for name, path in sources.items() if path.is_file()}
         self.hashes = {name: sha(path) for name, path in self.inputs.items()}
 
     @property
     def fingerprint(self) -> dict[str, str]:
-        return {**self.snapshot.hashes, **{name.as_posix(): digest for name, digest in self.hashes.items()}}
+        return {
+            **self.snapshot.hashes,
+            **{name.as_posix(): digest for name, digest in self.hashes.items()},
+        }
 
     @contextmanager
     def open(self, recovery: dict | None = None):
@@ -51,5 +64,9 @@ class PrivateCopy:
                 values["recovery"] = {**values.get("recovery", {}), **recovery}
                 policy.write_text(json.dumps(values, indent=2) + "\n", encoding="utf-8")
             yield working, ProjectStorage(working.root)
-        if any(sha(self.inputs[name]) != digest for name, digest in self.hashes.items()):
-            raise RuntimeError("Routing policy or design evidence changed during the run")
+        if any(
+            sha(self.inputs[name]) != digest for name, digest in self.hashes.items()
+        ):
+            raise RuntimeError(
+                "Routing policy or design evidence changed during the run"
+            )

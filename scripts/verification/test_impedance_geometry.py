@@ -1,4 +1,5 @@
 """Coverage regressions for the read-only impedance geometry review."""
+
 import importlib.util
 import json
 from pathlib import Path
@@ -24,25 +25,56 @@ class ImpedanceTests(unittest.TestCase):
         self.settings = self.board.with_suffix(".kicad_pro")
         self.project = self.root / "autopcb.project.json"
         self.spec = self.root / "stack.json"
-        self.row = {"signal_layers": ["F.Cu"], "reference_layers": [["B.Cu"]], "width_mm": 0.2, "gap_mm": 0.3}
+        self.row = {
+            "signal_layers": ["F.Cu"],
+            "reference_layers": [["B.Cu"]],
+            "width_mm": 0.2,
+            "gap_mm": 0.3,
+        }
         self.data = {
-            "stackup_id": "two-layer-test", "copper_layers": 2,
-            "physical_stack_mm": [{"layer": "F.Cu", "type": "copper", "thickness": 0.035},
-                                  {"layer": "dielectric 1", "type": "core", "thickness": 1.53, "materials": ["FR4"]},
-                                  {"layer": "B.Cu", "type": "copper", "thickness": 0.035}],
-            "controlled_impedance": {"width_tolerance_mm": 0.001, "gap_tolerance_mm": 0.001, "sample_step_mm": 0.1,
-                                     "families": [{"netclass": "Reviewed", "target_ohms": 90, "layers": [self.row]}]}}
+            "stackup_id": "two-layer-test",
+            "copper_layers": 2,
+            "physical_stack_mm": [
+                {"layer": "F.Cu", "type": "copper", "thickness": 0.035},
+                {
+                    "layer": "dielectric 1",
+                    "type": "core",
+                    "thickness": 1.53,
+                    "materials": ["FR4"],
+                },
+                {"layer": "B.Cu", "type": "copper", "thickness": 0.035},
+            ],
+            "controlled_impedance": {
+                "width_tolerance_mm": 0.001,
+                "gap_tolerance_mm": 0.001,
+                "sample_step_mm": 0.1,
+                "families": [
+                    {"netclass": "Reviewed", "target_ohms": 90, "layers": [self.row]}
+                ],
+            },
+        }
         self.spec.write_text(json.dumps(self.data))
-        self.project.write_text(json.dumps({"schema_version": 1, "high_speed_reviewed": True,
-                                           "differential_pairs": [["A", "B"]], "reference_net": "RETURN"}))
-
+        self.project.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "high_speed_reviewed": True,
+                    "differential_pairs": [["A", "B"]],
+                    "reference_net": "RETURN",
+                }
+            )
+        )
 
     def build_board(self, *, extra=0, with_plane=True, gap=0.3):
         p = self.pcb
         board = p.BOARD()
         for name in ["A", "B", "RETURN"]:
             board.Add(p.NETINFO_ITEM(board, name))
-        for net, y, end in [("A", 0, 10), ("B", gap + .2, 10 + extra), ("RETURN", 4, 1)]:
+        for net, y, end in [
+            ("A", 0, 10),
+            ("B", gap + 0.2, 10 + extra),
+            ("RETURN", 4, 1),
+        ]:
             item = p.PCB_TRACK(board)
             item.SetStart(p.VECTOR2I(0, p.FromMM(y)))
             item.SetEnd(p.VECTOR2I(p.FromMM(end), p.FromMM(y)))
@@ -65,23 +97,45 @@ class ImpedanceTests(unittest.TestCase):
             board.Add(zone)
         p.SaveBoard(str(self.board), board)
         # SaveBoard only emits a companion project on some KiCad distributions.
-        netclass = {"bus_width": 12, "wire_width": 6, "clearance": 0.2,
-                    "track_width": 0.2, "diff_pair_width": 0.2, "diff_pair_gap": 0.3,
-                    "via_diameter": 0.6, "via_drill": 0.3, "microvia_diameter": 0.3, "microvia_drill": 0.1}
-        project = {"meta": {"filename": self.settings.name, "version": 3}, "net_settings": {
-            "meta": {"version": 5}, "classes": [{**netclass, "name": "Default"}, {**netclass, "name": "Reviewed", "priority": 0}],
-            "netclass_patterns": [{"netclass": "Reviewed", "pattern": name} for name in ("A", "B")]}}
+        netclass = {
+            "bus_width": 12,
+            "wire_width": 6,
+            "clearance": 0.2,
+            "track_width": 0.2,
+            "diff_pair_width": 0.2,
+            "diff_pair_gap": 0.3,
+            "via_diameter": 0.6,
+            "via_drill": 0.3,
+            "microvia_diameter": 0.3,
+            "microvia_drill": 0.1,
+        }
+        project = {
+            "meta": {"filename": self.settings.name, "version": 3},
+            "net_settings": {
+                "meta": {"version": 5},
+                "classes": [
+                    {**netclass, "name": "Default"},
+                    {**netclass, "name": "Reviewed", "priority": 0},
+                ],
+                "netclass_patterns": [
+                    {"netclass": "Reviewed", "pattern": name} for name in ("A", "B")
+                ],
+            },
+        }
         self.settings.write_text(json.dumps(project), encoding="utf-8")
         # A programmatically created board may omit the physical section on save.
         from core.kicad_sexpr import parse
+
         src = self.board.read_text(encoding="utf-8")
-        setup, = parse(src).children("setup")
-        physical = '(stackup (layer "F.Cu" (type "copper") (thickness 0.035)) ' \
-                   '(layer "dielectric 1" (type "core") (thickness 1.53) (material "FR4")) ' \
-                   '(layer "B.Cu" (type "copper") (thickness 0.035)))'
+        (setup,) = parse(src).children("setup")
+        physical = (
+            '(stackup (layer "F.Cu" (type "copper") (thickness 0.035)) '
+            '(layer "dielectric 1" (type "core") (thickness 1.53) (material "FR4")) '
+            '(layer "B.Cu" (type "copper") (thickness 0.035)))'
+        )
         if setup.children("stackup"):
-            prior, = setup.children("stackup")
-            src = src[:prior.start] + physical + src[prior.end:]
+            (prior,) = setup.children("stackup")
+            src = src[: prior.start] + physical + src[prior.end :]
         else:
             pos = setup.atoms()[0].end
             src = src[:pos] + "\n" + physical + src[pos:]
@@ -89,14 +143,38 @@ class ImpedanceTests(unittest.TestCase):
 
     def run_cli(self):
         scripts = Path(__file__).resolve().parents[1]
-        result = subprocess.run([sys.executable, "-B", str(scripts / "run.py"), "--project", str(self.board),
-                                 "--kicad-python", sys.executable, "pcb", "impedance", "--stackup", str(self.spec),
-                                 "--json", "--check-reference"], capture_output=True, text=True, timeout=30)
-        return result.returncode, json.loads(result.stdout) if result.stdout.strip() else {}, result.stderr
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(scripts / "run.py"),
+                "--project",
+                str(self.board),
+                "--kicad-python",
+                sys.executable,
+                "pcb",
+                "impedance",
+                "--stackup",
+                str(self.spec),
+                "--json",
+                "--check-reference",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return (
+            result.returncode,
+            json.loads(result.stdout) if result.stdout.strip() else {},
+            result.stderr,
+        )
 
     def test_complete_symmetrical_match_reads_only_the_selected_family(self):
         self.build_board()
-        sources = {p: p.read_bytes() for p in (self.board, self.settings, self.spec, self.project)}
+        sources = {
+            p: p.read_bytes()
+            for p in (self.board, self.settings, self.spec, self.project)
+        }
         code, result, error = self.run_cli()
         self.assertEqual(code, 0, error or result)
         self.assertTrue(result["geometry_matches"])
@@ -126,7 +204,15 @@ class ImpedanceTests(unittest.TestCase):
 
     def test_empty_scope_and_different_ordered_stack_cannot_pass(self):
         self.build_board()
-        self.project.write_text(json.dumps({"schema_version": 1, "high_speed_reviewed": True, "differential_pairs": []}))
+        self.project.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "high_speed_reviewed": True,
+                    "differential_pairs": [],
+                }
+            )
+        )
         code, _, error = self.run_cli()
         self.assertEqual(code, 2)
         self.assertIn("nonempty", error)
@@ -138,9 +224,9 @@ class ImpedanceTests(unittest.TestCase):
 
     def test_rules_and_parallel_overlap_use_physical_dimensions(self):
         self.assertIn("(opt 0.3mm)", self.profile(self.data).rules())
-        a = self.trace(0, 0, 1, 0, 10, .2)
-        b = self.trace(12, -.5, -1, 0, 9, .2)
-        self.assertEqual(a.overlap(b, .3, 0), (3, 10, -.5))
+        a = self.trace(0, 0, 1, 0, 10, 0.2)
+        b = self.trace(12, -0.5, -1, 0, 9, 0.2)
+        self.assertEqual(a.overlap(b, 0.3, 0), (3, 10, -0.5))
         self.assertEqual(a.union_length([(0, 5), (3, 10), (4, 6)]), 10)
         self.row["reference_layers"] = [["F.Cu"]]
         with self.assertRaisesRegex(ValueError, "adjacent"):

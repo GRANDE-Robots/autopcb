@@ -97,10 +97,14 @@ class LauncherTests(unittest.TestCase):
                         with self.subTest(group=group, option=option):
                             command = run.command_for(self.args(group, action), option)
                             self.assertEqual(command.count("--project"), 1)
-                            self.assertEqual(command[command.index("--project") + 1], str(caller))
+                            self.assertEqual(
+                                command[command.index("--project") + 1], str(caller)
+                            )
                             if group == "review":
-                                self.assertEqual(command[command.index("--review") + 1],
-                                                 str(caller / "deliverables" / "review"))
+                                self.assertEqual(
+                                    command[command.index("--review") + 1],
+                                    str(caller / "deliverables" / "review"),
+                                )
 
     def test_route_configs_resolve_from_the_callers_current_directory(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-cwd-") as tmp:
@@ -180,8 +184,12 @@ class LauncherTests(unittest.TestCase):
     def test_test_command_can_show_all_warnings(self):
         process = mock.Mock(returncode=19)
         with mock.patch.object(run, "run_test_suite") as summarized:
-            with mock.patch.object(run, "resolve_document_python", return_value=Path(sys.executable)):
-                with mock.patch.object(run.subprocess, "run", return_value=process) as raw:
+            with mock.patch.object(
+                run, "resolve_document_python", return_value=Path(sys.executable)
+            ):
+                with mock.patch.object(
+                    run.subprocess, "run", return_value=process
+                ) as raw:
                     result = run.main(
                         ["--kicad-python", sys.executable, "test", "--all-warnings"]
                     )
@@ -223,10 +231,15 @@ class LauncherTests(unittest.TestCase):
             with mock.patch.object(run.sys, "executable", str(current)):
                 with mock.patch("shutil.which", return_value=str(fallback)):
                     with mock.patch.object(
-                        run, "_has_document_dependency",
-                        side_effect=lambda candidate: candidate.resolve() == fallback.resolve(),
+                        run,
+                        "_has_document_dependency",
+                        side_effect=lambda candidate: (
+                            candidate.resolve() == fallback.resolve()
+                        ),
                     ):
-                        self.assertEqual(run.resolve_document_python(None), fallback.resolve())
+                        self.assertEqual(
+                            run.resolve_document_python(None), fallback.resolve()
+                        )
 
     def test_explicit_document_python_does_not_silently_fall_back(self):
         with tempfile.TemporaryDirectory() as directory:

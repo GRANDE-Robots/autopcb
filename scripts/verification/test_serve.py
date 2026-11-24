@@ -37,26 +37,61 @@ class ServeTests(unittest.TestCase):
         self.auth = {"Authorization": "Bearer secret"}
 
     def call(self, method, url, body=None, headers=None):
-        status, _, payload = self.app.handle(method, url, headers if headers is not None else self.auth,
-                                             json.dumps(body).encode() if body is not None else b"")
+        status, _, payload = self.app.handle(
+            method,
+            url,
+            headers if headers is not None else self.auth,
+            json.dumps(body).encode() if body is not None else b"",
+        )
         return status, payload
 
     def test_page_is_public_but_every_api_call_needs_the_token(self):
         self.assertEqual(self.call("GET", "/", headers={})[0], 200)
         self.assertEqual(self.call("GET", "/api/projects", headers={})[0], 401)
-        self.assertEqual(self.call("GET", "/api/projects", headers={"Authorization": "Bearer wrong"})[0], 401)
+        self.assertEqual(
+            self.call(
+                "GET", "/api/projects", headers={"Authorization": "Bearer wrong"}
+            )[0],
+            401,
+        )
         status, payload = self.call("GET", "/api/projects?token=secret", headers={})
-        self.assertEqual((status, json.loads(payload)["projects"][0]["path"]), (200, self.entry))
+        self.assertEqual(
+            (status, json.loads(payload)["projects"][0]["path"]), (200, self.entry)
+        )
 
-    def test_jobs_are_limited_to_known_actions_workspace_projects_and_one_per_project(self):
-        self.assertEqual(self.call("POST", "/api/jobs", {"action": "rm", "project": self.entry})[0], 400)
-        self.assertEqual(self.call("POST", "/api/jobs", {"action": "verify", "project": "/etc/passwd"})[0], 404)
-        self.assertEqual(self.call("POST", "/api/jobs", {"action": "apply", "project": self.entry})[0], 400)
-        status, payload = self.call("POST", "/api/jobs", {"action": "verify", "project": self.entry})
+    def test_jobs_are_limited_to_known_actions_workspace_projects_and_one_per_project(
+        self,
+    ):
+        self.assertEqual(
+            self.call("POST", "/api/jobs", {"action": "rm", "project": self.entry})[0],
+            400,
+        )
+        self.assertEqual(
+            self.call(
+                "POST", "/api/jobs", {"action": "verify", "project": "/etc/passwd"}
+            )[0],
+            404,
+        )
+        self.assertEqual(
+            self.call("POST", "/api/jobs", {"action": "apply", "project": self.entry})[
+                0
+            ],
+            400,
+        )
+        status, payload = self.call(
+            "POST", "/api/jobs", {"action": "verify", "project": self.entry}
+        )
         self.assertEqual((status, json.loads(payload)["status"]), (202, "running"))
-        self.assertEqual(self.call("POST", "/api/jobs", {"action": "route", "project": self.entry})[0], 409)
+        self.assertEqual(
+            self.call("POST", "/api/jobs", {"action": "route", "project": self.entry})[
+                0
+            ],
+            409,
+        )
         job, _ = self.runner.last
-        self.assertEqual(self.runner.command(job, None)[-3:], ["--project", self.entry, "verify"])
+        self.assertEqual(
+            self.runner.command(job, None)[-3:], ["--project", self.entry, "verify"]
+        )
 
     def test_server_answers_over_http_with_the_token(self):
         server = Server(self.app, "127.0.0.1", 0)
@@ -64,7 +99,9 @@ class ServeTests(unittest.TestCase):
         thread.start()
         self.addCleanup(server.http.shutdown)
         base = server.url.split("/?")[0]
-        with urllib.request.urlopen(urllib.request.Request(base + "/api/jobs", headers=self.auth)) as response:
+        with urllib.request.urlopen(
+            urllib.request.Request(base + "/api/jobs", headers=self.auth)
+        ) as response:
             self.assertEqual(json.loads(response.read()), {"jobs": []})
         with self.assertRaises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(base + "/api/jobs?token=wrong")

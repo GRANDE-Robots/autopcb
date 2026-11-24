@@ -65,33 +65,40 @@ def router(**changes) -> GridRouter:
 
 
 class RouteOptimizerTests(unittest.TestCase):
-    def test_centered_plated_oval_and_rectangular_pads_do_not_double_count_hole_clearance(self):
+    def test_centered_plated_oval_and_rectangular_pads_do_not_double_count_hole_clearance(
+        self,
+    ):
         import pcbnew
         from pcb.route_native import _pad_obstacle
         from core.pcb_io import quiet_duplicate_image_handlers
         from pcb.route_validation import _drc
+
         with tempfile.TemporaryDirectory() as folder, quiet_duplicate_image_handlers():
-            for shape in (pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_RECT, pcbnew.PAD_SHAPE_ROUNDRECT):
+            for shape in (
+                pcbnew.PAD_SHAPE_OVAL,
+                pcbnew.PAD_SHAPE_RECT,
+                pcbnew.PAD_SHAPE_ROUNDRECT,
+            ):
                 with self.subTest(shape=shape):
                     project = Path(folder) / str(shape)
                     project.mkdir()
                     source = self.make_board(project)
                     board = pcbnew.LoadBoard(str(source))
-                    board.GetDesignSettings().m_HoleClearance = mm(.25)
-                    board.GetDesignSettings().m_HoleToHoleMin = mm(.25)
-                    other = pcbnew.NETINFO_ITEM(board, 'PAD_NET')
+                    board.GetDesignSettings().m_HoleClearance = mm(0.25)
+                    board.GetDesignSettings().m_HoleToHoleMin = mm(0.25)
+                    other = pcbnew.NETINFO_ITEM(board, "PAD_NET")
                     board.Add(other)
                     pads = []
                     for index, y in enumerate((3.73, 6.27)):
                         part = pcbnew.FOOTPRINT(board)
-                        part.SetReference(f'P{index}')
+                        part.SetReference(f"P{index}")
                         pad = pcbnew.PAD(part)
-                        pad.SetNumber('1')
+                        pad.SetNumber("1")
                         pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
                         pad.SetShape(shape)
                         pad.SetSize(pcbnew.VECTOR2I(mm(2), mm(1.524)))
                         if shape == pcbnew.PAD_SHAPE_ROUNDRECT:
-                            pad.SetRoundRectRadiusRatio(.2)
+                            pad.SetRoundRectRadiusRatio(0.2)
                         pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(1)))
                         pad.SetLayerSet(pcbnew.LSET.AllCuMask())
                         pad.SetPosition(pcbnew.VECTOR2I(mm(5), mm(y)))
@@ -99,56 +106,91 @@ class RouteOptimizerTests(unittest.TestCase):
                         part.Add(pad)
                         board.Add(part)
                         pads.append(pad)
-                    obstacles = tuple(_pad_obstacle(board, pad, ('F.Cu',)) for pad in pads)
-                    model = router(lower=point(0, 0), upper=point(10, 8), width=mm(.5), obstacles=obstacles)
-                    self.assertTrue(model.edge_clear(point(2, 5.05), point(8, 5.05), 'F.Cu'))
-                    self.assertFalse(model.edge_clear(point(2, 5.15), point(8, 5.15), 'F.Cu'))
+                    obstacles = tuple(
+                        _pad_obstacle(board, pad, ("F.Cu",)) for pad in pads
+                    )
+                    model = router(
+                        lower=point(0, 0),
+                        upper=point(10, 8),
+                        width=mm(0.5),
+                        obstacles=obstacles,
+                    )
+                    self.assertTrue(
+                        model.edge_clear(point(2, 5.05), point(8, 5.05), "F.Cu")
+                    )
+                    self.assertFalse(
+                        model.edge_clear(point(2, 5.15), point(8, 5.15), "F.Cu")
+                    )
                     track = pcbnew.PCB_TRACK(board)
                     track.SetStart(pcbnew.VECTOR2I(mm(2), mm(5.05)))
                     track.SetEnd(pcbnew.VECTOR2I(mm(8), mm(5.05)))
-                    track.SetWidth(mm(.5))
+                    track.SetWidth(mm(0.5))
                     track.SetLayer(pcbnew.F_Cu)
-                    track.SetNetCode(board.FindNet('SIGNAL').GetNetCode())
+                    track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
                     board.Add(track)
                     pcbnew.SaveBoard(str(source), board)
-                    source.with_suffix('.kicad_pro').write_text('{"board":{"design_settings":{"rules":'
-                        '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}', encoding='utf-8')
-                    report_path = project / 'drc.json'
+                    source.with_suffix(".kicad_pro").write_text(
+                        '{"board":{"design_settings":{"rules":'
+                        '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}',
+                        encoding="utf-8",
+                    )
+                    report_path = project / "drc.json"
                     report_path.unlink(missing_ok=True)
                     report = _drc(kicad_cli(), source, report_path)
-                    self.assertFalse([v for v in report['violations'] if v['type'] in {'clearance', 'hole_clearance'}])
+                    self.assertFalse(
+                        [
+                            v
+                            for v in report["violations"]
+                            if v["type"] in {"clearance", "hole_clearance"}
+                        ]
+                    )
                     pad = pads[0]
-                    pad.SetOffset(pcbnew.VECTOR2I(mm(.1), 0))
-                    self.assertEqual(_pad_obstacle(board, pad, ('F.Cu',)).min_track_clearance, mm(.25))
+                    pad.SetOffset(pcbnew.VECTOR2I(mm(0.1), 0))
+                    self.assertEqual(
+                        _pad_obstacle(board, pad, ("F.Cu",)).min_track_clearance,
+                        mm(0.25),
+                    )
                     pad.SetOffset(pcbnew.VECTOR2I(0, 0))
-                    pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(.8)))
-                    self.assertEqual(_pad_obstacle(board, pad, ('F.Cu',)).min_track_clearance, mm(.25))
+                    pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(0.8)))
+                    self.assertEqual(
+                        _pad_obstacle(board, pad, ("F.Cu",)).min_track_clearance,
+                        mm(0.25),
+                    )
                     pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(1)))
                     pad.SetShape(pcbnew.PAD_SHAPE_CHAMFERED_RECT)
-                    self.assertEqual(_pad_obstacle(board, pad, ('F.Cu',)).min_track_clearance, mm(.25))
+                    self.assertEqual(
+                        _pad_obstacle(board, pad, ("F.Cu",)).min_track_clearance,
+                        mm(0.25),
+                    )
                     pad.SetShape(shape)
                     pad.SetAttribute(pcbnew.PAD_ATTRIB_NPTH)
-                    self.assertGreaterEqual(_pad_obstacle(board, pad, ('F.Cu',)).min_track_clearance, mm(.25))
+                    self.assertGreaterEqual(
+                        _pad_obstacle(board, pad, ("F.Cu",)).min_track_clearance,
+                        mm(0.25),
+                    )
 
-    def test_plated_pad_hole_margin_is_measured_from_the_drill_not_the_copper_edge(self):
+    def test_plated_pad_hole_margin_is_measured_from_the_drill_not_the_copper_edge(
+        self,
+    ):
         import pcbnew
         from pcb.route_native import _pad_obstacle
         from core.pcb_io import quiet_duplicate_image_handlers
+
         with tempfile.TemporaryDirectory() as folder, quiet_duplicate_image_handlers():
             project = Path(folder)
             source = self.make_board(project)
             board = pcbnew.LoadBoard(str(source))
             settings = board.GetDesignSettings()
-            settings.m_HoleClearance = mm(.25)
-            settings.m_HoleToHoleMin = mm(.25)
-            other = pcbnew.NETINFO_ITEM(board, 'PAD_NET')
+            settings.m_HoleClearance = mm(0.25)
+            settings.m_HoleToHoleMin = mm(0.25)
+            other = pcbnew.NETINFO_ITEM(board, "PAD_NET")
             board.Add(other)
             pads = []
             for index, y in enumerate((3.73, 6.27)):
                 part = pcbnew.FOOTPRINT(board)
-                part.SetReference(f'P{index}')
+                part.SetReference(f"P{index}")
                 pad = pcbnew.PAD(part)
-                pad.SetNumber('1')
+                pad.SetNumber("1")
                 pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
                 pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
                 pad.SetSize(pcbnew.VECTOR2I(mm(1.524), mm(1.524)))
@@ -159,52 +201,92 @@ class RouteOptimizerTests(unittest.TestCase):
                 part.Add(pad)
                 board.Add(part)
                 pads.append(pad)
-            obstacles = tuple(_pad_obstacle(board, pad, ('F.Cu',)) for pad in pads)
-            model = router(lower=point(0, 0), upper=point(10, 8), width=mm(.5), obstacles=obstacles)
-            self.assertTrue(model.edge_clear(point(2, 5.05), point(8, 5.05), 'F.Cu'))
-            self.assertFalse(model.edge_clear(point(2, 5.15), point(8, 5.15), 'F.Cu'))
+            obstacles = tuple(_pad_obstacle(board, pad, ("F.Cu",)) for pad in pads)
+            model = router(
+                lower=point(0, 0),
+                upper=point(10, 8),
+                width=mm(0.5),
+                obstacles=obstacles,
+            )
+            self.assertTrue(model.edge_clear(point(2, 5.05), point(8, 5.05), "F.Cu"))
+            self.assertFalse(model.edge_clear(point(2, 5.15), point(8, 5.15), "F.Cu"))
             track = pcbnew.PCB_TRACK(board)
             track.SetStart(pcbnew.VECTOR2I(mm(2), mm(5.05)))
             track.SetEnd(pcbnew.VECTOR2I(mm(8), mm(5.05)))
-            track.SetWidth(mm(.5))
+            track.SetWidth(mm(0.5))
             track.SetLayer(pcbnew.F_Cu)
-            track.SetNetCode(board.FindNet('SIGNAL').GetNetCode())
+            track.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(track)
             pcbnew.SaveBoard(str(source), board)
-            source.with_suffix('.kicad_pro').write_text('{"board":{"design_settings":{"rules":'
-                '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}', encoding='utf-8')
+            source.with_suffix(".kicad_pro").write_text(
+                '{"board":{"design_settings":{"rules":'
+                '{"min_clearance":0.2,"min_hole_clearance":0.25}}}}',
+                encoding="utf-8",
+            )
             from pcb.route_validation import _drc
-            report = _drc(kicad_cli(), source, project / 'drc.json')
-            self.assertFalse([v for v in report['violations'] if v['type'] in {'clearance', 'hole_clearance'}])
+
+            report = _drc(kicad_cli(), source, project / "drc.json")
+            self.assertFalse(
+                [
+                    v
+                    for v in report["violations"]
+                    if v["type"] in {"clearance", "hole_clearance"}
+                ]
+            )
 
     def test_fast_warm_start_can_form_a_complete_standard_dogleg(self):
-        start_wall = Obstacle(point(0, 1.7), point(5, 2), ("In3.Cu",), "OTHER", "copper")
+        start_wall = Obstacle(
+            point(0, 1.7), point(5, 2), ("In3.Cu",), "OTHER", "copper"
+        )
         end_wall = Obstacle(point(9, 0), point(12, 8.5), ("In3.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(13, 11), step=mm(.25),
-                       layers=("In3.Cu",), obstacles=(start_wall, end_wall),
-                       initial_directions=frozenset({0}), final_directions=frozenset({0}),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       max_expansions=1)
+        model = router(
+            lower=point(0, 0),
+            upper=point(13, 11),
+            step=mm(0.25),
+            layers=("In3.Cu",),
+            obstacles=(start_wall, end_wall),
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({0}),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=1,
+        )
         try:
             result = model.route(point(1, 1), "In3.Cu", point(11, 9), "In3.Cu")
         except (NoGridRoute, SearchLimitReached) as error:
-            self.fail(f"A clear standard dogleg must not require a grid search: {error}")
+            self.fail(
+                f"A clear standard dogleg must not require a grid search: {error}"
+            )
         self.assertFalse(result.vias)
-        self.assertEqual([model._direction(s.start, s.end) for s in result.segments], [0, 1, 2, 1, 0])
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertEqual(
+            [model._direction(s.start, s.end) for s in result.segments], [0, 1, 2, 1, 0]
+        )
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertFalse(GridRouter._has_staircase(list(result.segments)))
         self.assertEqual(result.expanded, 0)
 
     def test_dense_search_reuses_a_checked_blocked_edge(self):
         from pcb.net_routing.rules import RoutingRules
 
-        rules = RoutingRules((), (), {"SIGNAL": (mm(.2), mm(.2))},
-                             {"SIGNAL": "SIGNAL"}, 0, 0)
-        profile = rules.profile("SIGNAL", mm(.2), mm(.2))
-        obstacle = Obstacle(point(1, .95), point(1.05, 1.05), ("F.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(90, 90), step=mm(.1),
-                       layers=("F.Cu",), max_cells=1_000_000,
-                       obstacles=(obstacle,), profile=profile)
+        rules = RoutingRules(
+            (), (), {"SIGNAL": (mm(0.2), mm(0.2))}, {"SIGNAL": "SIGNAL"}, 0, 0
+        )
+        profile = rules.profile("SIGNAL", mm(0.2), mm(0.2))
+        obstacle = Obstacle(
+            point(1, 0.95), point(1.05, 1.05), ("F.Cu",), "OTHER", "copper"
+        )
+        model = router(
+            lower=point(0, 0),
+            upper=point(90, 90),
+            step=mm(0.1),
+            layers=("F.Cu",),
+            max_cells=1_000_000,
+            obstacles=(obstacle,),
+            profile=profile,
+        )
         start, end = point(1, 1), point(1.005, 1)
         with mock.patch.object(profile, "pieces", wraps=profile.pieces) as pieces:
             self.assertFalse(model.edge_clear(start, end, "F.Cu"))
@@ -218,101 +300,203 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_same_layer_endpoints_can_use_a_bounded_two_via_warm_route(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall,),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       max_expansions=1)
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall,),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=1,
+        )
         result = model.route(point(1, 2), "B.Cu", point(9, 2), "B.Cu")
         self.assertEqual(len(result.vias), 2)
         self.assertEqual(result.segments[0].start, point(1, 2))
         self.assertEqual(result.segments[-1].end, point(9, 2))
         self.assertTrue(any(segment.layer == "In1.Cu" for segment in result.segments))
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertTrue(result.search_truncated)
 
     def test_two_via_warm_route_obeys_reference_obstacles_and_context(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
         reference = Obstacle(point(4, -1), point(6, 6), ("In1.Cu",), "", "keepout")
-        values = dict(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                      layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                      via_size=mm(.4), via_drill=mm(.2), first_feasible=True,
-                      forbid_staircase=True, gentle_turns=True, max_expansions=1)
-        for changes in ({"obstacles": (wall, reference)},
-                        {"obstacles": (wall,), "allow_new_vias": False}):
+        values = dict(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=1,
+        )
+        for changes in (
+            {"obstacles": (wall, reference)},
+            {"obstacles": (wall,), "allow_new_vias": False},
+        ):
             with self.subTest(changes=changes):
                 model = router(**values, **changes)
                 with self.assertRaises((NoGridRoute, SearchLimitReached)):
                     model.route(point(1, 2), "B.Cu", point(9, 2), "B.Cu")
         model = router(**values, obstacles=(wall,))
         with self.assertRaises((NoGridRoute, SearchLimitReached)):
-            model.route(point(1, 2), "B.Cu", point(9, 2), "B.Cu",
-                        candidate_check=lambda _: False)
+            model.route(
+                point(1, 2),
+                "B.Cu",
+                point(9, 2),
+                "B.Cu",
+                candidate_check=lambda _: False,
+            )
 
     def test_two_via_warm_route_samples_clear_off_axis_escape_sites(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.1),
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall,),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       max_expansions=1)
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.1),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall,),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=1,
+        )
         allowed = {point(1.3, 2.6), point(8.7, 2.6)}
-        model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                             if model._point(x, y) not in allowed}
+        model.via_blocked = {
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if model._point(x, y) not in allowed
+        }
         result = model.route(point(1, 2), "B.Cu", point(9, 2), "B.Cu")
         self.assertEqual({via.at for via in result.vias}, allowed)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
 
     def test_two_via_warm_route_prefers_reusing_existing_vias(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
-        vias = tuple(Obstacle(point(x - .2, 1.8), point(x + .2, 2.2),
-                              ("B.Cu", "In1.Cu"), "SIGNAL", "via") for x in (2, 8))
+        vias = tuple(
+            Obstacle(
+                point(x - 0.2, 1.8),
+                point(x + 0.2, 2.2),
+                ("B.Cu", "In1.Cu"),
+                "SIGNAL",
+                "via",
+            )
+            for x in (2, 8)
+        )
         for allow_new in (False, True):
             with self.subTest(allow_new_vias=allow_new):
-                model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                               layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                               via_size=mm(.4), via_drill=mm(.2), obstacles=(wall, *vias),
-                               first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                               max_expansions=1, allow_new_vias=allow_new)
+                model = router(
+                    lower=point(0, 0),
+                    upper=point(10, 5),
+                    step=mm(0.5),
+                    layers=("B.Cu", "In1.Cu"),
+                    width=mm(0.1),
+                    clearance=mm(0.1),
+                    via_size=mm(0.4),
+                    via_drill=mm(0.2),
+                    obstacles=(wall, *vias),
+                    first_feasible=True,
+                    forbid_staircase=True,
+                    gentle_turns=True,
+                    max_expansions=1,
+                    allow_new_vias=allow_new,
+                )
                 result = model.route(point(1, 2), "B.Cu", point(9, 2), "B.Cu")
                 self.assertFalse(result.vias)
-                self.assertEqual({via.at for via in result.reused_vias}, {point(2, 2), point(8, 2)})
+                self.assertEqual(
+                    {via.at for via in result.reused_vias}, {point(2, 2), point(8, 2)}
+                )
 
     def test_two_via_escape_legs_must_not_cross_or_hit_the_other_via(self):
-        model = router(width=mm(.2), via_size=mm(.6))
+        model = router(width=mm(0.2), via_size=mm(0.6))
         left = (Segment(point(1, 2), point(4, 2), "B.Cu"),)
         right = (Segment(point(7, 2), point(9, 2), "B.Cu"),)
-        self.assertTrue(model._two_via_escape_clear(left, right, point(4, 2), point(7, 2)))
+        self.assertTrue(
+            model._two_via_escape_clear(left, right, point(4, 2), point(7, 2))
+        )
         crossing = (Segment(point(3, 1), point(3, 3), "B.Cu"),)
-        self.assertFalse(model._two_via_escape_clear(left, crossing, point(4, 2), point(3, 1)))
+        self.assertFalse(
+            model._two_via_escape_clear(left, crossing, point(4, 2), point(3, 1))
+        )
         near_other_via = (Segment(point(4.3, 1), point(4.3, 3), "B.Cu"),)
-        self.assertFalse(model._two_via_escape_clear(left, near_other_via, point(4, 2), point(4.3, 1)))
+        self.assertFalse(
+            model._two_via_escape_clear(
+                left, near_other_via, point(4, 2), point(4.3, 1)
+            )
+        )
 
     def test_two_via_escape_can_detour_around_copper_on_the_transit_layer(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
         middle = Obstacle(point(4, 1), point(6, 3), ("In1.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall, middle),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       max_expansions=20_000)
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall, middle),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=20_000,
+        )
         allowed = {point(2, 2), point(8, 2)}
-        model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                             if model._point(x, y) not in allowed}
+        model.via_blocked = {
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if model._point(x, y) not in allowed
+        }
         result = model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", None)
-        self.assertIsNotNone(result, "Legal pad escapes need a detoured transit path, not only a straight line")
+        self.assertIsNotNone(
+            result,
+            "Legal pad escapes need a detoured transit path, not only a straight line",
+        )
         self.assertEqual({via.at for via in result.vias}, allowed)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertFalse(GridRouter._has_staircase(list(result.segments)))
         self.assertGreater(result.expanded, 0)
 
     def test_transit_detour_does_not_cross_a_reference_keepout(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
         reference = Obstacle(point(4, -1), point(6, 6), ("In1.Cu",), "", "keepout")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "In1.Cu"), obstacles=(wall, reference),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True)
-        self.assertIsNone(model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", None))
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            obstacles=(wall, reference),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+        )
+        self.assertIsNone(
+            model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", None)
+        )
 
     def test_transit_detour_keeps_via_sites_on_grid_at_odd_nanometre_steps(self):
         step = 500_001
@@ -322,31 +506,66 @@ class RouteOptimizerTests(unittest.TestCase):
 
         wall = Obstacle(at(4, -1), at(6, 6), ("B.Cu",), "OTHER", "copper")
         middle = Obstacle(at(4, 1), at(6, 3), ("In1.Cu",), "OTHER", "copper")
-        model = router(lower=at(0, 0), upper=at(10, 5), step=step,
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall, middle),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       max_expansions=20_000)
+        model = router(
+            lower=at(0, 0),
+            upper=at(10, 5),
+            step=step,
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall, middle),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            max_expansions=20_000,
+        )
         allowed = {at(2, 2), at(8, 2)}
-        model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                             if model._point(x, y) not in allowed}
-        with mock.patch.object(GridRouter, "_route_off_grid", side_effect=AssertionError(
-                "A transit retry must retain exact via/grid alignment and its expansion slice")):
+        model.via_blocked = {
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if model._point(x, y) not in allowed
+        }
+        with mock.patch.object(
+            GridRouter,
+            "_route_off_grid",
+            side_effect=AssertionError(
+                "A transit retry must retain exact via/grid alignment and its expansion slice"
+            ),
+        ):
             result = model._direct_two_via_route(at(1, 2), at(9, 2), "B.Cu", None)
         self.assertIsNotNone(result)
 
     def test_busy_earlier_layers_cannot_exhaust_every_transit_detour_budget(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
-        middle = Obstacle(point(4, 1), point(6, 3), ("F.Cu", "In1.Cu", "In2.Cu"), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "F.Cu", "In1.Cu", "In2.Cu"),
-                       width=mm(.1), clearance=mm(.1), via_size=mm(.4), via_drill=mm(.2),
-                       obstacles=(wall, middle), first_feasible=True,
-                       forbid_staircase=True, gentle_turns=True, heuristic_weight=2,
-                       max_expansions=80_000)
+        middle = Obstacle(
+            point(4, 1), point(6, 3), ("F.Cu", "In1.Cu", "In2.Cu"), "OTHER", "copper"
+        )
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "F.Cu", "In1.Cu", "In2.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall, middle),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            heuristic_weight=2,
+            max_expansions=80_000,
+        )
         allowed = {point(2, 2), point(8, 2)}
-        model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                             if model._point(x, y) not in allowed}
+        model.via_blocked = {
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if model._point(x, y) not in allowed
+        }
         original = GridRouter.route
         searched = []
         spent = [0]
@@ -370,15 +589,31 @@ class RouteOptimizerTests(unittest.TestCase):
     def test_transit_detour_checks_the_whole_route_and_restores_headings(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
         middle = Obstacle(point(4, 1), point(6, 3), ("In1.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall, middle),
-                       first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                       initial_directions=frozenset({0}), final_directions=frozenset({0}),
-                       max_expansions=20_000, heuristic_weight=2)
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall, middle),
+            first_feasible=True,
+            forbid_staircase=True,
+            gentle_turns=True,
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({0}),
+            max_expansions=20_000,
+            heuristic_weight=2,
+        )
         allowed = {point(2, 2), point(8, 2)}
-        model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                             if model._point(x, y) not in allowed}
+        model.via_blocked = {
+            (x, y)
+            for x in range(model.nx)
+            for y in range(model.ny)
+            if model._point(x, y) not in allowed
+        }
         checked = []
 
         def reject(candidate):
@@ -388,7 +623,9 @@ class RouteOptimizerTests(unittest.TestCase):
             self.assertEqual(len(candidate.vias), 2)
             return False
 
-        self.assertIsNone(model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", reject))
+        self.assertIsNone(
+            model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", reject)
+        )
         self.assertTrue(checked)
         self.assertEqual(model.initial_directions, frozenset({0}))
         self.assertEqual(model.final_directions, frozenset({0}))
@@ -400,49 +637,78 @@ class RouteOptimizerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-transit-detour-") as folder:
             source = self.make_board(Path(folder), crossing=True)
             board = pcbnew.LoadBoard(str(source))
-            board.FindFootprintByReference("J2").SetPosition(pcbnew.VECTOR2I(mm(8), mm(2)))
+            board.FindFootprintByReference("J2").SetPosition(
+                pcbnew.VECTOR2I(mm(8), mm(2))
+            )
             middle = pcbnew.PCB_TRACK(board)
             middle.SetStart(pcbnew.VECTOR2I(mm(5), mm(1)))
             middle.SetEnd(pcbnew.VECTOR2I(mm(5), mm(3)))
-            middle.SetWidth(mm(.2))
+            middle.SetWidth(mm(0.2))
             middle.SetLayer(pcbnew.B_Cu)
             middle.SetNetCode(board.FindNet("OTHER").GetNetCode())
             board.Add(middle)
             connection = pcbnew.PCB_VIA(board)
             connection.SetPosition(pcbnew.VECTOR2I(mm(5), mm(2)))
             connection.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            connection.SetWidth(mm(.6))
-            connection.SetDrill(mm(.3))
+            connection.SetWidth(mm(0.6))
+            connection.SetDrill(mm(0.3))
             connection.SetNetCode(board.FindNet("OTHER").GetNetCode())
             board.Add(connection)
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
             native = read_native_obstacles(source, "SIGNAL")
-            model = router(lower=point(0, 0), upper=point(10, 8), step=mm(.25),
-                           layers=("F.Cu", "B.Cu"), obstacles=native.obstacles,
-                           first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                           max_expansions=20_000, heuristic_weight=2)
+            model = router(
+                lower=point(0, 0),
+                upper=point(10, 8),
+                step=mm(0.25),
+                layers=("F.Cu", "B.Cu"),
+                obstacles=native.obstacles,
+                first_feasible=True,
+                forbid_staircase=True,
+                gentle_turns=True,
+                max_expansions=20_000,
+                heuristic_weight=2,
+            )
             allowed = {point(3.25, 2), point(6.75, 2)}
-            model.via_blocked = {(x, y) for x in range(model.nx) for y in range(model.ny)
-                                 if model._point(x, y) not in allowed}
-            candidate = model._direct_two_via_route(point(2, 2), point(8, 2), "F.Cu", None)
+            model.via_blocked = {
+                (x, y)
+                for x in range(model.nx)
+                for y in range(model.ny)
+                if model._point(x, y) not in allowed
+            }
+            candidate = model._direct_two_via_route(
+                point(2, 2), point(8, 2), "F.Cu", None
+            )
             self.assertIsNotNone(candidate)
-            changes = campaign_changes(candidate, "SIGNAL", mm(.2), mm(.6), mm(.3))
+            changes = campaign_changes(candidate, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
             contract = RouteContract("SIGNAL", point(2, 2), "F.Cu", point(8, 2), "F.Cu")
-            checked = validate_routes(source, hashlib.sha256(original).hexdigest(), changes, [contract])
+            checked = validate_routes(
+                source, hashlib.sha256(original).hexdigest(), changes, [contract]
+            )
             self.assertEqual(checked["status"], "no_new_drc_violations", checked)
             self.assertEqual(checked["candidate_unconnected"], 0, checked)
             self.assertEqual(source.read_bytes(), original)
 
     def test_two_via_search_restores_heading_constraints_after_callback_error(self):
         wall = Obstacle(point(4, -1), point(6, 6), ("B.Cu",), "OTHER", "copper")
-        model = router(lower=point(0, 0), upper=point(10, 5), step=mm(.5),
-                       layers=("B.Cu", "In1.Cu"), width=mm(.1), clearance=mm(.1),
-                       via_size=mm(.4), via_drill=mm(.2), obstacles=(wall,),
-                       initial_directions=frozenset({0}), final_directions=frozenset({0}),
-                       first_feasible=True)
+        model = router(
+            lower=point(0, 0),
+            upper=point(10, 5),
+            step=mm(0.5),
+            layers=("B.Cu", "In1.Cu"),
+            width=mm(0.1),
+            clearance=mm(0.1),
+            via_size=mm(0.4),
+            via_drill=mm(0.2),
+            obstacles=(wall,),
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({0}),
+            first_feasible=True,
+        )
+
         def stop(_):
             raise RuntimeError("callback interrupted")
+
         with self.assertRaisesRegex(RuntimeError, "callback interrupted"):
             model._direct_two_via_route(point(1, 2), point(9, 2), "B.Cu", stop)
         self.assertEqual(model.initial_directions, frozenset({0}))
@@ -455,19 +721,30 @@ class RouteOptimizerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="autopcb-two-via-native-") as folder:
             source = self.make_board(Path(folder), crossing=True)
             board = pcbnew.LoadBoard(str(source))
-            board.FindFootprintByReference("J2").SetPosition(pcbnew.VECTOR2I(mm(8), mm(2)))
+            board.FindFootprintByReference("J2").SetPosition(
+                pcbnew.VECTOR2I(mm(8), mm(2))
+            )
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
             native = read_native_obstacles(source, "SIGNAL")
-            model = router(lower=point(0, 0), upper=point(10, 8), step=mm(.25),
-                           layers=("F.Cu", "B.Cu"), obstacles=native.obstacles,
-                           first_feasible=True, forbid_staircase=True, gentle_turns=True,
-                           max_expansions=1)
+            model = router(
+                lower=point(0, 0),
+                upper=point(10, 8),
+                step=mm(0.25),
+                layers=("F.Cu", "B.Cu"),
+                obstacles=native.obstacles,
+                first_feasible=True,
+                forbid_staircase=True,
+                gentle_turns=True,
+                max_expansions=1,
+            )
             candidate = model.route(point(2, 2), "F.Cu", point(8, 2), "F.Cu")
             self.assertEqual(len(candidate.vias), 2)
-            changes = campaign_changes(candidate, "SIGNAL", mm(.2), mm(.6), mm(.3))
+            changes = campaign_changes(candidate, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
             contract = RouteContract("SIGNAL", point(2, 2), "F.Cu", point(8, 2), "F.Cu")
-            checked = validate_routes(source, hashlib.sha256(original).hexdigest(), changes, [contract])
+            checked = validate_routes(
+                source, hashlib.sha256(original).hexdigest(), changes, [contract]
+            )
             self.assertEqual(checked["status"], "no_new_drc_violations", checked)
             self.assertEqual(checked["candidate_unconnected"], 0, checked)
             self.assertEqual(source.read_bytes(), original)
@@ -481,7 +758,13 @@ class RouteOptimizerTests(unittest.TestCase):
                 raise RuntimeError("budget expired")
 
         obstacles = tuple(
-            Obstacle(point(i / 10, 0), point(round(i / 10 + 0.01, 2), 0.01), ("F.Cu",), "", "pad")
+            Obstacle(
+                point(i / 10, 0),
+                point(round(i / 10 + 0.01, 2), 0.01),
+                ("F.Cu",),
+                "",
+                "pad",
+            )
             for i in range(80)
         )
         with self.assertRaisesRegex(RuntimeError, "budget expired"):
@@ -499,8 +782,11 @@ class RouteOptimizerTests(unittest.TestCase):
         obstacle = Obstacle(point(-2, -2), point(12, 12), ("F.Cu",), "", "pad")
         with self.assertRaisesRegex(RuntimeError, "budget expired"):
             router(
-                layers=("F.Cu",), step=mm(0.05), obstacles=(obstacle,),
-                check_budget=stop, max_cells=1_000_000,
+                layers=("F.Cu",),
+                step=mm(0.05),
+                obstacles=(obstacle,),
+                check_budget=stop,
+                max_cells=1_000_000,
             )
         self.assertEqual(len(calls), 2)
 
@@ -555,8 +841,16 @@ class RouteOptimizerTests(unittest.TestCase):
 
         def counted(instance, start, start_layer, end, end_layer, **kwargs):
             if "_expansion_budget" in kwargs:
-                calls[(start, start_layer, end, end_layer,
-                       instance.initial_directions, instance.final_directions)] += 1
+                calls[
+                    (
+                        start,
+                        start_layer,
+                        end,
+                        end_layer,
+                        instance.initial_directions,
+                        instance.final_directions,
+                    )
+                ] += 1
             return original(instance, start, start_layer, end, end_layer, **kwargs)
 
         with mock.patch.object(GridRouter, "route", counted):
@@ -584,7 +878,7 @@ class RouteOptimizerTests(unittest.TestCase):
             return original(instance, start, start_layer, end, end_layer, **kwargs)
 
         with mock.patch.object(GridRouter, "route", limited_first):
-            result = model.route(point(.15, .2), "B.Cu", point(9.15, 8.2), "B.Cu")
+            result = model.route(point(0.15, 0.2), "B.Cu", point(9.15, 8.2), "B.Cu")
         self.assertGreater(len(budgets), 1)
         self.assertLess(budgets[0], model.max_expansions)
         self.assertTrue(result.search_truncated)
@@ -592,10 +886,18 @@ class RouteOptimizerTests(unittest.TestCase):
     def test_first_feasible_gives_nearby_accesses_enough_depth_before_deadline(self):
         from pcb.route_optimizer import Route
 
-        model = router(lower=point(-2, -2), upper=point(20, 5), layers=("F.Cu",),
-                       first_feasible=True, max_expansions=1600)
-        start, end = point(.1, 0), point(6, 0)
-        groups = {start: [[(start, point(x, 0)) for x in range(1, 17)]], end: [[(end,)]]}
+        model = router(
+            lower=point(-2, -2),
+            upper=point(20, 5),
+            layers=("F.Cu",),
+            first_feasible=True,
+            max_expansions=1600,
+        )
+        start, end = point(0.1, 0), point(6, 0)
+        groups = {
+            start: [[(start, point(x, 0)) for x in range(1, 17)]],
+            end: [[(end,)]],
+        }
         calls = 0
 
         def deadline():
@@ -606,15 +908,22 @@ class RouteOptimizerTests(unittest.TestCase):
 
         def search(first, layer, last, other_layer, *, _expansion_budget, **_kwargs):
             if _expansion_budget < 80:
-                raise SearchLimitReached("pilot too shallow", expanded=_expansion_budget)
+                raise SearchLimitReached(
+                    "pilot too shallow", expanded=_expansion_budget
+                )
             segment = Segment(first, last, layer)
             return Route((segment,), (), (), 5.0, 0, 5.0, 80)
 
         model.check_budget = deadline
-        with (mock.patch.object(model, "_stub_paths", return_value=[]),
-              mock.patch.object(model, "_endpoint_option_groups",
-                                side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint])),
-              mock.patch.object(model, "route", side_effect=search)):
+        with (
+            mock.patch.object(model, "_stub_paths", return_value=[]),
+            mock.patch.object(
+                model,
+                "_endpoint_option_groups",
+                side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+            ),
+            mock.patch.object(model, "route", side_effect=search),
+        ):
             result = model._route_off_grid(start, "F.Cu", end, "F.Cu")
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
@@ -624,24 +933,34 @@ class RouteOptimizerTests(unittest.TestCase):
         from pcb import topology_bound
 
         model = router(topology_heuristic=True)
-        with mock.patch("pcb.topology_bound.relaxed_costs",
-                        side_effect=topology_bound.relaxed_costs) as built:
-            result = model.route(point(.1, .1), "F.Cu", point(8.1, 6.1), "B.Cu")
+        with mock.patch(
+            "pcb.topology_bound.relaxed_costs", side_effect=topology_bound.relaxed_costs
+        ) as built:
+            result = model.route(point(0.1, 0.1), "F.Cu", point(8.1, 6.1), "B.Cu")
         self.assertEqual(built.call_count, 1)
         self.assertTrue(built.call_args.kwargs["more_goals"])
-        self.assertEqual((result.segments[0].start, result.segments[-1].end), (point(.1, .1), point(8.1, 6.1)))
+        self.assertEqual(
+            (result.segments[0].start, result.segments[-1].end),
+            (point(0.1, 0.1), point(8.1, 6.1)),
+        )
         self.assertEqual(model._goal_seeds, frozenset())
 
     def test_straight_off_grid_route_stops_at_a_proven_cost_lower_bound(self):
-        model = router(layers=("B.Cu",), step=mm(0.5),
-                       weights=Weights(length=1, bend=1, via=10, diagonal=1))
+        model = router(
+            layers=("B.Cu",),
+            step=mm(0.5),
+            weights=Weights(length=1, bend=1, via=10, diagonal=1),
+        )
         result = model.route(point(0.15, 0.2), "B.Cu", point(9.15, 0.2), "B.Cu")
         self.assertEqual(result.cost, 9)
         self.assertEqual(result.expanded, 0)
 
     def test_straight_off_grid_route_still_tries_a_cheaper_layer(self):
-        model = router(step=mm(0.5), layer_penalties={"F.Cu": 3},
-                       weights=Weights(length=1, bend=1, via=0.1, diagonal=1))
+        model = router(
+            step=mm(0.5),
+            layer_penalties={"F.Cu": 3},
+            weights=Weights(length=1, bend=1, via=0.1, diagonal=1),
+        )
         result = model.route(point(0.15, 0.2), "F.Cu", point(9.15, 0.2), "F.Cu")
         self.assertLess(result.cost, 36)
         self.assertTrue(any(segment.layer == "B.Cu" for segment in result.segments))
@@ -657,7 +976,9 @@ class RouteOptimizerTests(unittest.TestCase):
                 verify.assert_not_called()
 
     def test_shortest_octilinear_route_has_one_45_degree_bend(self):
-        result = router(weights=Weights(diagonal=0)).route(point(0, 0), "F.Cu", point(4, 3), "F.Cu")
+        result = router(weights=Weights(diagonal=0)).route(
+            point(0, 0), "F.Cu", point(4, 3), "F.Cu"
+        )
         self.assertAlmostEqual(result.length_mm, 1 + 3 * math.sqrt(2))
         self.assertEqual(result.bends, 1)
         self.assertEqual(len(result.segments), 2)
@@ -698,14 +1019,30 @@ class RouteOptimizerTests(unittest.TestCase):
     def test_pad_copper_ends_track_chains_and_frees_turns_inside_it(self):
         east, northeast, north = 0, 7, 6
         memory = -1
-        for current, following in ((east, northeast), (northeast, north), (north, northeast)):
+        for current, following in (
+            (east, northeast),
+            (northeast, north),
+            (north, northeast),
+        ):
             memory = _advance_staircase_history(memory, current, following)
         self.assertIsNotNone(_advance_staircase_history(memory, northeast, east))
-        self.assertIsNone(_advance_staircase_history(memory, northeast, east, anchored=True))
-        dogleg = [Segment(point(*a), point(*b), "F.Cu") for a, b in (
-            ((0, 6), (1, 6)), ((1, 6), (2, 5)), ((2, 5), (2, 3)), ((2, 3), (3, 2)), ((3, 2), (4, 2)))]
-        model = router(gentle_turns=True,
-                       pad_copper=PadCopper((("F.Cu", mm(2.9), mm(1.5), mm(4.5), mm(2.5)),)))
+        self.assertIsNone(
+            _advance_staircase_history(memory, northeast, east, anchored=True)
+        )
+        dogleg = [
+            Segment(point(*a), point(*b), "F.Cu")
+            for a, b in (
+                ((0, 6), (1, 6)),
+                ((1, 6), (2, 5)),
+                ((2, 5), (2, 3)),
+                ((2, 3), (3, 2)),
+                ((3, 2), (4, 2)),
+            )
+        ]
+        model = router(
+            gentle_turns=True,
+            pad_copper=PadCopper((("F.Cu", mm(2.9), mm(1.5), mm(4.5), mm(2.5)),)),
+        )
         self.assertTrue(model._staircase_off_pads(dogleg))
         self.assertFalse(router()._staircase_off_pads(dogleg))
         self.assertFalse(model._illegal_turn(2, point(3, 2), "F.Cu"))
@@ -739,19 +1076,31 @@ class RouteOptimizerTests(unittest.TestCase):
         points = [point(*p) for p in ((1, 1), (2, 1), (3, 2), (3, 4), (4, 5), (5, 5))]
         segments = [Segment(a, b, "B.Cu") for a, b in zip(points, points[1:])]
         self.assertEqual(GridRouter.staircase_count(segments), 0)
-        self.assertEqual(GridRouter.staircase_count(
-            [Segment(s.end, s.start, s.layer) for s in reversed(segments)]), 0)
+        self.assertEqual(
+            GridRouter.staircase_count(
+                [Segment(s.end, s.start, s.layer) for s in reversed(segments)]
+            ),
+            0,
+        )
         memory, current = -1, -1
         for direction in (0, 1, 2, 1, 0):
             memory = _advance_staircase_history(memory, current, direction)
             self.assertIsNotNone(memory)
             current = direction
         model = router(layers=("B.Cu",), forbid_staircase=True, gentle_turns=True)
-        with mock.patch.object(model, "edge_clear", side_effect=lambda a, b, _:
-                               any(on_segment(a, s) and on_segment(b, s) for s in segments)):
+        with mock.patch.object(
+            model,
+            "edge_clear",
+            side_effect=lambda a, b, _: any(
+                on_segment(a, s) and on_segment(b, s) for s in segments
+            ),
+        ):
             result = model.route(points[0], "B.Cu", points[-1], "B.Cu")
         self.assertEqual(GridRouter.staircase_count(list(result.segments)), 0)
-        self.assertEqual([GridRouter._direction(s.start, s.end) for s in result.segments], [0, 1, 2, 1, 0])
+        self.assertEqual(
+            [GridRouter._direction(s.start, s.end) for s in result.segments],
+            [0, 1, 2, 1, 0],
+        )
 
     def test_standard_dogleg_does_not_need_an_extra_detour(self):
         obstacles = [
@@ -789,7 +1138,9 @@ class RouteOptimizerTests(unittest.TestCase):
             )
 
         self.assertTrue(repeated_diagonal(unconstrained))
-        self.assertTrue(repeated_diagonal(constrained))  # The middle triplet belongs to a complete dogleg.
+        self.assertTrue(
+            repeated_diagonal(constrained)
+        )  # The middle triplet belongs to a complete dogleg.
         self.assertFalse(GridRouter._has_staircase(list(constrained.segments)))
         self.assertEqual(constrained.segments[0].start, point(1, 1))
         self.assertEqual(constrained.segments[-1].end, point(12, 9))
@@ -798,10 +1149,19 @@ class RouteOptimizerTests(unittest.TestCase):
             router(forbid_staircase="yes")
 
     def test_non_dogleg_ladder_still_requires_an_alternative_route(self):
-        options = dict(lower=point(-1, -1), upper=point(7, 6), step=mm(.5), layers=("B.Cu",),
-                       weights=Weights(bend=.1, diagonal=0), initial_directions=(1,), final_directions=(1,))
+        options = dict(
+            lower=point(-1, -1),
+            upper=point(7, 6),
+            step=mm(0.5),
+            layers=("B.Cu",),
+            weights=Weights(bend=0.1, diagonal=0),
+            initial_directions=(1,),
+            final_directions=(1,),
+        )
         old = router(**options).route(point(0, 0), "B.Cu", point(5, 3), "B.Cu")
-        fixed = router(**options, forbid_staircase=True).route(point(0, 0), "B.Cu", point(5, 3), "B.Cu")
+        fixed = router(**options, forbid_staircase=True).route(
+            point(0, 0), "B.Cu", point(5, 3), "B.Cu"
+        )
         self.assertTrue(GridRouter._has_staircase(list(old.segments)))
         self.assertFalse(GridRouter._has_staircase(list(fixed.segments)))
         self.assertGreater(fixed.cost, old.cost)
@@ -896,29 +1256,42 @@ class RouteOptimizerTests(unittest.TestCase):
             board.Add(footprint)
             pcbnew.SaveBoard(str(source), board)
             snapshot = read_native_obstacles(source, "SIGNAL", assume_refill=True)
-            obstacle = next(o for o in snapshot.obstacles if o.net == "OTHER" and o.kind == "pad")
+            obstacle = next(
+                o for o in snapshot.obstacles if o.net == "OTHER" and o.kind == "pad"
+            )
             clear = point(5.24, 3.39)
             too_close = point(5.2, 4)
-            self.assertFalse(GridRouter._intersects_box(clear, clear, obstacle, mm(.5)))
-            self.assertTrue(GridRouter._intersects_box(too_close, too_close, obstacle, mm(.5)))
-            self.assertEqual(set(obstacle.layers), set(("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")))
+            self.assertFalse(
+                GridRouter._intersects_box(clear, clear, obstacle, mm(0.5))
+            )
+            self.assertTrue(
+                GridRouter._intersects_box(too_close, too_close, obstacle, mm(0.5))
+            )
+            self.assertEqual(
+                set(obstacle.layers), set(("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"))
+            )
             from pcb.route_validation import _drc
 
             via = pcbnew.PCB_VIA(board)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
             cli = kicad_cli()
-            for index, (position, expected) in enumerate(((clear, False), (too_close, True))):
+            for index, (position, expected) in enumerate(
+                ((clear, False), (too_close, True))
+            ):
                 via.SetPosition(pcbnew.VECTOR2I(position.x, position.y))
                 pcbnew.SaveBoard(str(source), board)
                 report = _drc(cli, source, Path(folder) / f"drc-{index}.json")
                 pair = {via.m_Uuid.AsString(), pad.m_Uuid.AsString()}
-                conflicts = [item for item in report["violations"]
-                             if item["type"] == "clearance"
-                             and pair <= {entry.get("uuid") for entry in item.get("items", [])}]
+                conflicts = [
+                    item
+                    for item in report["violations"]
+                    if item["type"] == "clearance"
+                    and pair <= {entry.get("uuid") for entry in item.get("items", [])}
+                ]
                 self.assertEqual(bool(conflicts), expected, report)
 
     def test_rectangular_pad_keeps_a_conservative_corner_envelope(self):
@@ -937,7 +1310,7 @@ class RouteOptimizerTests(unittest.TestCase):
         board.Add(footprint)
         obstacle = _pad_obstacle(board, pad, ("F.Cu",))
         corner = point(5.24, 3.39)
-        self.assertTrue(GridRouter._intersects_box(corner, corner, obstacle, mm(.5)))
+        self.assertTrue(GridRouter._intersects_box(corner, corner, obstacle, mm(0.5)))
 
     def test_rounded_pad_corners_match_kicad_clearance_on_both_axes(self):
         import pcbnew
@@ -957,7 +1330,7 @@ class RouteOptimizerTests(unittest.TestCase):
             pad.SetPosition(center)
             pad.SetShape(pcbnew.PAD_SHAPE_ROUNDRECT)
             pad.SetSize(pcbnew.VECTOR2I(mm(2), mm(1)))
-            pad.SetRoundRectRadiusRatio(.25)
+            pad.SetRoundRectRadiusRatio(0.25)
             pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
             pad.SetLayerSet(pcbnew.LSET.FrontMask())
             pad.SetNetCode(board.FindNet("OTHER").GetNetCode())
@@ -965,8 +1338,8 @@ class RouteOptimizerTests(unittest.TestCase):
             board.Add(footprint)
             via = pcbnew.PCB_VIA(board)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
             cli = kicad_cli()
@@ -978,31 +1351,57 @@ class RouteOptimizerTests(unittest.TestCase):
                 with self.subTest(angle=angle):
                     pad.SetOrientationDegrees(angle)
                     pcbnew.SaveBoard(str(source), board)
-                    snapshot = read_native_obstacles(source, "SIGNAL", assume_refill=True)
-                    obstacle = next(o for o in snapshot.obstacles if o.net == "OTHER" and o.kind == "pad")
-                    self.assertFalse(GridRouter._intersects_box(clear, clear, obstacle, mm(.5)))
-                    self.assertTrue(GridRouter._intersects_box(close, close, obstacle, mm(.5)))
-                    model = router(lower=point(0, 0), upper=point(8, 8), step=mm(.05))
-                    mask = model._covered(obstacle, mm(.5))
+                    snapshot = read_native_obstacles(
+                        source, "SIGNAL", assume_refill=True
+                    )
+                    obstacle = next(
+                        o
+                        for o in snapshot.obstacles
+                        if o.net == "OTHER" and o.kind == "pad"
+                    )
+                    self.assertFalse(
+                        GridRouter._intersects_box(clear, clear, obstacle, mm(0.5))
+                    )
+                    self.assertTrue(
+                        GridRouter._intersects_box(close, close, obstacle, mm(0.5))
+                    )
+                    model = router(lower=point(0, 0), upper=point(8, 8), step=mm(0.05))
+                    mask = model._covered(obstacle, mm(0.5))
                     checked_board = pcbnew.LoadBoard(str(source))
-                    checked_pad = next(iter(checked_board.FindFootprintByReference("J3").Pads()))
+                    checked_pad = next(
+                        iter(checked_board.FindFootprintByReference("J3").Pads())
+                    )
                     native_shape = checked_pad.GetEffectiveShape(pcbnew.F_Cu)
                     for x in range(50, 120):
                         for y in range(50, 120):
                             cell = (x, y)
                             at = model._point(*cell)
-                            blocked = GridRouter._intersects_box(at, at, obstacle, mm(.5))
+                            blocked = GridRouter._intersects_box(
+                                at, at, obstacle, mm(0.5)
+                            )
                             self.assertEqual(cell in mask, blocked)
-                            if native_shape.Collide(pcbnew.VECTOR2I(at.x, at.y), mm(.5)):
-                                self.assertTrue(blocked, f"KiCad collision missed at {at}")
-                    for index, (position, expected) in enumerate(((clear, False), (close, True))):
+                            if native_shape.Collide(
+                                pcbnew.VECTOR2I(at.x, at.y), mm(0.5)
+                            ):
+                                self.assertTrue(
+                                    blocked, f"KiCad collision missed at {at}"
+                                )
+                    for index, (position, expected) in enumerate(
+                        ((clear, False), (close, True))
+                    ):
                         via.SetPosition(pcbnew.VECTOR2I(position.x, position.y))
                         pcbnew.SaveBoard(str(source), board)
-                        report = _drc(cli, source, Path(folder) / f"round-{angle}-{index}.json")
+                        report = _drc(
+                            cli, source, Path(folder) / f"round-{angle}-{index}.json"
+                        )
                         pair = {via.m_Uuid.AsString(), pad.m_Uuid.AsString()}
-                        conflicts = [item for item in report["violations"]
-                                     if item["type"] == "clearance"
-                                     and pair <= {entry.get("uuid") for entry in item.get("items", [])}]
+                        conflicts = [
+                            item
+                            for item in report["violations"]
+                            if item["type"] == "clearance"
+                            and pair
+                            <= {entry.get("uuid") for entry in item.get("items", [])}
+                        ]
                         self.assertEqual(bool(conflicts), expected, report)
 
     def test_oval_pad_uses_rounded_envelope_only_for_supported_rotation(self):
@@ -1021,8 +1420,12 @@ class RouteOptimizerTests(unittest.TestCase):
         board.Add(footprint)
         oval = _pad_obstacle(board, pad, ("F.Cu",))
         self.assertGreater(oval.corner_radius, 0)
-        self.assertFalse(GridRouter._intersects_box(point(5.3, 3.2), point(5.3, 3.2), oval, mm(.5)))
-        self.assertTrue(GridRouter._intersects_box(point(5.2, 3.3), point(5.2, 3.3), oval, mm(.5)))
+        self.assertFalse(
+            GridRouter._intersects_box(point(5.3, 3.2), point(5.3, 3.2), oval, mm(0.5))
+        )
+        self.assertTrue(
+            GridRouter._intersects_box(point(5.2, 3.3), point(5.2, 3.3), oval, mm(0.5))
+        )
         pad.SetOrientationDegrees(45)
         self.assertEqual(_pad_obstacle(board, pad, ("F.Cu",)).corner_radius, 0)
 
@@ -1045,16 +1448,18 @@ class RouteOptimizerTests(unittest.TestCase):
                 board.Add(footprint)
                 pad.SetShape(shape)
                 if shape == pcbnew.PAD_SHAPE_ROUNDRECT:
-                    pad.SetRoundRectRadiusRatio(.25)
+                    pad.SetRoundRectRadiusRatio(0.25)
                 pad.SetOrientationDegrees(angle)
                 obstacle = _pad_obstacle(board, pad, ("F.Cu",))
                 native = pad.GetEffectiveShape(pcbnew.F_Cu)
                 for _ in range(2500):
                     x, y = rng.randrange(mm(2), mm(6)), rng.randrange(mm(2), mm(6))
-                    radius = rng.randrange(0, mm(.5))
+                    radius = rng.randrange(0, mm(0.5))
                     a = Point(x, y)
-                    b = Point(x + rng.choice((-1, 0, 1)) * 100_000,
-                              y + rng.choice((-1, 0, 1)) * 100_000)
+                    b = Point(
+                        x + rng.choice((-1, 0, 1)) * 100_000,
+                        y + rng.choice((-1, 0, 1)) * 100_000,
+                    )
                     native_segment = pcbnew.SEG(x, y, b.x, b.y)
                     if native.Collide(native_segment, radius):
                         self.assertTrue(
@@ -1068,23 +1473,26 @@ class RouteOptimizerTests(unittest.TestCase):
 
         board = pcbnew.BOARD()
         rules = board.GetDesignSettings()
-        rules.m_CopperEdgeClearance = mm(.5)
-        rules.m_HoleClearance = mm(.25)
-        rules.m_HoleToHoleMin = mm(.25)
+        rules.m_CopperEdgeClearance = mm(0.5)
+        rules.m_HoleClearance = mm(0.25)
+        rules.m_HoleToHoleMin = mm(0.25)
         footprint = pcbnew.FOOTPRINT(board)
         pad = pcbnew.PAD(footprint)
         pad.SetPosition(pcbnew.VECTOR2I(mm(4), mm(4)))
         pad.SetShape(pcbnew.PAD_SHAPE_OVAL)
-        pad.SetSize(pcbnew.VECTOR2I(mm(1), mm(.65)))
-        pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(.65)))
+        pad.SetSize(pcbnew.VECTOR2I(mm(1), mm(0.65)))
+        pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(0.65)))
         pad.SetAttribute(pcbnew.PAD_ATTRIB_NPTH)
         pad.SetLayerSet(pcbnew.LSET.AllCuMask())
         footprint.Add(pad)
         board.Add(footprint)
         obstacle = _pad_obstacle(board, pad, ("F.Cu", "B.Cu"))
         model = router(
-            lower=point(0, 0), upper=point(8, 8), step=mm(.05),
-            layers=("B.Cu",), obstacles=(obstacle,),
+            lower=point(0, 0),
+            upper=point(8, 8),
+            step=mm(0.05),
+            layers=("B.Cu",),
+            obstacles=(obstacle,),
         )
         # At y=3.1, a 0.2 mm trace is 0.475 mm from the slot:
         # above normal 0.2 mm copper clearance, below the 0.5 mm edge rule.
@@ -1100,52 +1508,68 @@ class RouteOptimizerTests(unittest.TestCase):
 
         board = pcbnew.BOARD()
         rules = board.GetDesignSettings()
-        rules.m_CopperEdgeClearance = mm(.2)
-        rules.m_HoleClearance = mm(.1)
-        rules.m_HoleToHoleMin = mm(.8)
+        rules.m_CopperEdgeClearance = mm(0.2)
+        rules.m_HoleClearance = mm(0.1)
+        rules.m_HoleToHoleMin = mm(0.8)
         footprint = pcbnew.FOOTPRINT(board)
         pad = pcbnew.PAD(footprint)
         pad.SetPosition(pcbnew.VECTOR2I(mm(4), mm(4)))
         pad.SetShape(pcbnew.PAD_SHAPE_OVAL)
-        pad.SetSize(pcbnew.VECTOR2I(mm(1), mm(.65)))
-        pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(.65)))
+        pad.SetSize(pcbnew.VECTOR2I(mm(1), mm(0.65)))
+        pad.SetDrillSize(pcbnew.VECTOR2I(mm(1), mm(0.65)))
         pad.SetAttribute(pcbnew.PAD_ATTRIB_NPTH)
         pad.SetLayerSet(pcbnew.LSET.AllCuMask())
         footprint.Add(pad)
         board.Add(footprint)
         obstacle = _pad_obstacle(board, pad, ("F.Cu", "B.Cu"))
-        model = router(lower=point(0, 0), upper=point(8, 8), step=mm(.1),
-                       layers=("B.Cu",), obstacles=(obstacle,))
+        model = router(
+            lower=point(0, 0),
+            upper=point(8, 8),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            obstacles=(obstacle,),
+        )
         close, clear = point(4, 2.8), point(4, 2.2)
         self.assertIn(model._index(close), model.via_blocked)
         self.assertNotIn(model._index(clear), model.via_blocked)
         self.assertTrue(model.edge_clear(point(3, 3.1), point(5, 3.1), "B.Cu"))
         settings = types.SimpleNamespace(
-            size=mm(.6), clearance=mm(.2), lower=point(0, 0), upper=point(8, 8)
+            size=mm(0.6), clearance=mm(0.2), lower=point(0, 0), upper=point(8, 8)
         )
         net = types.SimpleNamespace(name="SIGNAL")
-        self.assertFalse(NativeBackend._plane_via_clear(net, close, settings, (obstacle,)))
-        self.assertTrue(NativeBackend._plane_via_clear(net, clear, settings, (obstacle,)))
+        self.assertFalse(
+            NativeBackend._plane_via_clear(net, close, settings, (obstacle,))
+        )
+        self.assertTrue(
+            NativeBackend._plane_via_clear(net, clear, settings, (obstacle,))
+        )
 
     def test_existing_via_drill_rules_are_used_for_track_and_via_search(self):
         import pcbnew
         from pcb import route_native
 
         converter = getattr(route_native, "_via_obstacle", None)
-        self.assertTrue(callable(converter), "Existing via drills need native clearance")
+        self.assertTrue(
+            callable(converter), "Existing via drills need native clearance"
+        )
         board = pcbnew.BOARD()
         rules = board.GetDesignSettings()
-        rules.m_HoleClearance = mm(.5)
-        rules.m_HoleToHoleMin = mm(.8)
+        rules.m_HoleClearance = mm(0.5)
+        rules.m_HoleToHoleMin = mm(0.8)
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(pcbnew.VECTOR2I(mm(4), mm(4)))
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetWidth(mm(.6))
-        via.SetDrill(mm(.3))
+        via.SetWidth(mm(0.6))
+        via.SetDrill(mm(0.3))
         board.Add(via)
         obstacle = converter(board, via, ("F.Cu", "B.Cu"))
-        model = router(lower=point(0, 0), upper=point(8, 8), step=mm(.1),
-                       layers=("B.Cu",), obstacles=(obstacle,))
+        model = router(
+            lower=point(0, 0),
+            upper=point(8, 8),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            obstacles=(obstacle,),
+        )
         self.assertFalse(model.edge_clear(point(3, 3.3), point(5, 3.3), "B.Cu"))
         self.assertTrue(model.edge_clear(point(3, 3.2), point(5, 3.2), "B.Cu"))
         self.assertIn(model._index(point(4, 2.9)), model.via_blocked)
@@ -1154,9 +1578,9 @@ class RouteOptimizerTests(unittest.TestCase):
     def test_rectangular_clearance_uses_rounded_corners_for_edges_and_grid_masks(self):
         obstacle = Obstacle(point(0, 0), point(1, 1), ("F.Cu",), "OTHER", "pad")
         clear, close = point(1.2, 1.2), point(1.17, 1.17)
-        self.assertFalse(GridRouter._intersects_box(clear, clear, obstacle, mm(.25)))
-        self.assertTrue(GridRouter._intersects_box(close, close, obstacle, mm(.25)))
-        model = router(layers=("F.Cu",), step=mm(.05), obstacles=(obstacle,))
+        self.assertFalse(GridRouter._intersects_box(clear, clear, obstacle, mm(0.25)))
+        self.assertTrue(GridRouter._intersects_box(close, close, obstacle, mm(0.25)))
+        model = router(layers=("F.Cu",), step=mm(0.05), obstacles=(obstacle,))
         self.assertNotIn(model._index(point(1.25, 1.25)), model.blocked["F.Cu"])
         self.assertIn(model._index(point(1.2, 1.2)), model.blocked["F.Cu"])
         self.assertNotIn(model._index(point(1.4, 1.4)), model.via_blocked)
@@ -1166,17 +1590,25 @@ class RouteOptimizerTests(unittest.TestCase):
         import random
 
         rng = random.Random(37)
-        model = router(layers=("F.Cu",), step=mm(.25))
+        model = router(layers=("F.Cu",), step=mm(0.25))
         for _ in range(8):
             x, y = rng.randrange(-4, 20) * 125_000, rng.randrange(-4, 20) * 125_000
-            width, height = rng.randrange(1, 12) * 125_000, rng.randrange(1, 12) * 125_000
-            obstacle = Obstacle(Point(x, y), Point(x + width, y + height), ("F.Cu",), "N", "pad")
+            width, height = (
+                rng.randrange(1, 12) * 125_000,
+                rng.randrange(1, 12) * 125_000,
+            )
+            obstacle = Obstacle(
+                Point(x, y), Point(x + width, y + height), ("F.Cu",), "N", "pad"
+            )
             margin = rng.randrange(0, 6) * 125_000
             mask = model._covered(obstacle, margin)
             for ix in range(model.nx):
                 for iy in range(model.ny):
                     p = model._point(ix, iy)
-                    self.assertEqual((ix, iy) in mask, GridRouter._intersects_box(p, p, obstacle, margin))
+                    self.assertEqual(
+                        (ix, iy) in mask,
+                        GridRouter._intersects_box(p, p, obstacle, margin),
+                    )
 
     def test_rectangular_pad_corner_clearance_matches_native_drc(self):
         import pcbnew
@@ -1204,24 +1636,33 @@ class RouteOptimizerTests(unittest.TestCase):
             board.Add(footprint)
             pcbnew.SaveBoard(str(source), board)
             snapshot = read_native_obstacles(source, "SIGNAL", assume_refill=True)
-            obstacle = next(o for o in snapshot.obstacles if o.net == "OTHER" and o.kind == "pad")
+            obstacle = next(
+                o for o in snapshot.obstacles if o.net == "OTHER" and o.kind == "pad"
+            )
             via = pcbnew.PCB_VIA(board)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
             cli = kicad_cli()
-            for index, (position, expected) in enumerate(((point(5.12, 5.12), False),
-                                                           (point(5.10, 5.10), True))):
-                self.assertEqual(GridRouter._intersects_box(position, position, obstacle, mm(.5)), expected)
+            for index, (position, expected) in enumerate(
+                ((point(5.12, 5.12), False), (point(5.10, 5.10), True))
+            ):
+                self.assertEqual(
+                    GridRouter._intersects_box(position, position, obstacle, mm(0.5)),
+                    expected,
+                )
                 via.SetPosition(pcbnew.VECTOR2I(position.x, position.y))
                 pcbnew.SaveBoard(str(source), board)
                 report = _drc(cli, source, Path(folder) / f"rect-drc-{index}.json")
                 pair = {via.m_Uuid.AsString(), pad.m_Uuid.AsString()}
-                conflicts = [item for item in report["violations"]
-                             if item["type"] == "clearance"
-                             and pair <= {entry.get("uuid") for entry in item.get("items", [])}]
+                conflicts = [
+                    item
+                    for item in report["violations"]
+                    if item["type"] == "clearance"
+                    and pair <= {entry.get("uuid") for entry in item.get("items", [])}
+                ]
                 self.assertEqual(bool(conflicts), expected, report)
 
     def test_existing_same_net_via_is_reused_without_a_new_via(self):
@@ -1239,19 +1680,23 @@ class RouteOptimizerTests(unittest.TestCase):
             point(4.7, 4.7), point(5.3, 5.3), ("F.Cu", "B.Cu"), "SIGNAL", "via"
         )
         model = router(
-            obstacles=[via], allow_new_vias=False,
-            initial_directions=frozenset({0}), final_directions=frozenset({2}),
+            obstacles=[via],
+            allow_new_vias=False,
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({2}),
             weights=Weights(length=1, bend=1, via=10, diagonal=1),
             gentle_turns=True,
         )
-        for start, end in ((point(3, 5), point(5, 7)),
-                           (point(3.1, 5), point(5, 7.1))):
+        for start, end in ((point(3, 5), point(5, 7)), (point(3.1, 5), point(5, 7.1))):
             with self.subTest(start=start, end=end):
                 result = model.route(start, "F.Cu", end, "B.Cu")
-                self.assertEqual(result.segments, (
-                    Segment(start, point(5, 5), "F.Cu"),
-                    Segment(point(5, 5), end, "B.Cu"),
-                ))
+                self.assertEqual(
+                    result.segments,
+                    (
+                        Segment(start, point(5, 5), "F.Cu"),
+                        Segment(point(5, 5), end, "B.Cu"),
+                    ),
+                )
                 self.assertAlmostEqual(result.length_mm, 4.0)
                 self.assertEqual(result.bends, 0)
                 self.assertEqual(len(result.reused_vias), 1)
@@ -1262,31 +1707,40 @@ class RouteOptimizerTests(unittest.TestCase):
             point(4.7, 4.7), point(5.3, 5.3), ("F.Cu", "B.Cu"), "SIGNAL", "via"
         )
         model = router(
-            obstacles=[via], allow_new_vias=False,
+            obstacles=[via],
+            allow_new_vias=False,
             weights=Weights(length=1, bend=1, via=10, diagonal=1),
             gentle_turns=True,
         )
         result = model.route(point(3, 5), "F.Cu", point(5, 7), "F.Cu")
         self.assertFalse(result.reused_vias)
-        self.assertTrue(all(
-            (model._direction(b.start, b.end) - model._direction(a.start, a.end)) % 8 in {0, 1, 7}
-            for a, b in zip(result.segments, result.segments[1:])
-        ))
+        self.assertTrue(
+            all(
+                (model._direction(b.start, b.end) - model._direction(a.start, a.end))
+                % 8
+                in {0, 1, 7}
+                for a, b in zip(result.segments, result.segments[1:])
+            )
+        )
 
     def test_a_via_at_an_endpoint_does_not_impose_a_cross_layer_heading(self):
         via = Obstacle(
             point(4.7, 4.7), point(5.3, 5.3), ("F.Cu", "B.Cu"), "SIGNAL", "via"
         )
         model = router(
-            obstacles=[via], allow_new_vias=False,
-            initial_directions=frozenset({0}), final_directions=frozenset({2}),
+            obstacles=[via],
+            allow_new_vias=False,
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({2}),
             weights=Weights(length=1, bend=1, via=10, diagonal=1),
             gentle_turns=True,
         )
         for start in (point(3, 5), point(3.1, 5)):
             with self.subTest(start=start):
                 result = model.route(start, "F.Cu", point(5, 5), "B.Cu")
-                self.assertEqual(result.segments, (Segment(start, point(5, 5), "F.Cu"),))
+                self.assertEqual(
+                    result.segments, (Segment(start, point(5, 5), "F.Cu"),)
+                )
                 self.assertEqual(result.bends, 0)
                 self.assertEqual(len(result.reused_vias), 1)
         result = model.route(point(5, 5), "F.Cu", point(5, 7), "B.Cu")
@@ -1307,8 +1761,8 @@ class RouteOptimizerTests(unittest.TestCase):
             via = pcbnew.PCB_VIA(board)
             via.SetPosition(pcbnew.VECTOR2I(mm(5), mm(2)))
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             board.Add(via)
             pcbnew.SaveBoard(str(source), board)
@@ -1318,14 +1772,16 @@ class RouteOptimizerTests(unittest.TestCase):
                 point(4.7, 1.7), point(5.3, 2.3), ("F.Cu", "B.Cu"), "SIGNAL", "via"
             )
             model = router(
-                obstacles=[via_obstacle], allow_new_vias=False,
-                initial_directions=frozenset({0}), final_directions=frozenset({2}),
+                obstacles=[via_obstacle],
+                allow_new_vias=False,
+                initial_directions=frozenset({0}),
+                final_directions=frozenset({2}),
                 weights=Weights(length=1, bend=1, via=10, diagonal=1),
                 gentle_turns=True,
             )
             candidate = model.route(point(2, 2), "F.Cu", point(5, 5), "B.Cu")
             self.assertEqual(candidate.bends, 0)
-            changes = campaign_changes(candidate, "SIGNAL", mm(.2), mm(.6), mm(.3))
+            changes = campaign_changes(candidate, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
             contract = RouteContract("SIGNAL", point(2, 2), "F.Cu", point(5, 5), "B.Cu")
             checked = validate_routes(
                 source, hashlib.sha256(original).hexdigest(), changes, [contract]
@@ -1353,9 +1809,11 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_off_grid_search_does_not_hide_unexpected_value_errors(self):
         model = router()
-        with mock.patch.object(model, "route", side_effect=ValueError("unexpected rule failure")):
+        with mock.patch.object(
+            model, "route", side_effect=ValueError("unexpected rule failure")
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected rule failure"):
-                model._route_off_grid(point(.1, .1), "F.Cu", point(4.1, 3.1), "B.Cu")
+                model._route_off_grid(point(0.1, 0.1), "F.Cu", point(4.1, 3.1), "B.Cu")
 
     def test_bad_grid_and_via_dimensions_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "outside"):
@@ -1382,116 +1840,230 @@ class RouteOptimizerTests(unittest.TestCase):
         )
 
     def test_first_feasible_finds_a_direct_chamfer_without_grid_expansions(self):
-        for start, end in ((point(0, 0), point(4, 4)), (point(.05, .05), point(4.05, 4.05))):
+        for start, end in (
+            (point(0, 0), point(4, 4)),
+            (point(0.05, 0.05), point(4.05, 4.05)),
+        ):
             with self.subTest(start=start):
-                model = router(layers=("B.Cu",), step=mm(.5), max_expansions=1,
-                               first_feasible=True, gentle_turns=True, forbid_staircase=True,
-                               min_segment_length=mm(.2), enforce_endpoint_spacing=True,
-                               initial_directions=frozenset({0}), final_directions=frozenset({2}))
+                model = router(
+                    layers=("B.Cu",),
+                    step=mm(0.5),
+                    max_expansions=1,
+                    first_feasible=True,
+                    gentle_turns=True,
+                    forbid_staircase=True,
+                    min_segment_length=mm(0.2),
+                    enforce_endpoint_spacing=True,
+                    initial_directions=frozenset({0}),
+                    final_directions=frozenset({2}),
+                )
                 result = model.route(start, "B.Cu", end, "B.Cu")
                 self.assertEqual(result.expanded, 0)
                 self.assertTrue(result.search_truncated)
-                self.assertEqual([model._direction(s.start, s.end) for s in result.segments], [0, 1, 2])
-                self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+                self.assertEqual(
+                    [model._direction(s.start, s.end) for s in result.segments],
+                    [0, 1, 2],
+                )
+                self.assertTrue(
+                    all(
+                        model.edge_clear(s.start, s.end, s.layer)
+                        for s in result.segments
+                    )
+                )
                 self.assertEqual(model.staircase_count(list(result.segments)), 0)
 
     def test_direct_chamfer_works_in_every_quadrant(self):
-        for sx, sy, initial, final in ((1, 1, 0, 2), (-1, 1, 4, 2),
-                                       (-1, -1, 4, 6), (1, -1, 0, 6)):
+        for sx, sy, initial, final in (
+            (1, 1, 0, 2),
+            (-1, 1, 4, 2),
+            (-1, -1, 4, 6),
+            (1, -1, 0, 6),
+        ):
             with self.subTest(sx=sx, sy=sy):
-                model = router(lower=point(-8, -8), upper=point(8, 8), layers=("F.Cu",),
-                               step=mm(.5), max_expansions=1, first_feasible=True,
-                               initial_directions=frozenset({initial}), final_directions=frozenset({final}),
-                               gentle_turns=True, forbid_staircase=True)
+                model = router(
+                    lower=point(-8, -8),
+                    upper=point(8, 8),
+                    layers=("F.Cu",),
+                    step=mm(0.5),
+                    max_expansions=1,
+                    first_feasible=True,
+                    initial_directions=frozenset({initial}),
+                    final_directions=frozenset({final}),
+                    gentle_turns=True,
+                    forbid_staircase=True,
+                )
                 result = model.route(point(0, 0), "F.Cu", point(4 * sx, 4 * sy), "F.Cu")
-                directions = [model._direction(seg.start, seg.end) for seg in result.segments]
+                directions = [
+                    model._direction(seg.start, seg.end) for seg in result.segments
+                ]
                 self.assertEqual((directions[0], directions[-1]), (initial, final))
-                self.assertTrue(all((b - a) % 8 in {1, 7} for a, b in zip(directions, directions[1:])))
+                self.assertTrue(
+                    all(
+                        (b - a) % 8 in {1, 7}
+                        for a, b in zip(directions, directions[1:])
+                    )
+                )
                 self.assertEqual(result.expanded, 0)
 
     def test_first_feasible_direct_chamfer_still_checks_obstacles_and_context(self):
         obstacle = Obstacle(point(1, -1.5), point(3, 5), ("B.Cu",), "OTHER")
-        options = dict(layers=("B.Cu",), step=mm(.5), max_expansions=1,
-                       first_feasible=True, initial_directions=frozenset({0}),
-                       final_directions=frozenset({2}))
+        options = dict(
+            layers=("B.Cu",),
+            step=mm(0.5),
+            max_expansions=1,
+            first_feasible=True,
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({2}),
+        )
         with self.assertRaises((NoGridRoute, SearchLimitReached)):
-            router(obstacles=(obstacle,), **options).route(point(0, 0), "B.Cu", point(4, 4), "B.Cu")
+            router(obstacles=(obstacle,), **options).route(
+                point(0, 0), "B.Cu", point(4, 4), "B.Cu"
+            )
         with self.assertRaises((NoGridRoute, SearchLimitReached)):
-            router(**options).route(point(0, 0), "B.Cu", point(4, 4), "B.Cu",
-                                    candidate_check=lambda _route: False)
+            router(**options).route(
+                point(0, 0),
+                "B.Cu",
+                point(4, 4),
+                "B.Cu",
+                candidate_check=lambda _route: False,
+            )
 
     def test_direct_chamfer_respects_minimum_segment_length(self):
-        model = router(layers=("B.Cu",), step=mm(.5), max_expansions=1, first_feasible=True,
-                       min_segment_length=mm(2), enforce_endpoint_spacing=True,
-                       initial_directions=frozenset({0}), final_directions=frozenset({2}))
+        model = router(
+            layers=("B.Cu",),
+            step=mm(0.5),
+            max_expansions=1,
+            first_feasible=True,
+            min_segment_length=mm(2),
+            enforce_endpoint_spacing=True,
+            initial_directions=frozenset({0}),
+            final_directions=frozenset({2}),
+        )
         result = model.route(point(0, 0), "B.Cu", point(4, 4), "B.Cu")
-        self.assertTrue(all(math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) >= mm(2)
-                            for s in result.segments))
+        self.assertTrue(
+            all(
+                math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) >= mm(2)
+                for s in result.segments
+            )
+        )
 
-    def test_first_feasible_returns_checked_direct_access_without_more_grid_search(self):
+    def test_first_feasible_returns_checked_direct_access_without_more_grid_search(
+        self,
+    ):
         start, end = point(0.1, 0.2), point(4.15, 3.25)
         model = router(first_feasible=True, gentle_turns=True, forbid_staircase=True)
-        with mock.patch.object(model, "_endpoint_option_groups", side_effect=AssertionError("extra search")):
+        with mock.patch.object(
+            model, "_endpoint_option_groups", side_effect=AssertionError("extra search")
+        ):
             result = model.route(start, "F.Cu", end, "F.Cu")
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
         self.assertTrue(result.search_truncated)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertEqual(model.staircase_count(list(result.segments)), 0)
 
     def test_first_feasible_cross_layer_access_can_use_one_checked_via(self):
         start, end = point(0.1, 0.2), point(4.15, 3.25)
-        model = router(step=mm(.5), first_feasible=True, max_expansions=1,
-                       gentle_turns=True, forbid_staircase=True)
-        with mock.patch.object(model, "_route_off_grid", side_effect=AssertionError("extra grid search")):
+        model = router(
+            step=mm(0.5),
+            first_feasible=True,
+            max_expansions=1,
+            gentle_turns=True,
+            forbid_staircase=True,
+        )
+        with mock.patch.object(
+            model, "_route_off_grid", side_effect=AssertionError("extra grid search")
+        ):
             result = model.route(start, "F.Cu", end, "B.Cu")
         self.assertEqual(len(result.vias), 1)
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
         self.assertTrue(result.search_truncated)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
 
     def test_direct_cross_layer_access_respects_via_permissions_and_all_layers(self):
         start, end = point(0.1, 0.2), point(4.15, 3.25)
-        blocked_layer = Obstacle(point(-2, -2), point(12, 12), ("In1.Cu",), "", "keepout")
+        blocked_layer = Obstacle(
+            point(-2, -2), point(12, 12), ("In1.Cu",), "", "keepout"
+        )
         for options in ({"allow_new_vias": False}, {"obstacles": (blocked_layer,)}):
-            model = router(step=mm(.5), first_feasible=True, max_expansions=1, **options)
-            with self.subTest(options=options), self.assertRaises((NoGridRoute, SearchLimitReached)):
+            model = router(
+                step=mm(0.5), first_feasible=True, max_expansions=1, **options
+            )
+            with (
+                self.subTest(options=options),
+                self.assertRaises((NoGridRoute, SearchLimitReached)),
+            ):
                 model.route(start, "F.Cu", end, "B.Cu")
 
     def test_direct_cross_layer_access_can_reuse_an_existing_via(self):
         start, end, via = point(0.1, 0.2), point(4.15, 3.25), point(2, 2)
-        existing = Obstacle(point(1.7, 1.7), point(2.3, 2.3), ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"),
-                            "SIGNAL", "via")
-        model = router(step=mm(.5), first_feasible=True, max_expansions=1,
-                       allow_new_vias=False, allowed_reused_vias={via}, obstacles=(existing,))
+        existing = Obstacle(
+            point(1.7, 1.7),
+            point(2.3, 2.3),
+            ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"),
+            "SIGNAL",
+            "via",
+        )
+        model = router(
+            step=mm(0.5),
+            first_feasible=True,
+            max_expansions=1,
+            allow_new_vias=False,
+            allowed_reused_vias={via},
+            obstacles=(existing,),
+        )
         result = model.route(start, "F.Cu", end, "B.Cu")
         self.assertEqual(len(result.vias), 0)
         self.assertEqual([item.at for item in result.reused_vias], [via])
 
     def test_cross_layer_warm_start_honors_context_and_restores_headings(self):
         initial, final = frozenset({0}), frozenset({2})
-        model = router(step=mm(.5), first_feasible=True, max_expansions=1,
-                       initial_directions=initial, final_directions=final)
+        model = router(
+            step=mm(0.5),
+            first_feasible=True,
+            max_expansions=1,
+            initial_directions=initial,
+            final_directions=final,
+        )
         checked = []
 
         def reject(candidate):
-            self.assertEqual((model.initial_directions, model.final_directions), (initial, final))
+            self.assertEqual(
+                (model.initial_directions, model.final_directions), (initial, final)
+            )
             checked.append(candidate)
             return False
 
-        with mock.patch.object(model, "_route_off_grid", side_effect=SearchLimitReached("limit")):
+        with mock.patch.object(
+            model, "_route_off_grid", side_effect=SearchLimitReached("limit")
+        ):
             with self.assertRaises(SearchLimitReached):
-                model.route(point(0.1, 0.2), "F.Cu", point(4.15, 3.25), "B.Cu",
-                            candidate_check=reject)
+                model.route(
+                    point(0.1, 0.2),
+                    "F.Cu",
+                    point(4.15, 3.25),
+                    "B.Cu",
+                    candidate_check=reject,
+                )
         self.assertTrue(checked)
-        self.assertEqual((model.initial_directions, model.final_directions), (initial, final))
+        self.assertEqual(
+            (model.initial_directions, model.final_directions), (initial, final)
+        )
 
     def test_cross_layer_warm_start_is_not_repeated_inside_grid_search(self):
-        model = router(step=mm(.5), first_feasible=True, max_expansions=1)
-        with mock.patch.object(model, "_direct_one_via_route", side_effect=AssertionError("repeat")):
+        model = router(step=mm(0.5), first_feasible=True, max_expansions=1)
+        with mock.patch.object(
+            model, "_direct_one_via_route", side_effect=AssertionError("repeat")
+        ):
             with self.assertRaises((NoGridRoute, SearchLimitReached)):
-                model.route(point(0, 0), "F.Cu", point(4, 4), "B.Cu", _expansion_budget=1)
+                model.route(
+                    point(0, 0), "F.Cu", point(4, 4), "B.Cu", _expansion_budget=1
+                )
 
     def test_first_feasible_still_routes_around_obstacles(self):
         obstacle = Obstacle(point(1.5, 0.5), point(2.5, 2.5), ("F.Cu",), net="OTHER")
@@ -1500,7 +2072,9 @@ class RouteOptimizerTests(unittest.TestCase):
         result = model.route(start, "F.Cu", end, "F.Cu")
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
 
     def test_first_feasible_checks_the_existing_join_before_selecting_an_access(self):
         start, end = point(0.1, 0.2), point(4.15, 3.25)
@@ -1508,7 +2082,9 @@ class RouteOptimizerTests(unittest.TestCase):
         checked = []
 
         def compatible(candidate):
-            heading = model._direction(candidate.segments[0].start, candidate.segments[0].end)
+            heading = model._direction(
+                candidate.segments[0].start, candidate.segments[0].end
+            )
             checked.append(heading)
             return heading == 1
 
@@ -1517,7 +2093,9 @@ class RouteOptimizerTests(unittest.TestCase):
         self.assertEqual(checked[0], 0)
         self.assertNotIn(1, checked[:-1])
         self.assertEqual(checked[-1], 1)
-        self.assertEqual(model._direction(result.segments[0].start, result.segments[0].end), 1)
+        self.assertEqual(
+            model._direction(result.segments[0].start, result.segments[0].end), 1
+        )
 
     def test_on_grid_search_tries_another_route_when_the_join_is_rejected(self):
         model = router(layers=("F.Cu",), gentle_turns=True, forbid_staircase=True)
@@ -1527,28 +2105,50 @@ class RouteOptimizerTests(unittest.TestCase):
             seen.append(candidate)
             return len(candidate.segments) > 1
 
-        result = model.route(point(0, 0), "F.Cu", point(4, 0), "F.Cu", candidate_check=compatible)
+        result = model.route(
+            point(0, 0), "F.Cu", point(4, 0), "F.Cu", candidate_check=compatible
+        )
         self.assertGreaterEqual(len(seen), 2)
         self.assertGreater(len(result.segments), 1)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
 
     def test_rejected_on_grid_context_is_not_reported_as_physical_impossibility(self):
         model = router(layers=("F.Cu",), max_expansions=20)
         with self.assertRaises(SearchLimitReached):
-            model.route(point(0, 0), "F.Cu", point(4, 0), "F.Cu", candidate_check=lambda _: False)
+            model.route(
+                point(0, 0),
+                "F.Cu",
+                point(4, 0),
+                "F.Cu",
+                candidate_check=lambda _: False,
+            )
 
     def test_exhausted_context_goals_remain_an_unknown_result(self):
-        model = router(lower=point(-1, -1), upper=point(3, 3), layers=("F.Cu",),
-                       max_expansions=50_000)
+        model = router(
+            lower=point(-1, -1),
+            upper=point(3, 3),
+            layers=("F.Cu",),
+            max_expansions=50_000,
+        )
         with self.assertRaisesRegex(SearchLimitReached, "unsearched alternatives"):
-            model.route(point(0, 0), "F.Cu", point(2, 0), "F.Cu", candidate_check=lambda _: False)
+            model.route(
+                point(0, 0),
+                "F.Cu",
+                point(2, 0),
+                "F.Cu",
+                candidate_check=lambda _: False,
+            )
 
     def test_unexpected_context_errors_propagate(self):
         def fail(_candidate):
             raise ValueError("context bug")
 
         with self.assertRaisesRegex(ValueError, "context bug"):
-            router().route(point(0, 0), "F.Cu", point(2, 0), "F.Cu", candidate_check=fail)
+            router().route(
+                point(0, 0), "F.Cu", point(2, 0), "F.Cu", candidate_check=fail
+            )
 
     def test_on_grid_clear_straight_path_needs_no_search(self):
         model = router()
@@ -1561,8 +2161,12 @@ class RouteOptimizerTests(unittest.TestCase):
         obstacle = Obstacle(point(3, 0), point(5, 2), ("F.Cu",), net="OTHER")
         model = router(obstacles=[obstacle], initial_directions=frozenset({2}))
         result = model.route(point(0, 1), "F.Cu", point(8, 1), "F.Cu")
-        self.assertEqual(model._direction(result.segments[0].start, result.segments[0].end), 2)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertEqual(
+            model._direction(result.segments[0].start, result.segments[0].end), 2
+        )
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertGreater(result.expanded, 0)
 
     def test_first_feasible_is_a_validated_route_option(self):
@@ -1576,47 +2180,87 @@ class RouteOptimizerTests(unittest.TestCase):
             plan(data, Path("."))
 
     def test_off_grid_search_expands_after_the_nearest_access_is_trapped(self):
-        blocked = [(-20, -20), (-20, 0), (-20, 20), (0, -20), (0, 20),
-                   (20, -20), (20, 0), (20, 20), (60, 4)]
+        blocked = [
+            (-20, -20),
+            (-20, 0),
+            (-20, 20),
+            (0, -20),
+            (0, 20),
+            (20, -20),
+            (20, 0),
+            (20, 20),
+            (60, 4),
+        ]
         obstacles = [
-            Obstacle(point(x - .2, y - .2), point(x + .2, y + .2),
-                     ("F.Cu",), net="OTHER", kind="pad")
+            Obstacle(
+                point(x - 0.2, y - 0.2),
+                point(x + 0.2, y + 0.2),
+                ("F.Cu",),
+                net="OTHER",
+                kind="pad",
+            )
             for x, y in blocked
         ]
         model = router(
-            lower=point(-40, -40), upper=point(140, 80), step=mm(20),
-            layers=("F.Cu",), obstacles=obstacles, width=mm(.2), clearance=mm(.2),
-            gentle_turns=True, forbid_staircase=True,
+            lower=point(-40, -40),
+            upper=point(140, 80),
+            step=mm(20),
+            layers=("F.Cu",),
+            obstacles=obstacles,
+            width=mm(0.2),
+            clearance=mm(0.2),
+            gentle_turns=True,
+            forbid_staircase=True,
         )
-        for start, end in ((point(4, 4), point(100, 0)),
-                           (point(100, 0), point(4, 4))):
+        for start, end in ((point(4, 4), point(100, 0)), (point(100, 0), point(4, 4))):
             with self.subTest(start=start, end=end):
                 result = model.route(start, "F.Cu", end, "F.Cu")
                 self.assertEqual(result.segments[0].start, start)
                 self.assertEqual(result.segments[-1].end, end)
-                self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+                self.assertTrue(
+                    all(
+                        model.edge_clear(s.start, s.end, s.layer)
+                        for s in result.segments
+                    )
+                )
                 self.assertEqual(model.staircase_count(list(result.segments)), 0)
                 headings = [model._direction(s.start, s.end) for s in result.segments]
-                self.assertTrue(all((b - a) % 8 in {0, 1, 7}
-                                    for a, b in zip(headings, headings[1:])))
+                self.assertTrue(
+                    all(
+                        (b - a) % 8 in {0, 1, 7} for a, b in zip(headings, headings[1:])
+                    )
+                )
 
     def test_off_grid_context_rejection_tries_other_paths_at_same_access(self):
         model = router(
-            lower=point(-2, -2), upper=point(8, 5), step=mm(1), layers=("F.Cu",),
-            width=mm(.1), clearance=mm(.05), first_feasible=True,
-            gentle_turns=True, forbid_staircase=True, max_expansions=100_000,
+            lower=point(-2, -2),
+            upper=point(8, 5),
+            step=mm(1),
+            layers=("F.Cu",),
+            width=mm(0.1),
+            clearance=mm(0.05),
+            first_feasible=True,
+            gentle_turns=True,
+            forbid_staircase=True,
+            max_expansions=100_000,
         )
-        start, end = point(.2, .2), point(4.2, .8)
+        start, end = point(0.2, 0.2), point(4.2, 0.8)
         groups = {start: [[(start, point(1, 1))]], end: [[(point(4, 1), end)]]}
 
         def usable(route):
             return not any(s.start.y == s.end.y == mm(1) for s in route.segments)
 
-        with mock.patch.object(model, "_stub_paths", return_value=[]), mock.patch.object(
-            model, "_endpoint_option_groups",
-            side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+        with (
+            mock.patch.object(model, "_stub_paths", return_value=[]),
+            mock.patch.object(
+                model,
+                "_endpoint_option_groups",
+                side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+            ),
         ):
-            result = model._route_off_grid(start, "F.Cu", end, "F.Cu", candidate_check=usable)
+            result = model._route_off_grid(
+                start, "F.Cu", end, "F.Cu", candidate_check=usable
+            )
         self.assertTrue(usable(result))
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
@@ -1624,30 +2268,55 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_off_grid_exhausted_context_is_unknown_not_impossible(self):
         model = router(
-            lower=point(-2, -2), upper=point(8, 5), step=mm(1), layers=("F.Cu",),
-            width=mm(.1), clearance=mm(.05), gentle_turns=True,
-            forbid_staircase=True, max_expansions=10_000,
+            lower=point(-2, -2),
+            upper=point(8, 5),
+            step=mm(1),
+            layers=("F.Cu",),
+            width=mm(0.1),
+            clearance=mm(0.05),
+            gentle_turns=True,
+            forbid_staircase=True,
+            max_expansions=10_000,
         )
-        start, end = point(.2, .2), point(4.2, .8)
+        start, end = point(0.2, 0.2), point(4.2, 0.8)
         groups = {start: [[(start, point(1, 1))]], end: [[(point(4, 1), end)]]}
-        with mock.patch.object(model, "_stub_paths", return_value=[]), mock.patch.object(
-            model, "_endpoint_option_groups",
-            side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+        with (
+            mock.patch.object(model, "_stub_paths", return_value=[]),
+            mock.patch.object(
+                model,
+                "_endpoint_option_groups",
+                side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+            ),
         ):
             with self.assertRaises(SearchLimitReached):
-                model._route_off_grid(start, "F.Cu", end, "F.Cu", candidate_check=lambda _: False)
+                model._route_off_grid(
+                    start, "F.Cu", end, "F.Cu", candidate_check=lambda _: False
+                )
 
-    def test_off_grid_invalid_escape_join_tries_another_grid_path_without_callback(self):
+    def test_off_grid_invalid_escape_join_tries_another_grid_path_without_callback(
+        self,
+    ):
         model = router(
-            lower=point(-5, -5), upper=point(10, 10), step=mm(1), layers=("F.Cu",),
-            width=mm(.1), clearance=mm(.05), first_feasible=True,
-            gentle_turns=True, forbid_staircase=True, max_expansions=100_000,
+            lower=point(-5, -5),
+            upper=point(10, 10),
+            step=mm(1),
+            layers=("F.Cu",),
+            width=mm(0.1),
+            clearance=mm(0.05),
+            first_feasible=True,
+            gentle_turns=True,
+            forbid_staircase=True,
+            max_expansions=100_000,
         )
-        start, end = point(.2, .2), point(4.8, 1.8)
+        start, end = point(0.2, 0.2), point(4.8, 1.8)
         groups = {start: [[(start, point(1, 1))]], end: [[(point(4, 1), end)]]}
-        with mock.patch.object(model, "_stub_paths", return_value=[]), mock.patch.object(
-            model, "_endpoint_option_groups",
-            side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+        with (
+            mock.patch.object(model, "_stub_paths", return_value=[]),
+            mock.patch.object(
+                model,
+                "_endpoint_option_groups",
+                side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
+            ),
         ):
             result = model._route_off_grid(start, "F.Cu", end, "F.Cu")
         self.assertEqual(result.segments[0].start, start)
@@ -1658,12 +2327,15 @@ class RouteOptimizerTests(unittest.TestCase):
         model = router(max_expansions=3)
         start, end = point(0, 0), point(9, 0)
         groups = {
-            start: [[(start, point(1, 0))],
-                    [(start, point(x, 0)) for x in range(2, 7)]],
+            start: [
+                [(start, point(1, 0))],
+                [(start, point(x, 0)) for x in range(2, 7)],
+            ],
             end: [[(end,)]],
         }
         with mock.patch.object(
-            model, "_endpoint_option_groups",
+            model,
+            "_endpoint_option_groups",
             side_effect=lambda endpoint, layer, reverse: iter(groups[endpoint]),
         ):
             with mock.patch.object(model, "route", side_effect=NoGridRoute("blocked")):
@@ -1688,12 +2360,22 @@ class RouteOptimizerTests(unittest.TestCase):
 
     def test_off_grid_escape_can_reach_beyond_the_four_nearest_grid_vertices(self):
         obstacles = [
-            Obstacle(point(x - 0.04, y - 0.04), point(x + 0.04, y + 0.04),
-                     ("B.Cu",), net="OTHER")
+            Obstacle(
+                point(x - 0.04, y - 0.04),
+                point(x + 0.04, y + 0.04),
+                ("B.Cu",),
+                net="OTHER",
+            )
             for x, y in ((5, 5), (5, 6), (6, 5), (6, 6), (7.5, 5.5))
         ]
-        model = router(lower=point(0, 0), upper=point(12, 12), layers=("B.Cu",),
-                       width=mm(0.2), clearance=mm(0.05), obstacles=obstacles)
+        model = router(
+            lower=point(0, 0),
+            upper=point(12, 12),
+            layers=("B.Cu",),
+            width=mm(0.2),
+            clearance=mm(0.05),
+            obstacles=obstacles,
+        )
         start, end = point(5.5, 5.5), point(9, 5.5)
         try:
             result = model.route(start, "B.Cu", end, "B.Cu")
@@ -1702,19 +2384,31 @@ class RouteOptimizerTests(unittest.TestCase):
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
         self.assertFalse(result.vias)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         directions = [model._direction(s.start, s.end) for s in result.segments]
-        self.assertTrue(all((b - a) % 8 in {0, 1, 3, 5, 7}
-                            for a, b in zip(directions, directions[1:])))
+        self.assertTrue(
+            all(
+                (b - a) % 8 in {0, 1, 3, 5, 7}
+                for a, b in zip(directions, directions[1:])
+            )
+        )
 
     def test_endpoint_access_can_escape_beyond_the_old_distance_limit(self):
         obstacles = (
-            Obstacle(point(.2, .2), point(2, 1.03), ("B.Cu",), net="OTHER"),
-            Obstacle(point(.2, 1.07), point(2, 1.9), ("B.Cu",), net="OTHER"),
+            Obstacle(point(0.2, 0.2), point(2, 1.03), ("B.Cu",), net="OTHER"),
+            Obstacle(point(0.2, 1.07), point(2, 1.9), ("B.Cu",), net="OTHER"),
         )
         model = router(
-            lower=point(0, 0), upper=point(4, 4), step=mm(.1), layers=("B.Cu",),
-            width=mm(.01), clearance=mm(.005), via_size=mm(.1), via_drill=mm(.05),
+            lower=point(0, 0),
+            upper=point(4, 4),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            width=mm(0.01),
+            clearance=mm(0.005),
+            via_size=mm(0.1),
+            via_drill=mm(0.05),
             obstacles=obstacles,
         )
         start = point(1.05, 1.05)
@@ -1722,35 +2416,82 @@ class RouteOptimizerTests(unittest.TestCase):
         self.assertTrue(model.edge_clear(point(2.05, 1.05), point(2.1, 1), "B.Cu"))
         options = next(model._endpoint_option_groups(start, "B.Cu", reverse=False), [])
         self.assertTrue(options, "A clear corridor extends beyond the old 0.6 mm limit")
-        self.assertTrue(all(max(abs(path[-1].x - start.x), abs(path[-1].y - start.y))
-                            > mm(.6) for path in options))
+        self.assertTrue(
+            all(
+                max(abs(path[-1].x - start.x), abs(path[-1].y - start.y)) > mm(0.6)
+                for path in options
+            )
+        )
         for path in options:
-            self.assertTrue(all(model.edge_clear(a, b, "B.Cu") for a, b in zip(path, path[1:])))
+            self.assertTrue(
+                all(model.edge_clear(a, b, "B.Cu") for a, b in zip(path, path[1:]))
+            )
 
     def test_endpoint_inside_minimum_foreign_clearance_skips_the_grid_scan(self):
-        obstacle = Obstacle(point(.95, .95), point(1.15, 1.15), ("B.Cu",), net="OTHER")
-        model = router(lower=point(0, 0), upper=point(4, 4), step=mm(.1),
-                       layers=("B.Cu",), obstacles=(obstacle,))
-        with mock.patch.object(model, "_stub_paths", side_effect=AssertionError("unnecessary scan")):
-            self.assertEqual(next(model._endpoint_option_groups(point(1.05, 1.05), "B.Cu", reverse=False), []), [])
+        obstacle = Obstacle(
+            point(0.95, 0.95), point(1.15, 1.15), ("B.Cu",), net="OTHER"
+        )
+        model = router(
+            lower=point(0, 0),
+            upper=point(4, 4),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            obstacles=(obstacle,),
+        )
+        with mock.patch.object(
+            model, "_stub_paths", side_effect=AssertionError("unnecessary scan")
+        ):
+            self.assertEqual(
+                next(
+                    model._endpoint_option_groups(
+                        point(1.05, 1.05), "B.Cu", reverse=False
+                    ),
+                    [],
+                ),
+                [],
+            )
 
     def test_endpoint_precheck_uses_rule_minima_not_nominal_widths(self):
         from types import SimpleNamespace
 
         obstacle = Obstacle(point(1, 1), point(1.1, 1.1), ("B.Cu",), net="OTHER")
         profile = SimpleNamespace(
-            minimum_width=mm(.1), minimum_clearance=mm(.05), maximum_clearance=mm(.2),
-            pieces=lambda segment: ((segment, mm(.2)),), clearance_at=lambda segment, other: mm(.2),
+            minimum_width=mm(0.1),
+            minimum_clearance=mm(0.05),
+            maximum_clearance=mm(0.2),
+            pieces=lambda segment: ((segment, mm(0.2)),),
+            clearance_at=lambda segment, other: mm(0.2),
         )
-        model = router(lower=point(0, 0), upper=point(4, 4), step=mm(.1),
-                       layers=("B.Cu",), obstacles=(obstacle,), profile=profile)
-        with mock.patch.object(model, "_stub_paths", side_effect=RuntimeError("examined")):
+        model = router(
+            lower=point(0, 0),
+            upper=point(4, 4),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            obstacles=(obstacle,),
+            profile=profile,
+        )
+        with mock.patch.object(
+            model, "_stub_paths", side_effect=RuntimeError("examined")
+        ):
             with self.assertRaisesRegex(RuntimeError, "examined"):
-                next(model._endpoint_option_groups(point(1.3, 1.05), "B.Cu", reverse=False), [])
+                next(
+                    model._endpoint_option_groups(
+                        point(1.3, 1.05), "B.Cu", reverse=False
+                    ),
+                    [],
+                )
 
     def test_minimum_stub_leg_is_a_bound_for_all_sampled_grid_escapes(self):
-        model = router(lower=Point(0, 0), upper=Point(100, 100), step=10,
-                       layers=("B.Cu",), width=1, clearance=0, via_size=10, via_drill=5)
+        model = router(
+            lower=Point(0, 0),
+            upper=Point(100, 100),
+            step=10,
+            layers=("B.Cu",),
+            width=1,
+            clearance=0,
+            via_size=10,
+            via_drill=5,
+        )
         for x in range(10):
             for y in range(10):
                 endpoint = Point(40 + x, 40 + y)
@@ -1759,12 +2500,18 @@ class RouteOptimizerTests(unittest.TestCase):
                 minimum = model._minimum_stub_leg(endpoint)
                 for gx in range(1, 9):
                     for gy in range(1, 9):
-                        for path in model._stub_paths(endpoint, Point(gx * 10, gy * 10)):
+                        for path in model._stub_paths(
+                            endpoint, Point(gx * 10, gy * 10)
+                        ):
                             if len(path) < 2:
                                 continue
                             first, second = path[:2]
-                            length = max(abs(second.x - first.x), abs(second.y - first.y))
-                            self.assertGreaterEqual(length, minimum, (endpoint, path, minimum))
+                            length = max(
+                                abs(second.x - first.x), abs(second.y - first.y)
+                            )
+                            self.assertGreaterEqual(
+                                length, minimum, (endpoint, path, minimum)
+                            )
 
     def test_endpoint_trapped_before_any_possible_first_leg_skips_grid_scan(self):
         obstacles = (
@@ -1773,30 +2520,59 @@ class RouteOptimizerTests(unittest.TestCase):
             Obstacle(point(1.015, 1.015), point(1.085, 1.02), ("B.Cu",), net="OTHER"),
             Obstacle(point(1.015, 1.08), point(1.085, 1.085), ("B.Cu",), net="OTHER"),
         )
-        model = router(lower=point(0, 0), upper=point(4, 4), step=mm(.1), layers=("B.Cu",),
-                       width=mm(.01), clearance=mm(.005), obstacles=obstacles)
+        model = router(
+            lower=point(0, 0),
+            upper=point(4, 4),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            width=mm(0.01),
+            clearance=mm(0.005),
+            obstacles=obstacles,
+        )
         endpoint = point(1.05, 1.05)
-        self.assertFalse(model._endpoint_inside_minimum_foreign_clearance(endpoint, "B.Cu"))
-        with mock.patch.object(model, "_stub_paths", side_effect=AssertionError("unnecessary scan")):
-            self.assertEqual(next(model._endpoint_option_groups(endpoint, "B.Cu", reverse=False), []), [])
+        self.assertFalse(
+            model._endpoint_inside_minimum_foreign_clearance(endpoint, "B.Cu")
+        )
+        with mock.patch.object(
+            model, "_stub_paths", side_effect=AssertionError("unnecessary scan")
+        ):
+            self.assertEqual(
+                next(
+                    model._endpoint_option_groups(endpoint, "B.Cu", reverse=False), []
+                ),
+                [],
+            )
 
     def test_extended_endpoint_access_obeys_the_search_deadline(self):
         from pcb.route_optimizer import SearchBudgetExceeded
 
         obstacles = (
-            Obstacle(point(.2, .2), point(2, 1.03), ("B.Cu",), net="OTHER"),
-            Obstacle(point(.2, 1.07), point(2, 1.9), ("B.Cu",), net="OTHER"),
+            Obstacle(point(0.2, 0.2), point(2, 1.03), ("B.Cu",), net="OTHER"),
+            Obstacle(point(0.2, 1.07), point(2, 1.9), ("B.Cu",), net="OTHER"),
         )
         model = router(
-            lower=point(0, 0), upper=point(4, 4), step=mm(.1), layers=("B.Cu",),
-            width=mm(.01), clearance=mm(.005), via_size=mm(.1), via_drill=mm(.05),
+            lower=point(0, 0),
+            upper=point(4, 4),
+            step=mm(0.1),
+            layers=("B.Cu",),
+            width=mm(0.01),
+            clearance=mm(0.005),
+            via_size=mm(0.1),
+            via_drill=mm(0.05),
             obstacles=obstacles,
         )
-        with mock.patch.object(
-            model, "check_budget",
-            side_effect=[None, None, SearchBudgetExceeded("deadline")],
-        ), self.assertRaisesRegex(SearchBudgetExceeded, "deadline"):
-            next(model._endpoint_option_groups(point(1.05, 1.05), "B.Cu", reverse=False), [])
+        with (
+            mock.patch.object(
+                model,
+                "check_budget",
+                side_effect=[None, None, SearchBudgetExceeded("deadline")],
+            ),
+            self.assertRaisesRegex(SearchBudgetExceeded, "deadline"),
+        ):
+            next(
+                model._endpoint_option_groups(point(1.05, 1.05), "B.Cu", reverse=False),
+                [],
+            )
 
     def test_fine_grid_escape_uses_a_physical_search_distance(self):
         obstacles = (
@@ -1804,9 +2580,17 @@ class RouteOptimizerTests(unittest.TestCase):
             Obstacle(point(4.5, 5.65), point(6, 5.8), ("B.Cu",), net="OTHER"),
             Obstacle(point(6.46, 5.485), point(6.54, 5.565), ("B.Cu",), net="OTHER"),
         )
-        model = router(lower=point(4, 5), upper=point(8, 6), step=mm(0.05),
-                       layers=("B.Cu",), width=mm(0.1), clearance=mm(0.05),
-                       obstacles=obstacles, gentle_turns=True, forbid_staircase=True)
+        model = router(
+            lower=point(4, 5),
+            upper=point(8, 6),
+            step=mm(0.05),
+            layers=("B.Cu",),
+            width=mm(0.1),
+            clearance=mm(0.05),
+            obstacles=obstacles,
+            gentle_turns=True,
+            forbid_staircase=True,
+        )
         start, end = point(5.525, 5.525), point(7, 5.525)
         try:
             result = model.route(start, "B.Cu", end, "B.Cu")
@@ -1814,7 +2598,9 @@ class RouteOptimizerTests(unittest.TestCase):
             self.fail(f"A legal fine-grid corridor extends beyond two cells: {exc}")
         self.assertEqual(result.segments[0].start, start)
         self.assertEqual(result.segments[-1].end, end)
-        self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
+        self.assertTrue(
+            all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments)
+        )
         self.assertFalse(model._has_staircase(result.segments))
 
     def test_off_grid_stubs_apply_direction_rules_at_the_real_endpoints(self):
@@ -1825,9 +2611,17 @@ class RouteOptimizerTests(unittest.TestCase):
         )
         for start, end, headings in cases:
             with self.subTest(headings=headings):
-                model = router(lower=point(0, 0), upper=point(8, 5), layers=("B.Cu",),
-                               width=mm(0.2), clearance=mm(0.1), obstacles=(obstacle,),
-                               gentle_turns=True, forbid_staircase=True, **headings)
+                model = router(
+                    lower=point(0, 0),
+                    upper=point(8, 5),
+                    layers=("B.Cu",),
+                    width=mm(0.2),
+                    clearance=mm(0.1),
+                    obstacles=(obstacle,),
+                    gentle_turns=True,
+                    forbid_staircase=True,
+                    **headings,
+                )
                 try:
                     result = model.route(start, "B.Cu", end, "B.Cu")
                 except NoGridRoute as exc:
@@ -1837,12 +2631,25 @@ class RouteOptimizerTests(unittest.TestCase):
                     self.assertIn(directions[0], headings["initial_directions"])
                 if "final_directions" in headings:
                     self.assertIn(directions[-1], headings["final_directions"])
-                self.assertTrue(all((b - a) % 8 in {0, 1, 7}
-                                    for a, b in zip(directions, directions[1:])))
+                self.assertTrue(
+                    all(
+                        (b - a) % 8 in {0, 1, 7}
+                        for a, b in zip(directions, directions[1:])
+                    )
+                )
                 self.assertFalse(model._has_staircase(result.segments))
-                self.assertTrue(all(model.edge_clear(s.start, s.end, s.layer) for s in result.segments))
-                self.assertEqual(model.initial_directions, headings.get("initial_directions"))
-                self.assertEqual(model.final_directions, headings.get("final_directions"))
+                self.assertTrue(
+                    all(
+                        model.edge_clear(s.start, s.end, s.layer)
+                        for s in result.segments
+                    )
+                )
+                self.assertEqual(
+                    model.initial_directions, headings.get("initial_directions")
+                )
+                self.assertEqual(
+                    model.final_directions, headings.get("final_directions")
+                )
 
     def test_symmetry_guide_and_mirroring_are_available(self):
         self.assertEqual(
@@ -1958,30 +2765,45 @@ class RouteOptimizerTests(unittest.TestCase):
         from pcb.route_optimizer import is_staircase_triplet
 
         data = self.config()
-        data.update(weights={"diagonal": 1}, initial_directions=["SE"], final_directions=["SE"])
+        data.update(
+            weights={"diagonal": 1}, initial_directions=["SE"], final_directions=["SE"]
+        )
         result = plan(data, Path("."))
         directions = [
-            GridRouter._direction(Point.from_mm(s["from_mm"]), Point.from_mm(s["to_mm"]))
+            GridRouter._direction(
+                Point.from_mm(s["from_mm"]), Point.from_mm(s["to_mm"])
+            )
             for s in result["segments"]
         ]
-        self.assertFalse(any(is_staircase_triplet(*window)
-                             for window in zip(directions, directions[1:], directions[2:])))
+        self.assertFalse(
+            any(
+                is_staircase_triplet(*window)
+                for window in zip(directions, directions[1:], directions[2:])
+            )
+        )
 
     def test_default_standalone_route_uses_gentle_turns(self):
         data = self.config()
         data.update(
-            bounds_mm=[0, 0, 8, 8], step_mm=.5, layers=["B.Cu"],
+            bounds_mm=[0, 0, 8, 8],
+            step_mm=0.5,
+            layers=["B.Cu"],
             start={"at_mm": [2, 2], "layer": "B.Cu"},
             end={"at_mm": [6, 5], "layer": "B.Cu"},
-            weights={"diagonal": 1}, initial_directions=["E"], final_directions=["W"],
+            weights={"diagonal": 1},
+            initial_directions=["E"],
+            final_directions=["W"],
         )
         result = plan(data, Path("."))
         directions = [
-            GridRouter._direction(Point.from_mm(s["from_mm"]), Point.from_mm(s["to_mm"]))
+            GridRouter._direction(
+                Point.from_mm(s["from_mm"]), Point.from_mm(s["to_mm"])
+            )
             for s in result["segments"]
         ]
-        self.assertTrue(all((b - a) % 8 in {0, 1, 7}
-                            for a, b in zip(directions, directions[1:])))
+        self.assertTrue(
+            all((b - a) % 8 in {0, 1, 7} for a, b in zip(directions, directions[1:]))
+        )
 
     def test_default_cost_is_equal_on_all_four_copper_layers(self):
         costs = {}
@@ -2028,7 +2850,9 @@ class RouteOptimizerTests(unittest.TestCase):
             board.SetCopperLayerCount(4)
             pcbnew.SaveBoard(str(source), board)
             snapshot = read_native_obstacles(source, "SIGNAL")
-            self.assertEqual(set(snapshot.enabled_layers), {"F.Cu", "In1.Cu", "In2.Cu", "B.Cu"})
+            self.assertEqual(
+                set(snapshot.enabled_layers), {"F.Cu", "In1.Cu", "In2.Cu", "B.Cu"}
+            )
 
     def test_snapshot_defaults_use_only_enabled_copper_layers(self):
         with tempfile.TemporaryDirectory(prefix="route-layer-test-") as directory:
@@ -2041,7 +2865,9 @@ class RouteOptimizerTests(unittest.TestCase):
             data["board_snapshot"] = "pcb"
             result = plan(data, project)
             self.assertTrue(result["segments"])
-            self.assertLessEqual({s["layer"] for s in result["segments"]}, {"F.Cu", "B.Cu"})
+            self.assertLessEqual(
+                {s["layer"] for s in result["segments"]}, {"F.Cu", "B.Cu"}
+            )
             data["layers"] = ["F.Cu", "B.Cu", "In1.Cu"]
             with self.assertRaisesRegex(ValueError, "not enabled"):
                 plan(data, project)
@@ -2262,8 +3088,14 @@ class RouteOptimizerTests(unittest.TestCase):
 
         scopes = {
             "locked": (MoveScope.from_config({"locked": False}), "is locked"),
-            "through_hole": (MoveScope.from_config({"through_hole": False}), "through-hole"),
-            "front_silk": (MoveScope.from_config({"sides": ["bottom"]}), "top silkscreen"),
+            "through_hole": (
+                MoveScope.from_config({"through_hole": False}),
+                "through-hole",
+            ),
+            "front_silk": (
+                MoveScope.from_config({"sides": ["bottom"]}),
+                "top silkscreen",
+            ),
         }
         for reason, (scope, message) in scopes.items():
             with (
@@ -2338,7 +3170,9 @@ class RouteOptimizerTests(unittest.TestCase):
     def test_extended_off_grid_escape_passes_native_connectivity_and_drc(self):
         import pcbnew
 
-        with tempfile.TemporaryDirectory(prefix="autopcb-extended-escape-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="autopcb-extended-escape-"
+        ) as directory:
             project = Path(directory)
             source = self.make_board(project)
             board = pcbnew.LoadBoard(str(source))
@@ -2349,7 +3183,9 @@ class RouteOptimizerTests(unittest.TestCase):
                     pad.SetSize(pcbnew.VECTOR2I(mm(0.12), mm(0.12)))
             other = pcbnew.NETINFO_ITEM(board, "OTHER")
             board.Add(other)
-            for index, (x, y) in enumerate(((5, 5), (5, 6), (6, 5), (6, 6), (7.5, 5.5))):
+            for index, (x, y) in enumerate(
+                ((5, 5), (5, 6), (6, 5), (6, 6), (7.5, 5.5))
+            ):
                 footprint = pcbnew.FOOTPRINT(board)
                 footprint.SetReference(f"X{index + 1}")
                 at = pcbnew.VECTOR2I(mm(x), mm(y))
@@ -2366,20 +3202,31 @@ class RouteOptimizerTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
             data = self.config()
-            data.update(board_snapshot="pcb", bounds_mm=[0, 0, 10, 8], step_mm=1,
-                        layers=["F.Cu"], width_mm=0.2, clearance_mm=0.2,
-                        start={"at_mm": [5.5, 5.5], "layer": "F.Cu"},
-                        end={"at_mm": [9, 5.5], "layer": "F.Cu"})
+            data.update(
+                board_snapshot="pcb",
+                bounds_mm=[0, 0, 10, 8],
+                step_mm=1,
+                layers=["F.Cu"],
+                width_mm=0.2,
+                clearance_mm=0.2,
+                start={"at_mm": [5.5, 5.5], "layer": "F.Cu"},
+                end={"at_mm": [9, 5.5], "layer": "F.Cu"},
+            )
             result = plan(data, project, validate=True)
-            self.assertEqual(result["validation"]["status"], "no_new_drc_violations",
-                             result["validation"])
+            self.assertEqual(
+                result["validation"]["status"],
+                "no_new_drc_violations",
+                result["validation"],
+            )
             self.assertEqual(result["validation"]["endpoint_connectivity"], "connected")
             self.assertEqual(source.read_bytes(), original)
 
     def test_relaxed_diagonal_passes_native_connectivity_and_drc(self):
         import pcbnew
 
-        with tempfile.TemporaryDirectory(prefix="autopcb-relaxed-diagonal-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="autopcb-relaxed-diagonal-"
+        ) as directory:
             project = Path(directory)
             source = self.make_board(project)
             board = pcbnew.LoadBoard(str(source))
@@ -2406,11 +3253,17 @@ class RouteOptimizerTests(unittest.TestCase):
                 footprint.Add(pad)
                 board.Add(footprint)
             data = self.config()
-            data.update(board_snapshot="pcb", bounds_mm=[0, 0, 3, 3], step_mm=1,
-                        layers=["F.Cu", "B.Cu"], width_mm=0.2, clearance_mm=0.1,
-                        topology_heuristic=True,
-                        start={"at_mm": [1, 1], "layer": "B.Cu"},
-                        end={"at_mm": [2, 2], "layer": "B.Cu"})
+            data.update(
+                board_snapshot="pcb",
+                bounds_mm=[0, 0, 3, 3],
+                step_mm=1,
+                layers=["F.Cu", "B.Cu"],
+                width_mm=0.2,
+                clearance_mm=0.1,
+                topology_heuristic=True,
+                start={"at_mm": [1, 1], "layer": "B.Cu"},
+                end={"at_mm": [2, 2], "layer": "B.Cu"},
+            )
             # Route only on the back: the endpoint test pads occupy that layer.
             for ref in ("J1", "J2"):
                 footprint = board.FindFootprintByReference(ref)
@@ -2422,8 +3275,11 @@ class RouteOptimizerTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
             result = plan(data, project, validate=True)
-            self.assertEqual(result["validation"]["status"], "no_new_drc_violations",
-                             result["validation"])
+            self.assertEqual(
+                result["validation"]["status"],
+                "no_new_drc_violations",
+                result["validation"],
+            )
             self.assertEqual(result["validation"]["endpoint_connectivity"], "connected")
             self.assertEqual(source.read_bytes(), original)
 
@@ -2462,14 +3318,25 @@ class RouteOptimizerTests(unittest.TestCase):
             pcbnew.SaveBoard(str(source), board)
             original = source.read_bytes()
             data = self.config()
-            data.update(board_snapshot="pcb", bounds_mm=[0, 0, 8, 5], step_mm=1,
-                        layers=["B.Cu"], width_mm=0.2, clearance_mm=0.2,
-                        gentle_turns=True, forbid_staircase=True, initial_directions=["E"],
-                        start={"at_mm": [2.2, 2.2], "layer": "B.Cu"},
-                        end={"at_mm": [6.2, 2.2], "layer": "B.Cu"})
+            data.update(
+                board_snapshot="pcb",
+                bounds_mm=[0, 0, 8, 5],
+                step_mm=1,
+                layers=["B.Cu"],
+                width_mm=0.2,
+                clearance_mm=0.2,
+                gentle_turns=True,
+                forbid_staircase=True,
+                initial_directions=["E"],
+                start={"at_mm": [2.2, 2.2], "layer": "B.Cu"},
+                end={"at_mm": [6.2, 2.2], "layer": "B.Cu"},
+            )
             result = plan(data, project, validate=True)
-            self.assertEqual(result["validation"]["status"], "no_new_drc_violations",
-                             result["validation"])
+            self.assertEqual(
+                result["validation"]["status"],
+                "no_new_drc_violations",
+                result["validation"],
+            )
             self.assertEqual(result["validation"]["endpoint_connectivity"], "connected")
             self.assertEqual(source.read_bytes(), original)
 

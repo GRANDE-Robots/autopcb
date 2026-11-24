@@ -38,8 +38,11 @@ def _working_scope_exclusions(board, classes: frozenset[str]) -> set[str]:
             continue
         net = board.FindNet(name)
         netclass = str(net.GetNetClassName()).upper() if net is not None else ""
-        if (name.startswith("unconnected-") or netclass not in classes
-                or netclass in {"USB_DATA", "ETH_DATA"}):
+        if (
+            name.startswith("unconnected-")
+            or netclass not in classes
+            or netclass in {"USB_DATA", "ETH_DATA"}
+        ):
             result.add(name)
     return result
 
@@ -57,29 +60,43 @@ def protection_nets(board) -> set[str]:
         # even when their net names contain none of those words.  Defer their
         # copper and connected placement until a branch model qualifies them.
         protected_ref = bool(re.fullmatch(r"[DFQ][0-9]+", ref))
-        protected_value = bool(re.search(
-            r"\b(?:E[ -]?FUSE|TVS|ESD|SURGE|OVERVOLTAGE|UNDERVOLTAGE|SUPERVISOR|"
-            r"(?:VBUS|VOLTAGE)[ -]+MONITOR|REVERSE.{0,60}DISCONNECT|"
-            r"POWER[ -]+(?:MUX|MULTIPLEXER|SWITCH|PATH)|HOT[ -]?SWAP|"
-            r"IDEAL[ -]+DIODE|TPS2121[A-Z0-9]*|LDO|LOW[ -]+DROPOUT|"
-            r"VOLTAGE[ -]+REGULATOR|CONTROL[ -]+SUPPLY|WINDOW[ -]+MONITOR|"
-            r"CURRENT[ -]+SENSE|MOSFET[ -]+DRIVER|"
-            r"[0-9]+(?:\.[0-9]+)?[ ]?V[ -]+DRIVER|"
-            r"CC[ -]+SINK|TUSB320[A-Z0-9]*|USB[0-9A-Z -]*DATA[ -]+DISCONNECT|"
-            r"SPST[ -]+SWITCH(?:ES)?|"
-            r"(?:MOTOR|LAMP|LIGHT|LIGHTING).{0,80}(?:DRIVER|GATE|BUFFER|ENABLE))\b",
-            f"{value} {description}", flags=re.IGNORECASE,
-        ))
+        protected_value = bool(
+            re.search(
+                r"\b(?:E[ -]?FUSE|TVS|ESD|SURGE|OVERVOLTAGE|UNDERVOLTAGE|SUPERVISOR|"
+                r"(?:VBUS|VOLTAGE)[ -]+MONITOR|REVERSE.{0,60}DISCONNECT|"
+                r"POWER[ -]+(?:MUX|MULTIPLEXER|SWITCH|PATH)|HOT[ -]?SWAP|"
+                r"IDEAL[ -]+DIODE|TPS2121[A-Z0-9]*|LDO|LOW[ -]+DROPOUT|"
+                r"VOLTAGE[ -]+REGULATOR|CONTROL[ -]+SUPPLY|WINDOW[ -]+MONITOR|"
+                r"CURRENT[ -]+SENSE|MOSFET[ -]+DRIVER|"
+                r"[0-9]+(?:\.[0-9]+)?[ ]?V[ -]+DRIVER|"
+                r"CC[ -]+SINK|TUSB320[A-Z0-9]*|USB[0-9A-Z -]*DATA[ -]+DISCONNECT|"
+                r"SPST[ -]+SWITCH(?:ES)?|"
+                r"(?:MOTOR|LAMP|LIGHT|LIGHTING).{0,80}(?:DRIVER|GATE|BUFFER|ENABLE))\b",
+                f"{value} {description}",
+                flags=re.IGNORECASE,
+            )
+        )
         if protected_ref or protected_value:
-            result.update(str(pad.GetNetname()) for pad in part.Pads() if pad.GetNetname())
+            result.update(
+                str(pad.GetNetname()) for pad in part.Pads() if pad.GetNetname()
+            )
     for native_name in board.GetNetsByName():
         name = str(native_name)
-        safety_input = re.search(r"(?:^|_)(?:JOG|LIMIT|ESTOP|ENC|ENCODER|VBUS|FIELD_VALID)(?:_|$)",
-                                 name, flags=re.IGNORECASE)
-        actuator = re.search(r"(?:^|_)(?:BTS|MOTOR|LAMP|LIGHT|LIGHTS|TOP|FRONT)(?:_|$)",
-                             name, flags=re.IGNORECASE)
-        control = re.search(r"(?:^|_)(?:PWM|EN|ENABLE|GATE|CURRENT|SENSE|IS|FAULT)(?:_|$)",
-                            name, flags=re.IGNORECASE)
+        safety_input = re.search(
+            r"(?:^|_)(?:JOG|LIMIT|ESTOP|ENC|ENCODER|VBUS|FIELD_VALID)(?:_|$)",
+            name,
+            flags=re.IGNORECASE,
+        )
+        actuator = re.search(
+            r"(?:^|_)(?:BTS|MOTOR|LAMP|LIGHT|LIGHTS|TOP|FRONT)(?:_|$)",
+            name,
+            flags=re.IGNORECASE,
+        )
+        control = re.search(
+            r"(?:^|_)(?:PWM|EN|ENABLE|GATE|CURRENT|SENSE|IS|FAULT)(?:_|$)",
+            name,
+            flags=re.IGNORECASE,
+        )
         if safety_input or (actuator and control):
             result.add(name)
     return result
@@ -97,13 +114,16 @@ def unqualified_working_nets(board, excluded: tuple[str, ...] = ()) -> set[str]:
             continue
         net = board.FindNet(name)
         netclass = str(net.GetNetClassName()).upper() if net is not None else ""
-        if (not (netclass == "SIGNAL" or netclass.endswith("_SIGNAL"))
-                or re.search(r"(?:^|_)(?:POWER|GROUND|GND)(?:_|$)", netclass)):
+        if not (netclass == "SIGNAL" or netclass.endswith("_SIGNAL")) or re.search(
+            r"(?:^|_)(?:POWER|GROUND|GND)(?:_|$)", netclass
+        ):
             result.add(name)
     return result
 
 
-def protected_copper_unchanged(before: list, after: list, excluded: tuple[str, ...]) -> bool:
+def protected_copper_unchanged(
+    before: list, after: list, excluded: tuple[str, ...]
+) -> bool:
     """Compare protected track and via geometry without relying on object order."""
     names = set(excluded)
     return Counter(item for item in before if item.net in names) == Counter(
@@ -111,14 +131,19 @@ def protected_copper_unchanged(before: list, after: list, excluded: tuple[str, .
     )
 
 
-def protected_footprint_changes(before_board, after_board, before: bytes, after: bytes,
-                                excluded: tuple[str, ...]) -> tuple[str, ...]:
+def protected_footprint_changes(
+    before_board, after_board, before: bytes, after: bytes, excluded: tuple[str, ...]
+) -> tuple[str, ...]:
     """Find footprint changes on nets that lack a qualified working-save model."""
-    nets = unqualified_working_nets(before_board, excluded) | unqualified_working_nets(after_board, excluded)
+    nets = unqualified_working_nets(before_board, excluded) | unqualified_working_nets(
+        after_board, excluded
+    )
     protected = {}
     for board in (before_board, after_board):
         for part in board.GetFootprints():
-            if any(str(pad.GetNetname()) in nets for pad in part.Pads() if pad.GetNetname()):
+            if any(
+                str(pad.GetNetname()) in nets for pad in part.Pads() if pad.GetNetname()
+            ):
                 protected[part.m_Uuid.AsString()] = str(part.GetReference())
 
     def footprints(data: bytes) -> dict:
@@ -134,8 +159,13 @@ def protected_footprint_changes(before_board, after_board, before: bytes, after:
         return result
 
     old, new = footprints(before), footprints(after)
-    return tuple(sorted(protected[uid] for uid in protected
-                        if uid not in old or uid not in new or old[uid] != new[uid]))
+    return tuple(
+        sorted(
+            protected[uid]
+            for uid in protected
+            if uid not in old or uid not in new or old[uid] != new[uid]
+        )
+    )
 
 
 def _digest(value: object) -> str:
@@ -178,8 +208,13 @@ class ProtectedState:
     movable: MoveScope | None = None
 
     @classmethod
-    def capture(cls, board_bytes: bytes, schematic_bytes: bytes, *,
-                movable: MoveScope | None = None) -> ProtectedState:
+    def capture(
+        cls,
+        board_bytes: bytes,
+        schematic_bytes: bytes,
+        *,
+        movable: MoveScope | None = None,
+    ) -> ProtectedState:
         text = board_bytes.decode("utf-8-sig")
         board = parse(text)
         if board.name != "kicad_pcb":
@@ -218,7 +253,9 @@ class ProtectedState:
             movable,
         )
 
-    def differences(self, board_bytes: bytes, schematic_bytes: bytes) -> tuple[str, ...]:
+    def differences(
+        self, board_bytes: bytes, schematic_bytes: bytes
+    ) -> tuple[str, ...]:
         other = self.capture(board_bytes, schematic_bytes, movable=self.movable)
         pairs = (
             ("schematic", self.schematic_sha256, other.schematic_sha256),

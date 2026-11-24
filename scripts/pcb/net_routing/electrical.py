@@ -71,7 +71,9 @@ def _quantity(item: Quantity, unit: str, label: str) -> None:
         or item.value < 0
         or not isinstance(item.evidence, Evidence)
     ):
-        raise ValueError(f"Invalid {label}; expected a finite nonnegative {unit} quantity")
+        raise ValueError(
+            f"Invalid {label}; expected a finite nonnegative {unit} quantity"
+        )
 
 
 def _evidence_issue(project: Path, evidence: Evidence) -> str | None:
@@ -93,7 +95,10 @@ def _evidence_issue(project: Path, evidence: Evidence) -> str | None:
 
 
 def assess_tree(
-    project: Path, root: str, branches: tuple[Branch, ...], scenarios: tuple[Scenario, ...]
+    project: Path,
+    root: str,
+    branches: tuple[Branch, ...],
+    scenarios: tuple[Scenario, ...],
 ) -> Assessment:
     """Sum simultaneous loads on shared branches and assess each root-to-load path."""
     if not isinstance(root, str) or not root or not branches or not scenarios:
@@ -119,8 +124,10 @@ def assess_tree(
         parent[branch.child] = branch
         children.setdefault(branch.parent, []).append(branch)
         quantities.extend(
-            ((f"{branch.identifier} capacity", branch.capacity, "A", True),
-             (f"{branch.identifier} resistance", branch.resistance, "ohm", True))
+            (
+                (f"{branch.identifier} capacity", branch.capacity, "A", True),
+                (f"{branch.identifier} resistance", branch.resistance, "ohm", True),
+            )
         )
 
     order: list[Branch] = []
@@ -139,14 +146,23 @@ def assess_tree(
 
     scenario_names = set()
     for scenario in scenarios:
-        if not isinstance(scenario, Scenario) or not scenario.name or scenario.name in scenario_names or not scenario.loads:
+        if (
+            not isinstance(scenario, Scenario)
+            or not scenario.name
+            or scenario.name in scenario_names
+            or not scenario.loads
+        ):
             raise ValueError("Each scenario needs a distinct name and loads")
         scenario_names.add(scenario.name)
-        quantities.append((f"{scenario.name} maximum drop", scenario.max_drop, "V", False))
+        quantities.append(
+            (f"{scenario.name} maximum drop", scenario.max_drop, "V", False)
+        )
         load_nodes = set()
         for node, load in scenario.loads:
             if node not in nodes or node in load_nodes:
-                raise ValueError(f"Scenario {scenario.name} has a missing or duplicate load node")
+                raise ValueError(
+                    f"Scenario {scenario.name} has a missing or duplicate load node"
+                )
             load_nodes.add(node)
             quantities.append((f"{scenario.name} load {node}", load, "A", False))
 
@@ -155,10 +171,14 @@ def assess_tree(
     for label, quantity, unit, physical_rating in quantities:
         _quantity(quantity, unit, label)
         if quantity.evidence not in evidence_results:
-            evidence_results[quantity.evidence] = _evidence_issue(project, quantity.evidence)
+            evidence_results[quantity.evidence] = _evidence_issue(
+                project, quantity.evidence
+            )
         if physical_rating and quantity.evidence.status != "verified":
             rating_issues.add(f"{label}: physical rating requires verified evidence")
-    problems = tuple(sorted(rating_issues | {issue for issue in evidence_results.values() if issue}))
+    problems = tuple(
+        sorted(rating_issues | {issue for issue in evidence_results.values() if issue})
+    )
     if problems:
         return Assessment("blocked", (), problems)
 
@@ -174,10 +194,15 @@ def assess_tree(
             currents[branch.identifier] = current
             demand[branch.parent] += current
             if current > branch.capacity.value + 1e-12:
-                issues.append(f"{scenario.name}: current exceeds capacity on {branch.identifier}")
+                issues.append(
+                    f"{scenario.name}: current exceeds capacity on {branch.identifier}"
+                )
         drops = {root: 0.0}
         for branch in order:
-            drops[branch.child] = drops[branch.parent] + currents[branch.identifier] * branch.resistance.value
+            drops[branch.child] = (
+                drops[branch.parent]
+                + currents[branch.identifier] * branch.resistance.value
+            )
         load_drops = {node: drops[node] for node, _ in scenario.loads}
         for node, drop in load_drops.items():
             if drop > scenario.max_drop.value + 1e-12:
@@ -193,4 +218,6 @@ def assess_tree(
     # establish that the numerical inputs appear in the source, apply to this
     # branch, or cover the actual track/via geometry and fault conditions.
     # Keep the useful arithmetic, but do not turn it into routing approval.
-    return Assessment("rejected" if issues else "within_input_limits", tuple(reports), tuple(issues))
+    return Assessment(
+        "rejected" if issues else "within_input_limits", tuple(reports), tuple(issues)
+    )

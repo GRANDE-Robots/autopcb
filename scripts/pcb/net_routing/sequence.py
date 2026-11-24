@@ -170,10 +170,20 @@ def _check_seed_geometry(
                     layer_penalties={},
                     guide=(),
                     pad_sites=pad_sites,
-                    pad_copper=PadCopper(tuple(
-                        box for p in board.GetPads() if p.GetNetname() == net
-                        for box in pad_core(p, {layer: board.GetLayerID(layer)
-                                                for layer in enabled_copper_layers(board)}))),
+                    pad_copper=PadCopper(
+                        tuple(
+                            box
+                            for p in board.GetPads()
+                            if p.GetNetname() == net
+                            for box in pad_core(
+                                p,
+                                {
+                                    layer: board.GetLayerID(layer)
+                                    for layer in enabled_copper_layers(board)
+                                },
+                            )
+                        )
+                    ),
                     forbid_staircase=True,
                 )
             except ValueError as error:
@@ -198,7 +208,9 @@ def _stage_replay(
     changes, contracts = _parse_replay(replay)
     if check_style:
         # Reject seed geometry precisely and cheaply before native validation.
-        _check_seed_geometry(shadow, CampaignPlanner(shadow).plan("pcb", changes).after, changes)
+        _check_seed_geometry(
+            shadow, CampaignPlanner(shadow).plan("pcb", changes).after, changes
+        )
     evidence = validate_routes(board_path, sha(board_path), changes, contracts)
     if (
         evidence["status"] != "no_new_drc_violations"

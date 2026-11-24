@@ -80,16 +80,28 @@ class ExistingVia:
     through: bool
 
 
-def via_sizes_meet(sizes: tuple[tuple[str, int], ...], required_layers, *,
-                   minimum_size: int = 0, exact_size: int | None = None) -> bool:
+def via_sizes_meet(
+    sizes: tuple[tuple[str, int], ...],
+    required_layers,
+    *,
+    minimum_size: int = 0,
+    exact_size: int | None = None,
+) -> bool:
     """Check every observed annulus on the real stack, not all possible layers."""
     observed = dict(sizes)
-    return (len(observed) == len(sizes)
-            and {"F.Cu", "B.Cu", *required_layers} <= observed.keys()
-            and all(layer in COPPER_LAYERS and isinstance(size, int) and not isinstance(size, bool)
-                    and size > 0 and size >= minimum_size
-                    and (exact_size is None or size == exact_size)
-                    for layer, size in observed.items()))
+    return (
+        len(observed) == len(sizes)
+        and {"F.Cu", "B.Cu", *required_layers} <= observed.keys()
+        and all(
+            layer in COPPER_LAYERS
+            and isinstance(size, int)
+            and not isinstance(size, bool)
+            and size > 0
+            and size >= minimum_size
+            and (exact_size is None or size == exact_size)
+            for layer, size in observed.items()
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -238,7 +250,9 @@ class ElectricalConstraints:
                 "A route using vias needs a supplied per-via current limit"
             )
         if self.current_a > limit.maximum_current_a:
-            raise ElectricalConstraintViolation("Route current exceeds the supplied per-via current limit")
+            raise ElectricalConstraintViolation(
+                "Route current exceeds the supplied per-via current limit"
+            )
         checks = []
         for via in route.vias:
             if size < limit.minimum_size or drill < limit.minimum_drill:
@@ -264,7 +278,9 @@ class ElectricalConstraints:
             actual = matches[0]
             sizes = dict(actual.sizes)
             if (
-                not via_sizes_meet(actual.sizes, self.tracks, minimum_size=limit.minimum_size)
+                not via_sizes_meet(
+                    actual.sizes, self.tracks, minimum_size=limit.minimum_size
+                )
                 or actual.drill < limit.minimum_drill
             ):
                 raise ElectricalConstraintViolation(
@@ -348,7 +364,9 @@ class ElectricalConstraints:
                 item.net == net
                 and item.through
                 and item.drill >= limit.minimum_drill
-                and via_sizes_meet(item.sizes, self.tracks, minimum_size=limit.minimum_size)
+                and via_sizes_meet(
+                    item.sizes, self.tracks, minimum_size=limit.minimum_size
+                )
                 and sum(other.at == item.at and other.net == net for other in existing)
                 == 1
             ):

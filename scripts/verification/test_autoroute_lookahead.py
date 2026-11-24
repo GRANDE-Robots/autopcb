@@ -26,7 +26,8 @@ def candidate(source: bytes, board: bytes, opens: int, **validation):
         "nets": ["A"],
         "attempts": [],
         "validation": {
-            "status": "no_new_drc_violations", "schematic_parity_checked": True,
+            "status": "no_new_drc_violations",
+            "schematic_parity_checked": True,
             "candidate_unconnected": opens,
             "reference_comparison": {"status": "unverified"},
             **validation,
@@ -132,19 +133,29 @@ class AutoLookaheadTests(unittest.TestCase):
             if mode == "alternatives":
                 neutral["nets"] = ["A", "B"]
             request = {"nets": [{"name": "A"}], "search": {"seconds": 5}}
+
             def replan(*args, **kwargs):
                 other = {"nets": [{"name": "B"}], "search": {"seconds": 5}}
-                return {"rounds": [[request, other] if mode in {"alternatives", "unrelated"} else [request]]}
+                return {
+                    "rounds": [
+                        [request, other]
+                        if mode in {"alternatives", "unrelated"}
+                        else [request]
+                    ]
+                }
 
             def planner(directory):
                 def plan(kind, changes):
                     image = changes[0]["bytes"]
                     return SimpleNamespace(after=image, result_sha256=digest(image))
+
                 return SimpleNamespace(plan=plan)
 
             def native(function, *args, **kwargs):
                 if function is runner._preview_round_native:
-                    self.assertEqual((args[0] / "v4.1.kicad_pcb").read_bytes(), b"neutral")
+                    self.assertEqual(
+                        (args[0] / "v4.1.kicad_pcb").read_bytes(), b"neutral"
+                    )
                     seen.append("follow-up from neutral")
                     if mode == "exception":
                         raise RuntimeError("native test failure")
@@ -153,38 +164,63 @@ class AutoLookaheadTests(unittest.TestCase):
                     if mode == "source_change":
                         source.write_bytes(b"user edit")
                         return {"status": "no_candidate_found"}
-                    if mode == "alternatives" and seen.count("follow-up from neutral") == 1:
+                    if (
+                        mode == "alternatives"
+                        and seen.count("follow-up from neutral") == 1
+                    ):
                         return {"status": "no_candidate_found"}
                     if mode == "unrelated":
                         return {"status": "no_candidate_found"}
-                    return candidate(b"neutral", b"improved", 10 if mode == "neutral" else 9)
+                    return candidate(
+                        b"neutral", b"improved", 10 if mode == "neutral" else 9
+                    )
                 if function is runner._verify_cumulative_reference_native:
                     seen.append("cumulative reference verification")
-                    return {"status": "degraded" if mode == "degraded" else "unverified"}
+                    return {
+                        "status": "degraded" if mode == "degraded" else "unverified"
+                    }
                 raise AssertionError(function)
 
             def verify(branch, project, expected_opens, *, progress=None):
                 self.assertEqual(source.read_bytes(), b"best")
                 self.assertEqual(expected_opens, 9)
                 seen.append("native final verification")
-                return {"drc": {"open_connections": 9, "errors": 0, "warnings": 0,
-                                "parity_findings": 0}, "geometry": {},
-                        "reference_copper": {"high_speed_nets": ["USB"]}}
+                return {
+                    "drc": {
+                        "open_connections": 9,
+                        "errors": 0,
+                        "warnings": 0,
+                        "parity_findings": 0,
+                    },
+                    "geometry": {},
+                    "reference_copper": {"high_speed_nets": ["USB"]},
+                }
 
             protected = SimpleNamespace(differences=lambda *args: ())
-            with patch.object(runner, "Snapshot", FakeSnapshot), \
-                 patch.object(runner, "_replan", side_effect=replan), \
-                 patch.object(runner, "run_native", side_effect=native), \
-                 patch.object(runner, "verify_resume_board", side_effect=verify), \
-                 patch.object(runner, "CampaignPlanner", side_effect=planner), \
-                 patch.object(runner.ProtectedState, "capture", return_value=protected):
+            with (
+                patch.object(runner, "Snapshot", FakeSnapshot),
+                patch.object(runner, "_replan", side_effect=replan),
+                patch.object(runner, "run_native", side_effect=native),
+                patch.object(runner, "verify_resume_board", side_effect=verify),
+                patch.object(runner, "CampaignPlanner", side_effect=planner),
+                patch.object(runner.ProtectedState, "capture", return_value=protected),
+            ):
                 try:
                     result = runner._neutral_lookahead(
-                        outer, b"neutral", neutral, {}, best_opens=10,
-                        preferred_nets=("A",), workers=1, seconds_per_batch=5,
+                        outer,
+                        b"neutral",
+                        neutral,
+                        {},
+                        best_opens=10,
+                        preferred_nets=("A",),
+                        workers=1,
+                        seconds_per_batch=5,
                     )
                 finally:
-                    self.assertEqual(source.read_bytes(), b"user edit" if mode == "source_change" else b"best")
+                    self.assertEqual(
+                        source.read_bytes(),
+                        b"user edit" if mode == "source_change" else b"best",
+                    )
             return result, source.read_bytes(), seen
 
 

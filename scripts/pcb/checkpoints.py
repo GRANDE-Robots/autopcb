@@ -80,15 +80,28 @@ def read_config(path: Path) -> tuple[dict[str, Any], str]:
     )
     if config.get("schema") != SCHEMA:
         raise ValueError("Unsupported AutoPCB configuration schema")
-    scope = _object(config.get("working_scope", {}), {"kind", "classes", "manufacturing_approved"},
-                    "working routing scope")
+    scope = _object(
+        config.get("working_scope", {}),
+        {"kind", "classes", "manufacturing_approved"},
+        "working routing scope",
+    )
     if scope:
-        if (scope.get("kind") != "connectivity" or scope.get("manufacturing_approved") is not False
-                or not isinstance(scope.get("classes"), list) or not scope["classes"]
-                or any(not isinstance(value, str) or not value for value in scope["classes"])
-                or len(scope["classes"]) != len(set(scope["classes"]))):
-            raise ValueError("Connectivity scope requires named classes and an explicit manufacturing hold")
-    zone_stitch = _object(config.get("zone_stitch", {}), {"proofs"}, "zone-stitch settings")
+        if (
+            scope.get("kind") != "connectivity"
+            or scope.get("manufacturing_approved") is not False
+            or not isinstance(scope.get("classes"), list)
+            or not scope["classes"]
+            or any(
+                not isinstance(value, str) or not value for value in scope["classes"]
+            )
+            or len(scope["classes"]) != len(set(scope["classes"]))
+        ):
+            raise ValueError(
+                "Connectivity scope requires named classes and an explicit manufacturing hold"
+            )
+    zone_stitch = _object(
+        config.get("zone_stitch", {}), {"proofs"}, "zone-stitch settings"
+    )
     if not isinstance(zone_stitch.get("proofs", []), list):
         raise ValueError("zone-stitch proofs must be a list")
     maximum = config.get("max_pins")
@@ -139,10 +152,13 @@ def read_config(path: Path) -> tuple[dict[str, Any], str]:
         raise ValueError("search_margin_mm must be a positive finite number")
     Limits.from_config(config.get("search", {}))
     from pcb.net_routing.recovery import RecoveryPolicy
+
     RecoveryPolicy.from_config(config.get("recovery"))
     from pcb.net_routing.rework import ReworkWeights
+
     ReworkWeights.from_config(config.get("rework"))
     from pcb.move_scope import MoveScope
+
     MoveScope.from_config(config.get("placement"))
     for name, default in (("max_nets", 1000), ("max_checkpoints", 5000)):
         value = config.get(name, default)
@@ -889,9 +905,13 @@ def attempt(
                     settings.drill,
                     pruned_tails=pruned_tails,
                     protected_sites=tuple(
-                        site for contract in contracts if contract.net == name
-                        for site in ((contract.start, contract.start_layer),
-                                     (contract.end, contract.end_layer))
+                        site
+                        for contract in contracts
+                        if contract.net == name
+                        for site in (
+                            (contract.start, contract.start_layer),
+                            (contract.end, contract.end_layer),
+                        )
                     ),
                 )
             except ValueError:
@@ -900,10 +920,18 @@ def attempt(
             if changes:
                 rework_cost = junction_tail_cost(pruned_tails, rework_weights)
                 materialized.append(
-                    (candidate.route.cost + rework_cost, candidate, changes, removals, rework_cost)
+                    (
+                        candidate.route.cost + rework_cost,
+                        candidate,
+                        changes,
+                        removals,
+                        rework_cost,
+                    )
                 )
         materialized.sort(key=lambda entry: entry[0])
-        for _, candidate, changes, removals, rework_cost in materialized[:limits.validation_candidates]:
+        for _, candidate, changes, removals, rework_cost in materialized[
+            : limits.validation_candidates
+        ]:
             candidate_contracts = list(contracts)
             if removals:
                 if len(ids) == 1:

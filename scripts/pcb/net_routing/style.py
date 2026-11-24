@@ -46,18 +46,32 @@ class StyleReport:
 
     @property
     def passed(self) -> bool:
-        return not any((self.non_octilinear, self.arcs, self.invalid_bends,
-                        self.redundant_joints, self.staircases, self.locked_items,
-                        self.grouped_items, self.ambiguous))
+        return not any(
+            (
+                self.non_octilinear,
+                self.arcs,
+                self.invalid_bends,
+                self.redundant_joints,
+                self.staircases,
+                self.locked_items,
+                self.grouped_items,
+                self.ambiguous,
+            )
+        )
 
 
-def normalize_segment_identities(report: StyleReport, identities: dict[str, str]) -> StyleReport:
+def normalize_segment_identities(
+    report: StyleReport, identities: dict[str, str]
+) -> StyleReport:
     """Keep unchanged segment defects stable when exact copper gets a new UUID."""
+
     def normalize_ids(values):
         return tuple(sorted(identities.get(value, value) for value in values))
 
     def normalize_joints(joints):
-        return tuple(replace(joint, item_ids=normalize_ids(joint.item_ids)) for joint in joints)
+        return tuple(
+            replace(joint, item_ids=normalize_ids(joint.item_ids)) for joint in joints
+        )
 
     return replace(
         report,
@@ -75,15 +89,20 @@ def audit_style(board) -> StyleReport:
     vias_by_net = collections.defaultdict(list)
     for pad in board.GetPads():
         pads_by_net[pad.GetNetCode()].append(pad)
-    zone_nets = {zone.GetNetCode() for zone in board.Zones() if not zone.GetIsRuleArea()}
+    zone_nets = {
+        zone.GetNetCode() for zone in board.Zones() if not zone.GetIsRuleArea()
+    }
     connectivity = board.GetConnectivity()
     connectivity.Build(board)
     for via in vias:
         contacts = tuple(connectivity.GetConnectedTracks(via))
         single_layer = len({item.GetLayer() for item in contacts}) <= 1
-        if (single_layer and via.GetNetCode() not in zone_nets
-                and not connectivity.GetConnectedPads(via)
-                and not any(isinstance(item, pcbnew.PCB_VIA) for item in contacts)):
+        if (
+            single_layer
+            and via.GetNetCode() not in zone_nets
+            and not connectivity.GetConnectedPads(via)
+            and not any(isinstance(item, pcbnew.PCB_VIA) for item in contacts)
+        ):
             continue
         vias_by_net[via.GetNetCode()].append(via)
     non_octilinear, arcs = [], []
@@ -101,21 +120,45 @@ def audit_style(board) -> StyleReport:
             non_octilinear.append(uid)
             continue
         layer = board.GetLayerName(track.GetLayer())
-        segment = Segment(Point(int(start.x), int(start.y)), Point(int(end.x), int(end.y)), layer)
-        groups[(track.GetNetCode(), track.GetLayer(), track.GetNetname(), layer)].append((track, segment))
+        segment = Segment(
+            Point(int(start.x), int(start.y)), Point(int(end.x), int(end.y)), layer
+        )
+        groups[
+            (track.GetNetCode(), track.GetLayer(), track.GetNetname(), layer)
+        ].append((track, segment))
 
-    all_items = [*tracks, *board.GetFootprints(), *board.Zones(), *board.GetDrawings(), *board.Groups()]
-    locked = tuple(sorted(item.m_Uuid.AsString() for item in all_items if item.IsLocked()))
+    all_items = [
+        *tracks,
+        *board.GetFootprints(),
+        *board.Zones(),
+        *board.GetDrawings(),
+        *board.Groups(),
+    ]
+    locked = tuple(
+        sorted(item.m_Uuid.AsString() for item in all_items if item.IsLocked())
+    )
     copper_ids = {item.m_Uuid.AsString() for item in tracks}
-    grouped = tuple(sorted({item.m_Uuid.AsString() for group in board.Groups()
-                            for item in group.GetItems() if item.m_Uuid.AsString() in copper_ids}))
+    grouped = tuple(
+        sorted(
+            {
+                item.m_Uuid.AsString()
+                for group in board.Groups()
+                for item in group.GetItems()
+                if item.m_Uuid.AsString() in copper_ids
+            }
+        )
+    )
     invalid, redundant, stairs, ambiguous = [], [], set(), []
     for (net_code, layer_id, net_name, layer), entries in groups.items():
         segments = tuple(segment for _, segment in entries)
         signatures = set()
         line_intervals = collections.defaultdict(list)
         for _, segment in entries:
-            signature = tuple(sorted(((segment.start.x, segment.start.y), (segment.end.x, segment.end.y))))
+            signature = tuple(
+                sorted(
+                    ((segment.start.x, segment.start.y), (segment.end.x, segment.end.y))
+                )
+            )
             if signature in signatures:
                 ambiguous.append(f"{net_name} on {layer}: duplicate overlapping tracks")
             signatures.add(signature)
@@ -125,7 +168,9 @@ def audit_style(board) -> StyleReport:
             end = None
             for first, last in sorted(intervals):
                 if end is not None and first < end:
-                    ambiguous.append(f"{net_name} on {layer}: overlapping collinear tracks")
+                    ambiguous.append(
+                        f"{net_name} on {layer}: overlapping collinear tracks"
+                    )
                 end = max(end, last) if end is not None else last
         try:
             graph = vertices(segments)
@@ -139,7 +184,10 @@ def audit_style(board) -> StyleReport:
 
         def anchored(point: Point) -> bool:
             location = pcbnew.VECTOR2I(point.x, point.y)
-            if any(pad.IsOnLayer(layer_id) and pad.HitTest(location) for pad in pads_by_net[net_code]):
+            if any(
+                pad.IsOnLayer(layer_id) and pad.HitTest(location)
+                for pad in pads_by_net[net_code]
+            ):
                 return True
             for via in vias_by_net[net_code]:
                 if via.IsOnLayer(layer_id):
@@ -154,7 +202,13 @@ def audit_style(board) -> StyleReport:
                 continue
             a, b = directions
             delta = (a - b) % 8
-            touching = tuple(sorted(track.m_Uuid.AsString() for track, seg in entries if on_segment(site.point, seg)))
+            touching = tuple(
+                sorted(
+                    track.m_Uuid.AsString()
+                    for track, seg in entries
+                    if on_segment(site.point, seg)
+                )
+            )
             joint = Joint(net_name, layer, (site.point.x, site.point.y), touching)
             if delta in {2, 6}:
                 invalid.append(joint)
@@ -173,20 +227,32 @@ def audit_style(board) -> StyleReport:
 
             def extend(current, point: Point, *, backwards: bool):
                 chain = []
-                while len(graph.get(Site(point, layer), ())) == 2 and not anchored(point) and len(endpoints[point]) == 2:
-                    following = next((pair for pair in endpoints[point] if pair[0] != current), None)
+                while (
+                    len(graph.get(Site(point, layer), ())) == 2
+                    and not anchored(point)
+                    and len(endpoints[point]) == 2
+                ):
+                    following = next(
+                        (pair for pair in endpoints[point] if pair[0] != current), None
+                    )
                     if following is None:
                         break
                     neighbor, segment = following
                     neighbor_id = neighbor.m_Uuid.AsString()
                     if neighbor_id in visited:
                         if neighbor_id in chain_ids:
-                            ambiguous.append(f"{net_name} on {layer}: closed or overlapping track chain")
+                            ambiguous.append(
+                                f"{net_name} on {layer}: closed or overlapping track chain"
+                            )
                         break
                     visited.add(neighbor_id)
                     chain_ids.add(neighbor_id)
                     other = segment.end if segment.start == point else segment.start
-                    chain.append(Segment(other, point, layer) if backwards else Segment(point, other, layer))
+                    chain.append(
+                        Segment(other, point, layer)
+                        if backwards
+                        else Segment(point, other, layer)
+                    )
                     current, point = neighbor, other
                 return chain
 
@@ -199,18 +265,39 @@ def audit_style(board) -> StyleReport:
                 # multiple collinear tracks after geometric normalization.
                 runs = (first, middle, last)
                 window_ids = {
-                    item.m_Uuid.AsString() for item, segment in entries
+                    item.m_Uuid.AsString()
+                    for item, segment in entries
                     if item.m_Uuid.AsString() in chain_ids
-                    and any(on_segment(segment.start, run) and on_segment(segment.end, run) for run in runs)
+                    and any(
+                        on_segment(segment.start, run) and on_segment(segment.end, run)
+                        for run in runs
+                    )
                 }
                 if not window_ids:
-                    ambiguous.append(f"{net_name} on {layer}: staircase has no identifiable tracks")
+                    ambiguous.append(
+                        f"{net_name} on {layer}: staircase has no identifiable tracks"
+                    )
                     continue
                 turns = ((middle.start.x, middle.start.y), (middle.end.x, middle.end.y))
-                directions = tuple(GridRouter._direction(s.start, s.end) for s in (first, middle, last))
+                directions = tuple(
+                    GridRouter._direction(s.start, s.end) for s in (first, middle, last)
+                )
                 reverse = tuple((d + 4) % 8 for d in reversed(directions))
-                turns, directions = min((turns, directions), (tuple(reversed(turns)), reverse))
-                stairs.add(Staircase(net_name, layer, turns, directions, tuple(sorted(window_ids))))
-    return StyleReport(tuple(sorted(non_octilinear)), tuple(sorted(arcs)), tuple(invalid),
-                       tuple(redundant), tuple(sorted(stairs, key=lambda s: (s.net, s.layer, s.turns_nm, s.directions))),
-                       locked, grouped, tuple(sorted(ambiguous)))
+                turns, directions = min(
+                    (turns, directions), (tuple(reversed(turns)), reverse)
+                )
+                stairs.add(
+                    Staircase(
+                        net_name, layer, turns, directions, tuple(sorted(window_ids))
+                    )
+                )
+    return StyleReport(
+        tuple(sorted(non_octilinear)),
+        tuple(sorted(arcs)),
+        tuple(invalid),
+        tuple(redundant),
+        tuple(sorted(stairs, key=lambda s: (s.net, s.layer, s.turns_nm, s.directions))),
+        locked,
+        grouped,
+        tuple(sorted(ambiguous)),
+    )

@@ -51,7 +51,9 @@ class ReleaseGuardTests(unittest.TestCase):
         evidence = inputs / "stackup_evidence" / "calculator.txt"
         evidence.parent.mkdir()
         evidence.write_text("fixture calculator evidence", encoding="utf-8")
-        stack["evidence_files"]["design/stackup_evidence/calculator.txt"] = sha(evidence)
+        stack["evidence_files"]["design/stackup_evidence/calculator.txt"] = sha(
+            evidence
+        )
         (inputs / "STACKUP_CURRENT.json").write_text(
             json.dumps(stack), encoding="utf-8"
         )
@@ -139,13 +141,19 @@ class ReleaseGuardTests(unittest.TestCase):
     def test_technical_attachment_uses_data_after_input_migration(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            project, manufacturing, gallery = self.attachment_fixture(root, input_folder="data")
+            project, manufacturing, gallery = self.attachment_fixture(
+                root, input_folder="data"
+            )
             output = root / "attachment.zip"
             build_technical_attachment.build(project, manufacturing, gallery, output)
             with zipfile.ZipFile(output) as archive:
                 self.assertIn("data/STACKUP_CURRENT.json", archive.namelist())
-                self.assertIn("data/stackup_evidence/calculator.txt", archive.namelist())
-                self.assertFalse(any(name.startswith("design/") for name in archive.namelist()))
+                self.assertIn(
+                    "data/stackup_evidence/calculator.txt", archive.namelist()
+                )
+                self.assertFalse(
+                    any(name.startswith("design/") for name in archive.namelist())
+                )
 
     def test_technical_attachment_does_not_overwrite_existing_receipt(self):
         with tempfile.TemporaryDirectory(prefix="jessie-attachment-test-") as directory:

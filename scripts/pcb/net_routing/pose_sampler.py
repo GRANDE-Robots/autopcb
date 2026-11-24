@@ -28,8 +28,17 @@ class PoseSampler:
     """
 
     # A half turn in place swaps which net each pad of a two-pad part offers its neighbours.
-    NUDGES = ((0.5, 1, 0, 0), (1.0, 0, 1, 0), (0.0, 0, 0, 90), (0.0, 0, 0, 180), (2.0, -1, 0, 0),
-              (0.5, 0, -1, 0), (1.0, -1, 0, 0), (2.0, 0, 1, 0), (0.0, 0, 0, -90))
+    NUDGES = (
+        (0.5, 1, 0, 0),
+        (1.0, 0, 1, 0),
+        (0.0, 0, 0, 90),
+        (0.0, 0, 0, 180),
+        (2.0, -1, 0, 0),
+        (0.5, 0, -1, 0),
+        (1.0, -1, 0, 0),
+        (2.0, 0, 1, 0),
+        (0.0, 0, 0, -90),
+    )
     CLEARING_STEP_MM = 0.25
     CLEARING_REACH_MM = 6.0
     PITCH_MM = 1.0
@@ -40,13 +49,25 @@ class PoseSampler:
     def __init__(self, board, guide, legal):
         self.board, self.guide, self.legal = board, guide, legal
         box = board.GetBoardEdgesBoundingBox()
-        self.bounds = (box.GetX() / 1e6, box.GetY() / 1e6, box.GetRight() / 1e6, box.GetBottom() / 1e6)
+        self.bounds = (
+            box.GetX() / 1e6,
+            box.GetY() / 1e6,
+            box.GetRight() / 1e6,
+            box.GetBottom() / 1e6,
+        )
         # A coarser grid on a large board keeps the number of spots, and the time, bounded.
-        self.pitch = max(self.PITCH_MM, max(box.GetWidth(), box.GetHeight()) / 1e6 / self.PITCHES_PER_SIDE)
+        self.pitch = max(
+            self.PITCH_MM,
+            max(box.GetWidth(), box.GetHeight()) / 1e6 / self.PITCHES_PER_SIDE,
+        )
 
     def poses(self, selected):
         seen = set()
-        for pose in (*self.clearing(selected), *self.nudges(selected), *self.relocations(selected)):
+        for pose in (
+            *self.clearing(selected),
+            *self.nudges(selected),
+            *self.relocations(selected),
+        ):
             if pose.moves not in seen:
                 seen.add(pose.moves)
                 yield pose
@@ -67,15 +88,22 @@ class PoseSampler:
             result.append(copy)
         return result
 
-    def shifted(self, selected, dx: float, dy: float, turn: float = 0.0, *, opposed: bool):
+    def shifted(
+        self, selected, dx: float, dy: float, turn: float = 0.0, *, opposed: bool
+    ):
         """Every selected part moved by one offset, or the second against the first when ``opposed``."""
         moves = []
         for index, (_, ref, footprint, _) in enumerate(selected):
             origin, sign = footprint.GetPosition(), -1 if index and opposed else 1
-            x, y = round(origin.x / 1e6 + sign * dx, 6), round(origin.y / 1e6 + sign * dy, 6)
+            x, y = (
+                round(origin.x / 1e6 + sign * dx, 6),
+                round(origin.y / 1e6 + sign * dy, 6),
+            )
             if not self.inside(x, y):
                 return None
-            moves.append((ref, x, y, (float(footprint.GetOrientationDegrees()) + turn) % 360))
+            moves.append(
+                (ref, x, y, (float(footprint.GetOrientationDegrees()) + turn) % 360)
+            )
         return tuple(moves)
 
     def clearing(self, selected):
@@ -86,7 +114,9 @@ class PoseSampler:
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             for index in range(1, steps + 1):
                 distance = index * self.CLEARING_STEP_MM
-                moves = self.shifted(selected, dx * distance, dy * distance, opposed=False)
+                moves = self.shifted(
+                    selected, dx * distance, dy * distance, opposed=False
+                )
                 if moves is None:
                     break
                 copies = self.copies(selected, moves)
@@ -116,7 +146,9 @@ class PoseSampler:
             for pad in other.Pads():
                 if str(pad.GetNetname()) in nets:
                     at = pad.GetPosition()
-                    targets.setdefault(str(pad.GetNetname()), []).append((at.x / 1e6, at.y / 1e6))
+                    targets.setdefault(str(pad.GetNetname()), []).append(
+                        (at.x / 1e6, at.y / 1e6)
+                    )
         if not targets:
             return
         origin = footprint.GetPosition()
@@ -127,25 +159,45 @@ class PoseSampler:
             probe = pcbnew.FOOTPRINT(footprint)
             probe.SetOrientationDegrees(angle)
             at = probe.GetPosition()
-            offsets = [((pad.GetPosition().x - at.x) / 1e6, (pad.GetPosition().y - at.y) / 1e6,
-                        str(pad.GetNetname())) for pad in probe.Pads() if str(pad.GetNetname()) in targets]
+            offsets = [
+                (
+                    (pad.GetPosition().x - at.x) / 1e6,
+                    (pad.GetPosition().y - at.y) / 1e6,
+                    str(pad.GetNetname()),
+                )
+                for pad in probe.Pads()
+                if str(pad.GetNetname()) in targets
+            ]
             bx0, by0, bx1, by1 = self.bounds
             for i in range(1, int((bx1 - bx0) / self.pitch)):
                 for j in range(1, int((by1 - by0) / self.pitch)):
-                    x, y = round(bx0 + i * self.pitch, 6), round(by0 + j * self.pitch, 6)
+                    x, y = (
+                        round(bx0 + i * self.pitch, 6),
+                        round(by0 + j * self.pitch, 6),
+                    )
                     if math.hypot(x - x0, y - y0) < self.pitch:
                         continue
-                    cost = sum(min(math.hypot(x + ox - tx, y + oy - ty) for tx, ty in targets[net])
-                               for ox, oy, net in offsets)
+                    cost = sum(
+                        min(
+                            math.hypot(x + ox - tx, y + oy - ty)
+                            for tx, ty in targets[net]
+                        )
+                        for ox, oy, net in offsets
+                    )
                     ranked.append((cost, x, y, angle))
         ranked.sort()
         chosen = []
-        for cost, x, y, angle in ranked[:self.RELOCATION_CHECKS]:
+        for cost, x, y, angle in ranked[: self.RELOCATION_CHECKS]:
             if any(math.hypot(x - cx, y - cy) < 2 * self.pitch for cx, cy in chosen):
                 continue
             moves = ((ref, x, y, angle),)
             if self.legal(selected, self.copies(selected, moves)):
                 chosen.append((x, y))
-                yield Pose("relocation", moves, round(math.hypot(x - x0, y - y0), 6), (angle - base) % 360)
+                yield Pose(
+                    "relocation",
+                    moves,
+                    round(math.hypot(x - x0, y - y0), 6),
+                    (angle - base) % 360,
+                )
                 if len(chosen) >= self.RELOCATIONS:
                     return

@@ -50,9 +50,15 @@ def copper_boundary(board: Any, tracks: Iterable[Any]) -> dict[str, Any]:
     connectivity.Build(board)
     selected = tuple(tracks)
     internal = {item.m_Uuid.AsString() for item in selected}
-    return {item.m_Uuid.AsString(): typed_copper(item) for track in selected
-            for item in (*connectivity.GetConnectedTracks(track), *connectivity.GetConnectedPads(track))
-            if item.m_Uuid.AsString() not in internal}
+    return {
+        item.m_Uuid.AsString(): typed_copper(item)
+        for track in selected
+        for item in (
+            *connectivity.GetConnectedTracks(track),
+            *connectivity.GetConnectedPads(track),
+        )
+        if item.m_Uuid.AsString() not in internal
+    }
 
 
 def net_classes(board: Any) -> dict[str, Any]:
@@ -92,7 +98,9 @@ class ProjectSettings:
             # KiCad would migrate a non-JSON file as a legacy project, which crashes on Windows.
             Path(self.path).unlink(missing_ok=True)
         manager = pcbnew.GetSettingsManager()
-        manager.LoadProject(self.path, False)  # False for a new project, which KiCad still creates
+        manager.LoadProject(
+            self.path, False
+        )  # False for a new project, which KiCad still creates
         project = manager.GetProject(self.path)
         saved = manager.SaveProject(self.path, project)
         manager.UnloadProject(project, False)
@@ -102,7 +110,9 @@ class ProjectSettings:
 
 def enabled_copper_layers(board: Any) -> tuple[str, ...]:
     """Return only enabled physical copper layers, in stack order."""
-    return tuple(str(board.GetLayerName(layer)) for layer in board.GetEnabledLayers().CuStack())
+    return tuple(
+        str(board.GetLayerName(layer)) for layer in board.GetEnabledLayers().CuStack()
+    )
 
 
 @contextmanager

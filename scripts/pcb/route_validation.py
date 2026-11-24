@@ -84,9 +84,15 @@ def _inputs(source: Path) -> list[Path]:
     return list(ProjectPaths(source).audit_inputs())
 
 
-def _copy_inputs(files: list[Path], source: Path, destination: Path, *, names=None) -> None:
+def _copy_inputs(
+    files: list[Path], source: Path, destination: Path, *, names=None
+) -> None:
     for original in files:
-        target = destination / (names[original] if names is not None else original.relative_to(source.parent))
+        target = destination / (
+            names[original]
+            if names is not None
+            else original.relative_to(source.parent)
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(original, target)
     (destination / SNAPSHOT_ENTRY).write_text(source.name, encoding="utf-8")
@@ -120,8 +126,13 @@ def verify_validation_evidence(
 
 
 def _drc_native(
-    cli: Path, board: Path, output: Path, *, save_refill: bool = False,
-    schematic_parity: bool = False, refill_zones: bool = True,
+    cli: Path,
+    board: Path,
+    output: Path,
+    *,
+    save_refill: bool = False,
+    schematic_parity: bool = False,
+    refill_zones: bool = True,
 ) -> dict[str, Any]:
     if not isinstance(schematic_parity, bool):
         raise ValueError("schematic_parity must be true or false")
@@ -138,7 +149,10 @@ def _drc_native(
     completed = run_checked(command, operation="KiCad DRC", output=output)
     # KiCad can exit 0 and write an empty parity array after a netlist
     # failure. Require its explicit completion line as well as the report.
-    if schematic_parity and "schematic parity issues" not in completed.stdout.casefold():
+    if (
+        schematic_parity
+        and "schematic parity issues" not in completed.stdout.casefold()
+    ):
         detail = completed.stderr.strip() or completed.stdout.strip()
         raise RuntimeError(f"KiCad did not complete schematic parity: {detail}")
     report = json.loads(output.read_text(encoding="utf-8-sig"))
@@ -146,24 +160,40 @@ def _drc_native(
         report.get("unconnected_items"), list
     ):
         raise RuntimeError("KiCad DRC returned an incomplete report")
-    if not {"error", "warning", "exclusion"} <= set(report.get("included_severities", [])):
+    if not {"error", "warning", "exclusion"} <= set(
+        report.get("included_severities", [])
+    ):
         raise RuntimeError("KiCad DRC did not include every severity")
     if schematic_parity and not isinstance(report.get("schematic_parity"), list):
         raise RuntimeError("KiCad DRC omitted schematic parity findings")
     return report
 
 
-def _drc(cli: Path, board: Path, output: Path, *, save_refill: bool = False,
-         schematic_parity: bool = False) -> dict[str, Any]:
+def _drc(
+    cli: Path,
+    board: Path,
+    output: Path,
+    *,
+    save_refill: bool = False,
+    schematic_parity: bool = False,
+) -> dict[str, Any]:
     """Run native checks, exhausting the capped width inventory on private copies."""
     from pcb.drc_inventory import expand_width_report
 
-    report = _drc_native(cli, board, output, save_refill=save_refill,
-                         schematic_parity=schematic_parity)
-    complete = expand_width_report(board, report, lambda path, result: _drc_native(
-        cli, path, result, schematic_parity=schematic_parity))
+    report = _drc_native(
+        cli, board, output, save_refill=save_refill, schematic_parity=schematic_parity
+    )
+    complete = expand_width_report(
+        board,
+        report,
+        lambda path, result: _drc_native(
+            cli, path, result, schematic_parity=schematic_parity
+        ),
+    )
     if complete is not report:
-        output.write_text(json.dumps(complete, indent=2, allow_nan=False), encoding='utf-8')
+        output.write_text(
+            json.dumps(complete, indent=2, allow_nan=False), encoding="utf-8"
+        )
     return complete
 
 
@@ -268,15 +298,20 @@ def _segment_identities(board_bytes: bytes) -> dict[str, str]:
     its existing warning into a new warning merely because its UUID changed.
     Ambiguous duplicate segments deliberately retain their UUID identities.
     """
+
     def canonical(form: Form, *, root: bool = False) -> tuple:
         return tuple(
-            ("atom", item.value) if isinstance(item, Atom) else ("form", canonical(item))
+            ("atom", item.value)
+            if isinstance(item, Atom)
+            else ("form", canonical(item))
             for item in form.items
             if not (root and isinstance(item, Form) and item.name == "uuid")
         )
 
     entries = []
-    for expression in select_direct_children(board_bytes.decode("utf-8-sig"), "segment"):
+    for expression in select_direct_children(
+        board_bytes.decode("utf-8-sig"), "segment"
+    ):
         form = parse(expression)
         identifiers = form.children("uuid")
         if len(identifiers) != 1 or len(identifiers[0].atoms()) != 2:
@@ -289,12 +324,15 @@ def _segment_identities(board_bytes: bytes) -> dict[str, str]:
         if nets[0].atoms()[1].value.isdecimal():
             continue
         identifier = identifiers[0].atoms()[1].value
-        signature = hashlib.sha256(repr(canonical(form, root=True)).encode("utf-8")).hexdigest()
+        signature = hashlib.sha256(
+            repr(canonical(form, root=True)).encode("utf-8")
+        ).hexdigest()
         entries.append((identifier, signature))
     counts = collections.Counter(signature for _, signature in entries)
     return {
         identifier: f"segment:{signature}"
-        for identifier, signature in entries if counts[signature] == 1
+        for identifier, signature in entries
+        if counts[signature] == 1
     }
 
 
@@ -304,6 +342,7 @@ def stable_connection_items(before: bytes, after: bytes) -> dict[str, str]:
     Nets with zones or unnamed/numeric net identities are excluded. This is
     evidence only for comparing alternate KiCad connection-width anchors.
     """
+
     def inventory(data: bytes):
         text = data.decode("utf-8-sig")
         segment_names = _segment_identities(data)
@@ -349,11 +388,18 @@ def stable_connection_items(before: bytes, after: bytes) -> dict[str, str]:
     old_copper, old_pads, old_items, old_zones = inventory(before)
     new_copper, new_pads, new_items, new_zones = inventory(after)
     nets = set(old_copper) | set(old_pads)
-    stable = {net for net in nets if net not in old_zones | new_zones
-              and old_copper[net] == new_copper[net]
-              and old_pads[net] == new_pads[net]}
-    return {key: net for key, net in old_items.items()
-            if net in stable and new_items.get(key) == net}
+    stable = {
+        net
+        for net in nets
+        if net not in old_zones | new_zones
+        and old_copper[net] == new_copper[net]
+        and old_pads[net] == new_pads[net]
+    }
+    return {
+        key: net
+        for key, net in old_items.items()
+        if net in stable and new_items.get(key) == net
+    }
 
 
 def added_violation_keys(old, new, stable_items: dict[str, str] | None = None):
@@ -372,15 +418,20 @@ def added_violation_keys(old, new, stable_items: dict[str, str] | None = None):
                 continue
             for _ in range(count):
                 for removed in sorted((old - new).elements()):
-                    if (removed[:2] == added[:2] and len(removed[2]) == 2
-                            and {stable_items.get(item) for item in removed[2]} == nets):
+                    if (
+                        removed[:2] == added[:2]
+                        and len(removed[2]) == 2
+                        and {stable_items.get(item) for item in removed[2]} == nets
+                    ):
                         old[removed] -= 1
                         new[added] -= 1
                         break
     return new - old
 
 
-def _dangling_track_identities(board, report: dict, *, rebuild: bool = True) -> dict[str, tuple[str, ...]]:
+def _dangling_track_identities(
+    board, report: dict, *, rebuild: bool = True
+) -> dict[str, tuple[str, ...]]:
     """Ask KiCad about both ends of each reported dangling straight track."""
     import pcbnew
 
@@ -390,7 +441,8 @@ def _dangling_track_identities(board, report: dict, *, rebuild: bool = True) -> 
     if rebuild:
         connectivity.Build(board)
     tracks = {
-        item.m_Uuid.AsString(): item for item in board.GetTracks()
+        item.m_Uuid.AsString(): item
+        for item in board.GetTracks()
         if isinstance(item, pcbnew.PCB_TRACK)
         and not isinstance(item, (pcbnew.PCB_VIA, pcbnew.PCB_ARC))
     }
@@ -441,12 +493,17 @@ def _dangling_track_identities(board, report: dict, *, rebuild: bool = True) -> 
                     endpoints = []
                     break
                 fields = [
-                    track.GetNetname(), board.GetLayerName(track.GetLayer()),
-                    *point, int(copper_width(track)), dx // divisor, dy // divisor,
+                    track.GetNetname(),
+                    board.GetLayerName(track.GetLayer()),
+                    *point,
+                    int(copper_width(track)),
+                    dx // divisor,
+                    dy // divisor,
                 ]
-                endpoints.append("dangling:" + json.dumps(
-                    fields, ensure_ascii=False, separators=(",", ":")
-                ))
+                endpoints.append(
+                    "dangling:"
+                    + json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
+                )
             if endpoints:
                 result[identifier] = tuple(sorted(set(endpoints)))
     finally:
@@ -455,7 +512,9 @@ def _dangling_track_identities(board, report: dict, *, rebuild: bool = True) -> 
     return result
 
 
-def _dangling_summary(report: dict, identities: dict[str, tuple[str, ...]]) -> list | None:
+def _dangling_summary(
+    report: dict, identities: dict[str, tuple[str, ...]]
+) -> list | None:
     """Return complete per-warning endpoint evidence, or request strict fallback."""
     summary = []
     for finding in report["violations"]:
@@ -473,14 +532,19 @@ def _dangling_summary(report: dict, identities: dict[str, tuple[str, ...]]) -> l
 
 def _new_dangling_indices(baseline: list, candidate: list) -> list[int]:
     """Match endpoint and warning multisets; never hide a newly dangling end."""
+
     def counters(entries):
         counts, endpoints = collections.Counter(), collections.Counter()
         for entry in entries:
-            if (not isinstance(entry, (list, tuple)) or len(entry) != 2
-                    or entry[0] not in {"error", "warning", "exclusion"}
-                    or not isinstance(entry[1], (list, tuple))
-                    or not entry[1] or len(set(entry[1])) != len(entry[1])
-                    or any(not isinstance(value, str) or not value for value in entry[1])):
+            if (
+                not isinstance(entry, (list, tuple))
+                or len(entry) != 2
+                or entry[0] not in {"error", "warning", "exclusion"}
+                or not isinstance(entry[1], (list, tuple))
+                or not entry[1]
+                or len(set(entry[1])) != len(entry[1])
+                or any(not isinstance(value, str) or not value for value in entry[1])
+            ):
                 raise ValueError("Invalid dangling-track evidence")
             counts[entry[0]] += 1
             endpoints.update((entry[0], value) for value in entry[1])
@@ -501,13 +565,19 @@ def _new_dangling_indices(baseline: list, candidate: list) -> list[int]:
     return new
 
 
-def _key(violation: dict[str, Any], identities: dict[str, str] | None = None) -> tuple[str, str, tuple[str, ...]]:
+def _key(
+    violation: dict[str, Any], identities: dict[str, str] | None = None
+) -> tuple[str, str, tuple[str, ...]]:
     identities = identities or {}
     return (
         violation.get("type", ""),
         violation.get("severity", ""),
-        tuple(sorted(identities.get(item.get("uuid", ""), item.get("uuid", ""))
-                     for item in violation.get("items", []))),
+        tuple(
+            sorted(
+                identities.get(item.get("uuid", ""), item.get("uuid", ""))
+                for item in violation.get("items", [])
+            )
+        ),
     )
 
 
@@ -670,8 +740,7 @@ def validate_routes(
     removals: list[dict[str, str]] = []
     permitted_moves = set(footprint_moves)
     if len(permitted_moves) != len(footprint_moves) or any(
-        not isinstance(reference, str) or not reference
-        for reference in footprint_moves
+        not isinstance(reference, str) or not reference for reference in footprint_moves
     ):
         raise ValueError("Footprint move permissions must be distinct references")
     moved: set[str] = set()
@@ -731,9 +800,7 @@ def validate_routes(
             raise ValueError("Every proposed segment and via needs one UUID")
         requested_ids[ids[0].atoms()[1].value] = item_net
     if moved != permitted_moves:
-        raise ValueError(
-            "Every permitted footprint must have exactly one pose change"
-        )
+        raise ValueError("Every permitted footprint must have exactly one pose change")
     if len(requested_ids) != len(changes) - len(removals) - len(moved):
         raise ValueError("Proposed copper UUIDs must be unique")
     files = _inputs(source)
@@ -781,12 +848,18 @@ def validate_routes(
         # campaign, so applying it cannot leave stale copper behind.
         check_parity = (native_path(before, ".kicad_sch")).is_file()
         baseline = _drc(
-            cli, native_path(before, ".kicad_pcb"), before / "drc.json",
-            save_refill=True, schematic_parity=check_parity,
+            cli,
+            native_path(before, ".kicad_pcb"),
+            before / "drc.json",
+            save_refill=True,
+            schematic_parity=check_parity,
         )
         tested = _drc(
-            cli, native_path(after, ".kicad_pcb"), after / "drc.json",
-            save_refill=True, schematic_parity=check_parity,
+            cli,
+            native_path(after, ".kicad_pcb"),
+            after / "drc.json",
+            save_refill=True,
+            schematic_parity=check_parity,
         )
         zone_changes = _zone_refill_changes(
             candidate.after, (native_path(after, ".kicad_pcb")).read_bytes()
@@ -796,7 +869,9 @@ def validate_routes(
             candidate = CampaignPlanner(after).plan("pcb", [*changes, *zone_changes])
             (native_path(after, ".kicad_pcb")).write_bytes(candidate.after)
             tested = _drc(
-                cli, native_path(after, ".kicad_pcb"), after / "final_drc.json",
+                cli,
+                native_path(after, ".kicad_pcb"),
+                after / "final_drc.json",
                 schematic_parity=check_parity,
             )
         original = pcbnew.LoadBoard(str(native_path(before, ".kicad_pcb")))
@@ -806,8 +881,12 @@ def validate_routes(
         routed.GetConnectivity().Build(routed)
         anchors = []
         for contract in contracts:
-            old_starts = _anchors(original, contract.start, contract.start_layer, contract.net)
-            old_targets = _anchors(original, contract.end, contract.end_layer, contract.net)
+            old_starts = _anchors(
+                original, contract.start, contract.start_layer, contract.net
+            )
+            old_targets = _anchors(
+                original, contract.end, contract.end_layer, contract.net
+            )
             if not old_starts or not old_targets:
                 raise CandidateRejected(
                     f"A {contract.net} endpoint does not touch existing copper on the requested net and layer"
@@ -816,10 +895,16 @@ def validate_routes(
             # tracks. Bind that endpoint to its replacement copper at the exact
             # original coordinate; the independent island check below still
             # requires all pre-existing surviving connectivity to be restored.
-            starts = old_starts - removed_ids or _anchors(routed, contract.start, contract.start_layer, contract.net)
-            targets = old_targets - removed_ids or _anchors(routed, contract.end, contract.end_layer, contract.net)
+            starts = old_starts - removed_ids or _anchors(
+                routed, contract.start, contract.start_layer, contract.net
+            )
+            targets = old_targets - removed_ids or _anchors(
+                routed, contract.end, contract.end_layer, contract.net
+            )
             if not starts or not targets:
-                raise CandidateRejected(f"A {contract.net} endpoint lost its replacement copper")
+                raise CandidateRejected(
+                    f"A {contract.net} endpoint lost its replacement copper"
+                )
             anchors.append((starts, targets))
         if not all(
             _connected(routed, starts, targets, rebuild=False)
@@ -833,7 +918,8 @@ def validate_routes(
 
             inventory = {net.name: net for net in inventory_board(routed).nets}
             incomplete = sorted(
-                name for name in requested_nets
+                name
+                for name in requested_nets
                 if name not in inventory or len(inventory[name].copper_islands) != 1
             )
             if incomplete:
@@ -871,28 +957,55 @@ def validate_routes(
         from pcb.net_routing.style import audit_style, normalize_segment_identities
 
         old_segment_ids = _segment_identities(original_bytes)
-        new_segment_ids = _segment_identities((native_path(after, ".kicad_pcb")).read_bytes())
+        new_segment_ids = _segment_identities(
+            (native_path(after, ".kicad_pcb")).read_bytes()
+        )
         new_style = new_style_issues(
             normalize_segment_identities(audit_style(original), old_segment_ids),
             normalize_segment_identities(audit_style(routed), new_segment_ids),
         )
         from pcb.net_routing.via_guard import via_pad_overlaps
 
-        new_via_pad = sorted(set(via_pad_overlaps(routed)) - set(via_pad_overlaps(original)))
-        reference_comparison = {"status": "project_rules_missing", "degraded_track_ids": [], "unverified_track_ids": []}
+        new_via_pad = sorted(
+            set(via_pad_overlaps(routed)) - set(via_pad_overlaps(original))
+        )
+        reference_comparison = {
+            "status": "project_rules_missing",
+            "degraded_track_ids": [],
+            "unverified_track_ids": [],
+        }
         rules = native_path(before, ".kicad_pro")
         if rules.is_file():
-            from pcb.net_routing.reference import comparable_missing_samples, compare_reference, high_speed_nets, sample_reference
+            from pcb.net_routing.reference import (
+                comparable_missing_samples,
+                compare_reference,
+                high_speed_nets,
+                sample_reference,
+            )
 
-            board_nets = {item.GetNetname() for item in (*original.GetPads(), *original.GetTracks(),
-                          *routed.GetPads(), *routed.GetTracks()) if item.GetNetname()}
+            board_nets = {
+                item.GetNetname()
+                for item in (
+                    *original.GetPads(),
+                    *original.GetTracks(),
+                    *routed.GetPads(),
+                    *routed.GetTracks(),
+                )
+                if item.GetNetname()
+            }
             critical = high_speed_nets(rules.read_bytes(), board_nets)
             if critical:
                 previous_reference = sample_reference(original, critical)
                 current_reference = sample_reference(routed, critical)
-                reference_comparison = asdict(compare_reference(previous_reference, current_reference))
-                missing = comparable_missing_samples(previous_reference, current_reference)
-                reference_comparison["comparable_missing_samples"] = list(missing) if missing is not None else None
+                reference_comparison = asdict(
+                    compare_reference(previous_reference, current_reference)
+                )
+                missing = comparable_missing_samples(
+                    previous_reference, current_reference
+                )
+                reference_comparison["comparable_missing_samples"] = (
+                    list(missing) if missing is not None else None
+                )
             else:
                 reference_comparison["status"] = "no_high_speed_classification"
         old_dangling = _dangling_track_identities(original, baseline, rebuild=False)
@@ -900,16 +1013,22 @@ def validate_routes(
         old_ends = _dangling_summary(baseline, old_dangling)
         new_ends = _dangling_summary(tested, new_dangling)
         compare_ends = old_ends is not None and new_ends is not None
-        unmatched_ends = set(_new_dangling_indices(old_ends, new_ends)) if compare_ends else set()
+        unmatched_ends = (
+            set(_new_dangling_indices(old_ends, new_ends)) if compare_ends else set()
+        )
         old = collections.Counter(
-            _key(item, old_segment_ids) for item in baseline["violations"]
+            _key(item, old_segment_ids)
+            for item in baseline["violations"]
             if not (compare_ends and item.get("type") == "track_dangling")
         )
         new = collections.Counter(
-            _key(item, new_segment_ids) for item in tested["violations"]
+            _key(item, new_segment_ids)
+            for item in tested["violations"]
             if not (compare_ends and item.get("type") == "track_dangling")
         )
-        added_keys = added_violation_keys(old, new, stable_connection_items(original_bytes, candidate.after))
+        added_keys = added_violation_keys(
+            old, new, stable_connection_items(original_bytes, candidate.after)
+        )
         added = []
         dangling_index = 0
         for item in tested["violations"]:
@@ -941,7 +1060,8 @@ def validate_routes(
         added_parity_keys = (
             collections.Counter(_key(item) for item in tested["schematic_parity"])
             - collections.Counter(_key(item) for item in baseline["schematic_parity"])
-            if check_parity else collections.Counter()
+            if check_parity
+            else collections.Counter()
         )
         added_parity = []
         if check_parity:
@@ -967,7 +1087,13 @@ def validate_routes(
     return {
         "status": (
             "rejected"
-            if added or added_parity or changed_nets or broken_islands or new_style or new_via_pad or after_count > before_count
+            if added
+            or added_parity
+            or changed_nets
+            or broken_islands
+            or new_style
+            or new_via_pad
+            or after_count > before_count
             or reference_comparison["status"] == "degraded"
             else "no_new_drc_violations"
         ),
@@ -978,15 +1104,25 @@ def validate_routes(
         },
         "tool_sha256": tool_fingerprints,
         "endpoint_connectivity": "connected",
-        **({"whole_net_copper_connectivity": "all_requested_copper_connected"} if require_full_nets else {}),
+        **(
+            {"whole_net_copper_connectivity": "all_requested_copper_connected"}
+            if require_full_nets
+            else {}
+        ),
         "routes_validated": len(contracts),
         "footprint_moves": sorted(moved),
         "baseline_violations": len(baseline["violations"]),
         "candidate_violations": len(tested["violations"]),
-        "candidate_errors": sum(v.get("severity") == "error" for v in tested["violations"]),
-        "candidate_warnings": sum(v.get("severity") == "warning" for v in tested["violations"]),
+        "candidate_errors": sum(
+            v.get("severity") == "error" for v in tested["violations"]
+        ),
+        "candidate_warnings": sum(
+            v.get("severity") == "warning" for v in tested["violations"]
+        ),
         "schematic_parity_checked": check_parity,
-        "candidate_schematic_parity": len(tested["schematic_parity"]) if check_parity else None,
+        "candidate_schematic_parity": len(tested["schematic_parity"])
+        if check_parity
+        else None,
         "new_schematic_parity": added_parity,
         "baseline_unconnected": before_count,
         "candidate_unconnected": after_count,
@@ -995,7 +1131,9 @@ def validate_routes(
         "net_identity_changes": changed_nets,
         "broken_existing_connections": broken_islands,
         "new_style_issues": list(new_style),
-        "new_via_in_pad": [f"{item.reference}.{item.pad_number}" for item in new_via_pad],
+        "new_via_in_pad": [
+            f"{item.reference}.{item.pad_number}" for item in new_via_pad
+        ],
         "reference_comparison": reference_comparison,
         "refilled_zone_count": len(zone_changes),
         "_zone_refill_changes": zone_changes,

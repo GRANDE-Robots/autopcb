@@ -27,7 +27,12 @@ class GeometryProgressTests(unittest.TestCase):
     def test_symmetry_and_runtime_are_plotted_when_measured(self):
         self.assertIn("symmetry_score", progress.FIELDS)
         self.assertIn("routing_run_seconds", progress.FIELDS)
-        point = replace(progress_point("a" * 64), symmetry_score=1.5, routing_run_seconds=123.0, optimization_evidence="verified run")
+        point = replace(
+            progress_point("a" * 64),
+            symmetry_score=1.5,
+            routing_run_seconds=123.0,
+            optimization_evidence="verified run",
+        )
         fields = [item[1] for item in progress.chart_series([point])]
         self.assertIn("symmetry_score", fields)
         self.assertIn("routing_run_seconds", fields)
@@ -40,13 +45,17 @@ class GeometryProgressTests(unittest.TestCase):
 
     def test_previous_history_keeps_optimization_metrics_unknown(self):
         self.assertTrue(hasattr(progress, "PREVIOUS_FIELDS"))
-        point = progress.attach_geometry(progress_point("a" * 64), GeometryMetrics(1, 2, 3), "source")
+        point = progress.attach_geometry(
+            progress_point("a" * 64), GeometryMetrics(1, 2, 3), "source"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "history.csv"
             with path.open("w", encoding="utf-8", newline="") as stream:
                 writer = csv.DictWriter(stream, fieldnames=progress.PREVIOUS_FIELDS)
                 writer.writeheader()
-                writer.writerow({field: point.as_row()[field] for field in progress.PREVIOUS_FIELDS})
+                writer.writerow(
+                    {field: point.as_row()[field] for field in progress.PREVIOUS_FIELDS}
+                )
             restored = progress.read_history(path)[0]
             self.assertIsNone(restored.symmetry_score)
             self.assertIsNone(restored.routing_run_seconds)
@@ -58,8 +67,12 @@ class GeometryProgressTests(unittest.TestCase):
             progress.attach_run_metrics(point, "c" * 64, "b" * 64, 0.5, 10, "run")
         with self.assertRaisesRegex(ValueError, "evidence"):
             progress.attach_run_metrics(point, "a" * 64, "b" * 64, 0.5, 10, "")
-        enriched = progress.attach_run_metrics(point, "a" * 64, "b" * 64, 0.5, 10, "run")
-        self.assertEqual((enriched.symmetry_score, enriched.routing_run_seconds), (0.5, 10))
+        enriched = progress.attach_run_metrics(
+            point, "a" * 64, "b" * 64, 0.5, 10, "run"
+        )
+        self.assertEqual(
+            (enriched.symmetry_score, enriched.routing_run_seconds), (0.5, 10)
+        )
 
     def test_parity_is_recorded_but_not_plotted(self):
         point = progress_point("a" * 64)

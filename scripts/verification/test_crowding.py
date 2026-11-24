@@ -23,7 +23,7 @@ def courtyard(footprint, half=0.6):
     shape.SetLayer(pcbnew.F_CrtYd)
     shape.SetStart(pcbnew.VECTOR2I(at.x - mm(half), at.y - mm(half)))
     shape.SetEnd(pcbnew.VECTOR2I(at.x + mm(half), at.y + mm(half)))
-    shape.SetWidth(mm(.05))
+    shape.SetWidth(mm(0.05))
     footprint.Add(shape)
 
 
@@ -46,20 +46,35 @@ class CrowdingTests(unittest.TestCase):
             self.assertTrue(moved)
             self.assertNotIn("J2", moved)
             packed = pcbnew.LoadBoard(str(source))
-            geometry = {fp.m_Uuid.AsString(): _courtyard_geometry(fp) for fp in packed.GetFootprints()}
+            geometry = {
+                fp.m_Uuid.AsString(): _courtyard_geometry(fp)
+                for fp in packed.GetFootprints()
+            }
             self.assertEqual(_courtyard_conflicts(geometry, geometry), set())
-            edges, gap = packed.GetBoardEdgesBoundingBox(), packed.GetDesignSettings().m_CopperEdgeClearance
+            edges, gap = (
+                packed.GetBoardEdgesBoundingBox(),
+                packed.GetDesignSettings().m_CopperEdgeClearance,
+            )
             for pad in packed.GetPads():
                 box = pad.GetBoundingBox()
-                self.assertTrue(edges.GetX() + gap <= box.GetX() and box.GetRight() <= edges.GetRight() - gap
-                                and edges.GetY() + gap <= box.GetY() and box.GetBottom() <= edges.GetBottom() - gap,
-                                pad.GetParentFootprint().GetReference())
+                self.assertTrue(
+                    edges.GetX() + gap <= box.GetX()
+                    and box.GetRight() <= edges.GetRight() - gap
+                    and edges.GetY() + gap <= box.GetY()
+                    and box.GetBottom() <= edges.GetBottom() - gap,
+                    pad.GetParentFootprint().GetReference(),
+                )
             point = result["point_mm"]
             for item in result["moved"]:
-                self.assertLess(math.dist(item["to_mm"], point) - 1e-6, math.dist(item["from_mm"], point))
+                self.assertLess(
+                    math.dist(item["to_mm"], point) - 1e-6,
+                    math.dist(item["from_mm"], point),
+                )
             self.assertEqual(result["routability"]["unroutable"], [])
             source.write_bytes(unpacked)
-            self.assertEqual(CrowdedVariant(source, 3, policy).write()["moved"], result["moved"])
+            self.assertEqual(
+                CrowdedVariant(source, 3, policy).write()["moved"], result["moved"]
+            )
 
 
 if __name__ == "__main__":

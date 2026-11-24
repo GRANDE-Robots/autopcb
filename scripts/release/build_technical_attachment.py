@@ -136,8 +136,14 @@ def build(project, manufacturing, gallery, out):
     ]
     for n, h in stack["evidence_files"].items():
         evidence = data_reference(P, n)
-        require(evidence.is_file() and sha(evidence) == h, "Stack evidence changed: " + n)
-        member = (Path("data") / Path(n.removeprefix("design/"))).as_posix() if n.startswith("design/") else n
+        require(
+            evidence.is_file() and sha(evidence) == h, "Stack evidence changed: " + n
+        )
+        member = (
+            (Path("data") / Path(n.removeprefix("design/"))).as_posix()
+            if n.startswith("design/")
+            else n
+        )
         entries.append((evidence, member))
     validate_generated_files(M, source, entries)
     output_dir.parent.mkdir(parents=True, exist_ok=True)

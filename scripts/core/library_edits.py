@@ -42,7 +42,9 @@ def library_path(project: Path, document: str) -> Path:
         else (project / relative)
     ).resolve()
     roots = [directory.resolve() for directory in library_directories(project)]
-    if not any(root.is_relative_to(project) and path.is_relative_to(root) for root in roots):
+    if not any(
+        root.is_relative_to(project) and path.is_relative_to(root) for root in roots
+    ):
         raise ValueError("Library document must be inside a project library directory")
     if path.suffix.lower() not in LIBRARY_ROOTS or not path.is_file():
         raise ValueError("Expected an existing .kicad_sym or .kicad_mod file")

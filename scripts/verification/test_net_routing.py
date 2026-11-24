@@ -19,7 +19,12 @@ import pcbnew
 from pcb.net_routing.backend import NativeBackend, Settings
 from pcb.net_routing.cli import main
 from pcb.net_routing.geometry import (
-    RouteGeometryError, aggregate, branch_sites, on_segment, unique_segments, vertices,
+    RouteGeometryError,
+    aggregate,
+    branch_sites,
+    on_segment,
+    unique_segments,
+    vertices,
 )
 from pcb.net_routing.model import (
     Budget,
@@ -33,7 +38,11 @@ from pcb.net_routing.model import (
 from pcb.net_routing.native import NativeNet, Snapshot, discover, load_board
 from pcb.net_routing.schedule import net_orders, search_orders
 from pcb.net_routing.topology import EMPTY_ROUTE, whole_net
-from pcb.net_routing.workflow import _solve_with_terminal_refinement, configurations, plan_nets
+from pcb.net_routing.workflow import (
+    _solve_with_terminal_refinement,
+    configurations,
+    plan_nets,
+)
 from pcb.route_optimizer import COPPER_LAYERS, Point, Route, Segment, Via, Weights, mm
 from pcb.route_cli import campaign_changes
 from pcb.route_validation import RouteContract, _drc, validate_routes
@@ -115,13 +124,21 @@ class NetGeometryTests(unittest.TestCase):
         physical = site(5, 0, "In1.Cu")
         net = Net(
             "SIGNAL",
-            (Island("pad", (pad,)), Island("plane", (physical, virtual),
-                                           zone_anchors=((virtual, physical),))),
+            (
+                Island("pad", (pad,)),
+                Island(
+                    "plane", (physical, virtual), zone_anchors=((virtual, physical),)
+                ),
+            ),
             pad_sites=frozenset((pad,)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1))
-        backend = synthetic_backend(net, budget, layers=["B.Cu", "In1.Cu"], step_mm=.25)
-        with patch.object(backend, "combine", side_effect=ValueError("unexpected join failure")):
+        backend = synthetic_backend(
+            net, budget, layers=["B.Cu", "In1.Cu"], step_mm=0.25
+        )
+        with patch.object(
+            backend, "combine", side_effect=ValueError("unexpected join failure")
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected join failure"):
                 backend.paths(net, (), EMPTY_ROUTE, pad, virtual)
 
@@ -132,15 +149,22 @@ class NetGeometryTests(unittest.TestCase):
         router = backend.settings[net.name].router((), frozenset(), budget)
         candidate = route(segment((0, 0), (1, 0)))
         with patch.object(backend, "_path", return_value=(candidate, False)):
-            with patch.object(backend, "combine", side_effect=ValueError("unexpected context failure")):
+            with patch.object(
+                backend, "combine", side_effect=ValueError("unexpected context failure")
+            ):
                 with self.assertRaisesRegex(ValueError, "unexpected context failure"):
-                    backend._path_with_context(router, net, EMPTY_ROUTE, site(0, 0), site(1, 0))
+                    backend._path_with_context(
+                        router, net, EMPTY_ROUTE, site(0, 0), site(1, 0)
+                    )
 
     def test_electrical_screen_does_not_hide_unexpected_value_errors(self):
         net = make_net("SIGNAL", [(0, 0), (1, 0)])
         backend = synthetic_backend(net, Budget(Limits(seconds=30)))
-        with patch.object(backend.settings[net.name], "assessment",
-                          side_effect=ValueError("unexpected electrical failure")):
+        with patch.object(
+            backend.settings[net.name],
+            "assessment",
+            side_effect=ValueError("unexpected electrical failure"),
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected electrical failure"):
                 backend.accept(net, route(segment((0, 0), (1, 0))))
 
@@ -150,8 +174,11 @@ class NetGeometryTests(unittest.TestCase):
         net = make_net("SIGNAL", [(0, 0), (1, 0)])
         budget = Budget(Limits(seconds=30))
         backend = synthetic_backend(net, budget)
-        with patch.object(backend.settings[net.name], "assessment",
-                          side_effect=ElectricalConstraintViolation("candidate exceeds limit")):
+        with patch.object(
+            backend.settings[net.name],
+            "assessment",
+            side_effect=ElectricalConstraintViolation("candidate exceeds limit"),
+        ):
             self.assertFalse(backend.accept(net, route(segment((0, 0), (1, 0)))))
         self.assertIn("electrical_screen", budget.failures)
 
@@ -163,11 +190,17 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         router = backend.settings[net.name].router((), frozenset(), budget)
         candidate = route(segment((0, 0), (1, 0)), segment((1, 0), (2, 0)))
-        with patch.object(smoothing, "aggregate", side_effect=ValueError("unexpected refinement failure")):
+        with patch.object(
+            smoothing,
+            "aggregate",
+            side_effect=ValueError("unexpected refinement failure"),
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected refinement failure"):
                 smoothing.simplify_terminal_branches(candidate, router, net, budget)
             with self.assertRaisesRegex(ValueError, "unexpected refinement failure"):
-                smoothing.simplify_route(candidate, router, net, site(0, 0), site(2, 0), budget)
+                smoothing.simplify_route(
+                    candidate, router, net, site(0, 0), site(2, 0), budget
+                )
 
     def test_refinement_declines_non_octilinear_legacy_copper(self):
         from pcb.net_routing import smoothing
@@ -177,9 +210,14 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         router = backend.settings[net.name].router((), frozenset(), budget)
         candidate = route(segment((0, 0), (2, 1)))
-        self.assertIs(smoothing.simplify_terminal_branches(candidate, router, net, budget), candidate)
         self.assertIs(
-            smoothing.simplify_route(candidate, router, net, site(0, 0), site(2, 1), budget),
+            smoothing.simplify_terminal_branches(candidate, router, net, budget),
+            candidate,
+        )
+        self.assertIs(
+            smoothing.simplify_route(
+                candidate, router, net, site(0, 0), site(2, 1), budget
+            ),
             candidate,
         )
 
@@ -188,7 +226,9 @@ class NetGeometryTests(unittest.TestCase):
 
         old = (segment((0, 0), (2, 0)),)
         geometry._existing_lines.cache_clear()
-        with patch.object(geometry, "_line", side_effect=ValueError("unexpected index failure")):
+        with patch.object(
+            geometry, "_line", side_effect=ValueError("unexpected index failure")
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected index failure"):
                 geometry.unique_segments((), old)
             with self.assertRaisesRegex(ValueError, "unexpected index failure"):
@@ -198,7 +238,11 @@ class NetGeometryTests(unittest.TestCase):
     def test_branch_projection_does_not_hide_unexpected_errors(self):
         from pcb.net_routing import geometry
 
-        with patch.object(geometry, "intersection", side_effect=ValueError("unexpected projection failure")):
+        with patch.object(
+            geometry,
+            "intersection",
+            side_effect=ValueError("unexpected projection failure"),
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected projection failure"):
                 geometry.branch_sites((segment((0, 0), (2, 0)),), (site(1, 1),), 8)
 
@@ -214,8 +258,9 @@ class NetGeometryTests(unittest.TestCase):
                 return ()
             return (NetPlan(net.name, route()),)
 
-        plans, trials = search_orders((target, repair), budget, solve,
-                                      preferred_first=frozenset({"REPAIR"}))
+        plans, trials = search_orders(
+            (target, repair), budget, solve, preferred_first=frozenset({"REPAIR"})
+        )
         self.assertTrue(plans)
         self.assertEqual(trials[0]["order"], ["REPAIR", "TARGET"])
         self.assertEqual(visited[0], ("REPAIR", ()))
@@ -225,8 +270,11 @@ class NetGeometryTests(unittest.TestCase):
         repair = make_net("REPAIR", [(0, 1), (4, 1)])
         budget = Budget(Limits(seconds=30, order_trials=1))
         plans, trials = search_orders(
-            (target, repair), budget, lambda net, prior: (NetPlan(net.name, route()),),
-            requested=[["TARGET", "REPAIR"]], preferred_first=frozenset({"REPAIR"}),
+            (target, repair),
+            budget,
+            lambda net, prior: (NetPlan(net.name, route()),),
+            requested=[["TARGET", "REPAIR"]],
+            preferred_first=frozenset({"REPAIR"}),
         )
         self.assertTrue(plans)
         self.assertEqual(trials[0]["order"], ["TARGET", "REPAIR"])
@@ -246,7 +294,9 @@ class NetGeometryTests(unittest.TestCase):
                     budget.check()
             return (NetPlan(net.name, route()),)
 
-        with patch("pcb.net_routing.model.time.monotonic", side_effect=lambda: clock[0]):
+        with patch(
+            "pcb.net_routing.model.time.monotonic", side_effect=lambda: clock[0]
+        ):
             plans, trials = search_orders(
                 (target, repair), budget, solve, preferred_first=frozenset({"REPAIR"})
             )
@@ -258,13 +308,23 @@ class NetGeometryTests(unittest.TestCase):
 
     def test_starting_islands_share_the_per_net_path_budget(self):
         first, second, alternate = site(0, 0), site(1, 0), site(2, 0)
-        net = Net("SIGNAL", (
-            Island("first", (first,)), Island("second", (second, alternate)),
-        ))
-        budget = Budget(Limits(
-            seconds=30, tree_beam=2, connections_per_step=2,
-            fallback_connections_per_step=2, path_calls=2, net_path_calls=2,
-        ))
+        net = Net(
+            "SIGNAL",
+            (
+                Island("first", (first,)),
+                Island("second", (second, alternate)),
+            ),
+        )
+        budget = Budget(
+            Limits(
+                seconds=30,
+                tree_beam=2,
+                connections_per_step=2,
+                fallback_connections_per_step=2,
+                path_calls=2,
+                net_path_calls=2,
+            )
+        )
 
         class DirectionalBackend:
             def paths(self, net, prior, tree, start, end):
@@ -304,17 +364,29 @@ class NetGeometryTests(unittest.TestCase):
             def accept(self, net, candidate):
                 return True
 
-        with patch("pcb.net_routing.model.time.monotonic", side_effect=lambda: clock[0]):
+        with patch(
+            "pcb.net_routing.model.time.monotonic", side_effect=lambda: clock[0]
+        ):
             plans = whole_net(net, (), DirectionalBackend(), budget)
         self.assertTrue(plans)
         self.assertIn("tree_seconds", budget.limits_hit)
 
     def test_slow_nearest_access_point_leaves_time_for_another_on_the_same_island(self):
         origin, near, alternate = site(0, 0), site(1, 0), site(2, 0)
-        net = Net('SIGNAL', (Island('start', (origin,)), Island('end', (near, alternate))))
+        net = Net(
+            "SIGNAL", (Island("start", (origin,)), Island("end", (near, alternate)))
+        )
         clock = [0.0]
-        budget = Budget(Limits(seconds=12, tree_beam=1, connections_per_step=2,
-                               fallback_connections_per_step=2, path_calls=4), started=0.0)
+        budget = Budget(
+            Limits(
+                seconds=12,
+                tree_beam=1,
+                connections_per_step=2,
+                fallback_connections_per_step=2,
+                path_calls=4,
+            ),
+            started=0.0,
+        )
         seen = []
 
         class Backend:
@@ -333,22 +405,26 @@ class NetGeometryTests(unittest.TestCase):
             def accept(self, net, candidate):
                 return True
 
-        with patch('pcb.net_routing.model.time.monotonic', side_effect=lambda: clock[0]):
+        with patch(
+            "pcb.net_routing.model.time.monotonic", side_effect=lambda: clock[0]
+        ):
             plans = whole_net(net, (), Backend(), budget)
         self.assertTrue(plans)
         self.assertIn(alternate, seen)
-        self.assertIn('endpoint_seconds', budget.limits_hit)
+        self.assertIn("endpoint_seconds", budget.limits_hit)
         self.assertLess(clock[0], 12)
         self.assertIsNone(budget.slice_deadline)
 
     def test_path_search_retries_a_staircase_at_existing_copper(self):
         contact, endpoint, old_pad = site(7, 2), site(6, 3.5), site(8, 1)
         net = Net(
-            "SIGNAL", (Island("a", (contact,)), Island("b", (endpoint,))),
-            (segment((8, 1), (7, 2)),), frozenset((old_pad, endpoint)),
+            "SIGNAL",
+            (Island("a", (contact,)), Island("b", (endpoint,))),
+            (segment((8, 1), (7, 2)),),
+            frozenset((old_pad, endpoint)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, step_mm=.25, forbid_staircase=True)
+        backend = synthetic_backend(net, budget, step_mm=0.25, forbid_staircase=True)
         found = backend.paths(net, (), EMPTY_ROUTE, endpoint, contact)
         self.assertTrue(found)
         for candidate in found:
@@ -360,7 +436,9 @@ class NetGeometryTests(unittest.TestCase):
         old = segment((0, 0), (1, 1))
         added = route(segment((1, 1), (2, 1)), segment((2, 1), (3, 2)))
         with self.assertRaises(StaircaseGeometryError) as caught:
-            combine(added, existing=(old,), pad_sites=frozenset((site(0, 0), site(3, 2))))
+            combine(
+                added, existing=(old,), pad_sites=frozenset((site(0, 0), site(3, 2)))
+            )
         witnesses = caught.exception.witnesses
         self.assertTrue(witnesses)
         for layer, point in witnesses:
@@ -370,23 +448,39 @@ class NetGeometryTests(unittest.TestCase):
 
     def test_standard_dogleg_combines_with_existing_outer_runs(self):
         existing = (segment((0, 0), (1, 0)), segment((3, 4), (4, 4)))
-        added = route(segment((1, 0), (2, 1)), segment((2, 1), (2, 3)), segment((2, 3), (3, 4)))
-        result = combine(added, existing=existing, pad_sites=frozenset((site(0, 0), site(4, 4))))
+        added = route(
+            segment((1, 0), (2, 1)), segment((2, 1), (2, 3)), segment((2, 3), (3, 4))
+        )
+        result = combine(
+            added, existing=existing, pad_sites=frozenset((site(0, 0), site(4, 4)))
+        )
         self.assertTrue(result.segments)
 
     def test_a_dogleg_crossing_existing_copper_of_its_net_is_not_a_staircase(self):
         existing = (segment((0, 1), (6, 1)),)
-        added = route(segment((1, 2), (2, 2)), segment((2, 2), (4, 0)), segment((4, 0), (4, -2)),
-                      segment((4, -2), (5, -3)), segment((5, -3), (6, -3)))
-        result = combine(added, existing=existing, pad_sites=frozenset((site(1, 2), site(6, -3))))
+        added = route(
+            segment((1, 2), (2, 2)),
+            segment((2, 2), (4, 0)),
+            segment((4, 0), (4, -2)),
+            segment((4, -2), (5, -3)),
+            segment((5, -3), (6, -3)),
+        )
+        result = combine(
+            added, existing=existing, pad_sites=frozenset((site(1, 2), site(6, -3)))
+        )
         self.assertTrue(result.segments)
 
     def test_a_dogleg_whose_exit_lies_inside_pad_copper_is_a_staircase(self):
         from pcb.net_routing.geometry import StaircaseGeometryError
         from pcb.route_optimizer import PadCopper
 
-        added = route(segment((0, 6), (1, 6)), segment((1, 6), (2, 5)), segment((2, 5), (2, 3)),
-                      segment((2, 3), (3, 2)), segment((3, 2), (4, 2)))
+        added = route(
+            segment((0, 6), (1, 6)),
+            segment((1, 6), (2, 5)),
+            segment((2, 5), (2, 3)),
+            segment((2, 3), (3, 2)),
+            segment((3, 2), (4, 2)),
+        )
         pads = frozenset((site(0, 6), site(4, 2)))
         self.assertTrue(combine(added, pad_sites=pads).segments)
         copper = PadCopper((("F.Cu", mm(2.9), mm(1.5), mm(4.5), mm(2.5)),))
@@ -402,12 +496,20 @@ class NetGeometryTests(unittest.TestCase):
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
             route(segment((0, 0), (4, 0)), segment((4, 0), (5, 1))),
-            route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)), segment((4, 1), (5, 1))),
+            route(
+                segment((0, 0), (3, 0)),
+                segment((3, 0), (4, 1)),
+                segment((4, 1), (5, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (5, 1))),
         )
-        witnesses = (site(4.5, .5), site(3.5, .5), site(.5, .5))
-        accepted = route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)),
-                         segment((3, 1), (5, 1)), cost=1)
+        witnesses = (site(4.5, 0.5), site(3.5, 0.5), site(0.5, 0.5))
+        accepted = route(
+            segment((0, 0), (2, 0)),
+            segment((2, 0), (3, 1)),
+            segment((3, 1), (5, 1)),
+            cost=1,
+        )
 
         def combined(_net, routes):
             candidate = routes[-1]
@@ -419,46 +521,76 @@ class NetGeometryTests(unittest.TestCase):
 
         def search(router, _net, _tree, _start, _end, *, context_check):
             if router.edge_clear is not original_clearance:
-                self.assertFalse(router.edge_clear(site(4, 0).point, site(5, 1).point, "F.Cu"))
-                self.assertTrue(router.edge_clear(site(0, 0).point, site(4, 0).point, "F.Cu"))
+                self.assertFalse(
+                    router.edge_clear(site(4, 0).point, site(5, 1).point, "F.Cu")
+                )
+                self.assertTrue(
+                    router.edge_clear(site(0, 0).point, site(4, 0).point, "F.Cu")
+                )
                 self.assertTrue(context_check(accepted))
                 return accepted, False
             for candidate in rejected:
                 self.assertFalse(context_check(candidate))
             self.fail("The router did not try its conflict-directed detour")
 
-        with (patch.object(model, "edge_clear", return_value=True) as original_clearance,
-              patch.object(backend, "combine", side_effect=combined),
-              patch.object(backend, "_path", side_effect=search)):
-            result, limited = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(5, 1))
+        with (
+            patch.object(model, "edge_clear", return_value=True) as original_clearance,
+            patch.object(backend, "combine", side_effect=combined),
+            patch.object(backend, "_path", side_effect=search),
+        ):
+            result, limited = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(5, 1)
+            )
         self.assertEqual(result, accepted)
         self.assertTrue(limited)
 
-    def test_off_grid_warm_search_checks_staircase_context_before_selecting_a_path(self):
-        contact, endpoint, old_pad = site(7.03, 2.02), site(6.03, 3.52), site(8.03, 1.02)
+    def test_off_grid_warm_search_checks_staircase_context_before_selecting_a_path(
+        self,
+    ):
+        contact, endpoint, old_pad = (
+            site(7.03, 2.02),
+            site(6.03, 3.52),
+            site(8.03, 1.02),
+        )
         net = Net(
-            "SIGNAL", (Island("a", (contact,)), Island("b", (endpoint,))),
-            (segment((8.03, 1.02), (7.03, 2.02)),), frozenset((old_pad, endpoint)),
+            "SIGNAL",
+            (Island("a", (contact,)), Island("b", (endpoint,))),
+            (segment((8.03, 1.02), (7.03, 2.02)),),
+            frozenset((old_pad, endpoint)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, step_mm=.25, forbid_staircase=True, first_feasible=True)
+        backend = synthetic_backend(
+            net, budget, step_mm=0.25, forbid_staircase=True, first_feasible=True
+        )
         model = backend.settings[net.name].router((), frozenset(), budget)
-        with patch.object(backend, "alternative_headings", wraps=backend.alternative_headings) as retry:
-            result, _ = backend._path_with_context(model, net, EMPTY_ROUTE, contact, endpoint)
+        with patch.object(
+            backend, "alternative_headings", wraps=backend.alternative_headings
+        ) as retry:
+            result, _ = backend._path_with_context(
+                model, net, EMPTY_ROUTE, contact, endpoint
+            )
         backend.combine(net, (result,))
         retry.assert_not_called()
 
     def test_on_grid_warm_search_checks_staircase_context_during_search(self):
         contact, endpoint, old_pad = site(7, 2), site(6, 3.5), site(8, 1)
         net = Net(
-            "SIGNAL", (Island("a", (contact,)), Island("b", (endpoint,))),
-            (segment((8, 1), (7, 2)),), frozenset((old_pad, endpoint)),
+            "SIGNAL",
+            (Island("a", (contact,)), Island("b", (endpoint,))),
+            (segment((8, 1), (7, 2)),),
+            frozenset((old_pad, endpoint)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, step_mm=.25, forbid_staircase=True, first_feasible=True)
+        backend = synthetic_backend(
+            net, budget, step_mm=0.25, forbid_staircase=True, first_feasible=True
+        )
         model = backend.settings[net.name].router((), frozenset(), budget)
-        with patch.object(backend, "alternative_headings", wraps=backend.alternative_headings) as retry:
-            result, _ = backend._path_with_context(model, net, EMPTY_ROUTE, contact, endpoint)
+        with patch.object(
+            backend, "alternative_headings", wraps=backend.alternative_headings
+        ) as retry:
+            result, _ = backend._path_with_context(
+                model, net, EMPTY_ROUTE, contact, endpoint
+            )
         backend.combine(net, (result,))
         retry.assert_not_called()
 
@@ -466,11 +598,14 @@ class NetGeometryTests(unittest.TestCase):
         from pcb.net_routing.geometry import StaircaseGeometryError
         from pcb.route_optimizer import NoGridRoute, SearchLimitReached
 
-        for error in (NoGridRoute("exhausted"), SearchLimitReached("limited", expanded=3)):
+        for error in (
+            NoGridRoute("exhausted"),
+            SearchLimitReached("limited", expanded=3),
+        ):
             with self.subTest(error=type(error).__name__):
                 net = make_net("SIGNAL", [(0, 0), (2, 1)])
                 budget = Budget(Limits(seconds=30, smoothing_trials=0))
-                backend = synthetic_backend(net, budget, step_mm=.25)
+                backend = synthetic_backend(net, budget, step_mm=0.25)
                 model = backend.settings[net.name].router((), frozenset(), budget)
                 rejected = route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)))
                 accepted = route(segment((0, 0), (1, 1)), segment((1, 1), (2, 1)))
@@ -481,19 +616,27 @@ class NetGeometryTests(unittest.TestCase):
                     return accepted
 
                 def search(router, _net, _tree, _start, _end, *, context_check):
-                    if router.initial_directions is None and router.final_directions is None:
+                    if (
+                        router.initial_directions is None
+                        and router.final_directions is None
+                    ):
                         self.assertFalse(context_check(rejected))
                         raise error
                     self.assertIsNotNone(router.initial_directions)
                     self.assertNotIn(0, router.initial_directions)
                     return accepted, False
 
-                with (patch.object(backend, "combine", side_effect=combined),
-                      patch.object(backend, "_path", side_effect=search) as searched):
-                    result, limited = backend._path_with_context(model, net, EMPTY_ROUTE,
-                                                                 site(0, 0), site(2, 1))
+                with (
+                    patch.object(backend, "combine", side_effect=combined),
+                    patch.object(backend, "_path", side_effect=search) as searched,
+                ):
+                    result, limited = backend._path_with_context(
+                        model, net, EMPTY_ROUTE, site(0, 0), site(2, 1)
+                    )
                 self.assertEqual(result.segments, accepted.segments)
-                self.assertEqual(result.expanded, 3 if isinstance(error, SearchLimitReached) else 0)
+                self.assertEqual(
+                    result.expanded, 3 if isinstance(error, SearchLimitReached) else 0
+                )
                 self.assertEqual(searched.call_count, 2)
                 self.assertEqual(limited, isinstance(error, SearchLimitReached))
                 self.assertIsNone(model.initial_directions)
@@ -514,8 +657,12 @@ class NetGeometryTests(unittest.TestCase):
         net = make_net("SIGNAL", [(0, 0), (12, 1)])
         budget = Budget(Limits(seconds=20, path_calls=20, smoothing_trials=0))
         backend = synthetic_backend(
-            net, budget, bounds_mm=[-2, -2, 15, 5], gentle_turns=True,
-            forbid_staircase=True, max_expansions=5000,
+            net,
+            budget,
+            bounds_mm=[-2, -2, 15, 5],
+            gentle_turns=True,
+            forbid_staircase=True,
+            max_expansions=5000,
         )
         model = backend.settings[net.name].router((), frozenset(), budget)
 
@@ -523,12 +670,24 @@ class NetGeometryTests(unittest.TestCase):
             candidate = routes[-1]
             if any(on_segment(site(3, 1).point, item) for item in candidate.segments):
                 return candidate
-            raise StaircaseGeometryError("The lower corridor conflicts with existing copper")
+            raise StaircaseGeometryError(
+                "The lower corridor conflicts with existing copper"
+            )
 
-        with (patch.object(model, "edge_clear", side_effect=lambda a, b, _layer: frozenset((a, b)) in edges)
-              as original_clearance, patch.object(backend, "combine", side_effect=compatible)):
-            result, _ = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(12, 1))
-            self.assertTrue(any(on_segment(site(3, 1).point, item) for item in result.segments))
+        with (
+            patch.object(
+                model,
+                "edge_clear",
+                side_effect=lambda a, b, _layer: frozenset((a, b)) in edges,
+            ) as original_clearance,
+            patch.object(backend, "combine", side_effect=compatible),
+        ):
+            result, _ = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(12, 1)
+            )
+            self.assertTrue(
+                any(on_segment(site(3, 1).point, item) for item in result.segments)
+            )
             self.assertFalse(model._has_staircase(list(result.segments)))
             self.assertIs(model.edge_clear, original_clearance)
 
@@ -550,10 +709,16 @@ class NetGeometryTests(unittest.TestCase):
                 raise SearchLimitReached("context rejected", expanded=3)
             raise NoGridRoute("heading unavailable")
 
-        with (patch.object(backend, "combine", side_effect=StaircaseGeometryError("context")),
-              patch.object(backend, "_path", side_effect=search)):
+        with (
+            patch.object(
+                backend, "combine", side_effect=StaircaseGeometryError("context")
+            ),
+            patch.object(backend, "_path", side_effect=search),
+        ):
             with self.assertRaisesRegex(ValueError, "unexpected detour failure"):
-                backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+                backend._path_with_context(
+                    model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+                )
         self.assertNotIn("edge_clear", vars(model))
         self.assertIsNone(model.initial_directions)
         self.assertIsNone(model.final_directions)
@@ -566,8 +731,16 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
-            route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)), segment((2, 1), (4, 1))),
-            route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)), segment((3, 1), (4, 1))),
+            route(
+                segment((0, 0), (1, 0)),
+                segment((1, 0), (2, 1)),
+                segment((2, 1), (4, 1)),
+            ),
+            route(
+                segment((0, 0), (2, 0)),
+                segment((2, 0), (3, 1)),
+                segment((3, 1), (4, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1))),
         )
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
@@ -585,9 +758,13 @@ class NetGeometryTests(unittest.TestCase):
                 self.assertFalse(context_check(candidate))
             self.fail("The router spent the entire search without trying a detour")
 
-        with (patch.object(backend, "combine", side_effect=combine_candidate),
-              patch.object(backend, "_path", side_effect=search)):
-            result, limited = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+        with (
+            patch.object(backend, "combine", side_effect=combine_candidate),
+            patch.object(backend, "_path", side_effect=search),
+        ):
+            result, limited = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+            )
         self.assertEqual(result.segments, accepted.segments)
         self.assertTrue(limited)
         self.assertNotIn("edge_clear", vars(model))
@@ -601,8 +778,16 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
-            route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)), segment((2, 1), (4, 1))),
-            route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)), segment((3, 1), (4, 1))),
+            route(
+                segment((0, 0), (1, 0)),
+                segment((1, 0), (2, 1)),
+                segment((2, 1), (4, 1)),
+            ),
+            route(
+                segment((0, 0), (2, 0)),
+                segment((2, 0), (3, 1)),
+                segment((3, 1), (4, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1))),
         )
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
@@ -624,9 +809,13 @@ class NetGeometryTests(unittest.TestCase):
             self.assertTrue(context_check(accepted))
             return accepted, False
 
-        with (patch.object(backend, "combine", side_effect=combine_candidate),
-              patch.object(backend, "_path", side_effect=search)):
-            result, _ = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+        with (
+            patch.object(backend, "combine", side_effect=combine_candidate),
+            patch.object(backend, "_path", side_effect=search),
+        ):
+            result, _ = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+            )
         self.assertEqual(result.segments, accepted.segments)
         self.assertEqual(len(unrestricted), 2)
         self.assertNotIn("edge_clear", vars(model))
@@ -640,8 +829,16 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
-            route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)), segment((2, 1), (4, 1))),
-            route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)), segment((3, 1), (4, 1))),
+            route(
+                segment((0, 0), (1, 0)),
+                segment((1, 0), (2, 1)),
+                segment((2, 1), (4, 1)),
+            ),
+            route(
+                segment((0, 0), (2, 0)),
+                segment((2, 0), (3, 1)),
+                segment((3, 1), (4, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1))),
         )
         alternate = route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1)))
@@ -667,9 +864,13 @@ class NetGeometryTests(unittest.TestCase):
             calls.append("alternate")
             return alternate, False
 
-        with (patch.object(backend, "combine", side_effect=combine_candidate),
-              patch.object(backend, "_path", side_effect=search)):
-            result, limited = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+        with (
+            patch.object(backend, "combine", side_effect=combine_candidate),
+            patch.object(backend, "_path", side_effect=search),
+        ):
+            result, limited = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+            )
         self.assertEqual(result.segments, alternate.segments)
         self.assertEqual(calls, ["unrestricted", "alternate"])
         self.assertTrue(limited)
@@ -685,8 +886,16 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
-            route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)), segment((2, 1), (4, 1))),
-            route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)), segment((3, 1), (4, 1))),
+            route(
+                segment((0, 0), (1, 0)),
+                segment((1, 0), (2, 1)),
+                segment((2, 1), (4, 1)),
+            ),
+            route(
+                segment((0, 0), (2, 0)),
+                segment((2, 0), (3, 1)),
+                segment((3, 1), (4, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1))),
         )
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
@@ -700,7 +909,10 @@ class NetGeometryTests(unittest.TestCase):
         def search(router, _net, _tree, _start, _end, *, context_check):
             if "edge_clear" in vars(router):
                 raise NoGridRoute("detour blocked")
-            if router.initial_directions is not None or router.final_directions is not None:
+            if (
+                router.initial_directions is not None
+                or router.final_directions is not None
+            ):
                 calls.append("alternate")
                 raise NoGridRoute("heading blocked")
             calls.append("unrestricted")
@@ -710,9 +922,13 @@ class NetGeometryTests(unittest.TestCase):
                 self.fail("The router did not try its detours")
             return accepted, False
 
-        with (patch.object(backend, "combine", side_effect=combine_candidate),
-              patch.object(backend, "_path", side_effect=search)):
-            result, limited = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+        with (
+            patch.object(backend, "combine", side_effect=combine_candidate),
+            patch.object(backend, "_path", side_effect=search),
+        ):
+            result, limited = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+            )
         self.assertEqual(result.segments, accepted.segments)
         self.assertEqual(calls.count("unrestricted"), 2)
         self.assertIn("alternate", calls)
@@ -727,8 +943,16 @@ class NetGeometryTests(unittest.TestCase):
         backend = synthetic_backend(net, budget)
         model = backend.settings[net.name].router((), frozenset(), budget)
         rejected = (
-            route(segment((0, 0), (1, 0)), segment((1, 0), (2, 1)), segment((2, 1), (4, 1))),
-            route(segment((0, 0), (2, 0)), segment((2, 0), (3, 1)), segment((3, 1), (4, 1))),
+            route(
+                segment((0, 0), (1, 0)),
+                segment((1, 0), (2, 1)),
+                segment((2, 1), (4, 1)),
+            ),
+            route(
+                segment((0, 0), (2, 0)),
+                segment((2, 0), (3, 1)),
+                segment((3, 1), (4, 1)),
+            ),
             route(segment((0, 0), (1, 1)), segment((1, 1), (4, 1))),
         )
         accepted = route(segment((0, 0), (3, 0)), segment((3, 0), (4, 1)))
@@ -745,9 +969,13 @@ class NetGeometryTests(unittest.TestCase):
             self.assertFalse(context_check(rejected[2]))
             return accepted, False
 
-        with (patch.object(backend, "combine", side_effect=combine_candidate),
-              patch.object(backend, "_path", side_effect=search) as searched):
-            result, _ = backend._path_with_context(model, net, EMPTY_ROUTE, site(0, 0), site(4, 1))
+        with (
+            patch.object(backend, "combine", side_effect=combine_candidate),
+            patch.object(backend, "_path", side_effect=search) as searched,
+        ):
+            result, _ = backend._path_with_context(
+                model, net, EMPTY_ROUTE, site(0, 0), site(4, 1)
+            )
         self.assertEqual(result.segments, accepted.segments)
         self.assertEqual(searched.call_count, 1)
 
@@ -758,21 +986,35 @@ class NetGeometryTests(unittest.TestCase):
     def test_context_refinement_keeps_valid_original_and_restores_headings(self):
         net = make_net("SIGNAL", [(0, 0), (1, 0)])
         budget = Budget(Limits(seconds=30, smoothing_trials=2))
-        backend = synthetic_backend(net, budget, step_mm=.25)
+        backend = synthetic_backend(net, budget, step_mm=0.25)
         model = backend.settings[net.name].router((), frozenset(), budget)
-        model.initial_directions, model.final_directions = frozenset({0}), frozenset({0})
+        model.initial_directions, model.final_directions = (
+            frozenset({0}),
+            frozenset({0}),
+        )
         original = route(segment((0, 0), (1, 0)))
         invalid_refinement = route(segment((0, 0), (1, 0)))
-        with (patch.object(model, "route", return_value=original),
-              patch("pcb.net_routing.backend.simplify_route", return_value=invalid_refinement)):
+        with (
+            patch.object(model, "route", return_value=original),
+            patch(
+                "pcb.net_routing.backend.simplify_route",
+                return_value=invalid_refinement,
+            ),
+        ):
             result, limited = backend._path(
-                model, net, EMPTY_ROUTE, site(0, 0), site(1, 0),
+                model,
+                net,
+                EMPTY_ROUTE,
+                site(0, 0),
+                site(1, 0),
                 context_check=lambda candidate: candidate is original,
             )
         self.assertIs(result, original)
         self.assertFalse(limited)
-        self.assertEqual((model.initial_directions, model.final_directions),
-                         (frozenset({0}), frozenset({0})))
+        self.assertEqual(
+            (model.initial_directions, model.final_directions),
+            (frozenset({0}), frozenset({0})),
+        )
 
     def test_context_search_preserves_an_endpoint_access_failure(self):
         from pcb.route_optimizer import NoGridRoute
@@ -781,9 +1023,13 @@ class NetGeometryTests(unittest.TestCase):
         budget = Budget(Limits(seconds=30))
         backend = synthetic_backend(net, budget)
         router = backend.settings["SIGNAL"].router((), frozenset(), budget)
-        with patch.object(backend, "_path", side_effect=NoGridRoute("endpoint access blocked")):
+        with patch.object(
+            backend, "_path", side_effect=NoGridRoute("endpoint access blocked")
+        ):
             with self.assertRaisesRegex(NoGridRoute, "endpoint access blocked"):
-                backend._path_with_context(router, net, EMPTY_ROUTE, site(0, 0), site(1, 0))
+                backend._path_with_context(
+                    router, net, EMPTY_ROUTE, site(0, 0), site(1, 0)
+                )
 
     def test_direct_via_to_a_plane_site_is_a_checked_route_candidate(self):
         pad = site(0, 0, "B.Cu")
@@ -791,14 +1037,23 @@ class NetGeometryTests(unittest.TestCase):
         physical = site(5, 0, "In1.Cu")
         net = Net(
             "SIGNAL",
-            (Island("pad", (pad,)), Island("plane", (physical, virtual),
-                                           zone_anchors=((virtual, physical),))),
+            (
+                Island("pad", (pad,)),
+                Island(
+                    "plane", (physical, virtual), zone_anchors=((virtual, physical),)
+                ),
+            ),
             pad_sites=frozenset((pad,)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, layers=["B.Cu", "In1.Cu"], step_mm=.25)
-        with patch.object(backend, "_path_with_context",
-                          side_effect=AssertionError("grid fallback was unnecessary")):
+        backend = synthetic_backend(
+            net, budget, layers=["B.Cu", "In1.Cu"], step_mm=0.25
+        )
+        with patch.object(
+            backend,
+            "_path_with_context",
+            side_effect=AssertionError("grid fallback was unnecessary"),
+        ):
             answers = backend.paths(net, (), EMPTY_ROUTE, pad, virtual)
         self.assertTrue(answers)
         self.assertEqual(answers[0].vias[0].at, virtual.point)
@@ -813,44 +1068,76 @@ class NetGeometryTests(unittest.TestCase):
         physical = site(5, 0, "In1.Cu")
         net = Net(
             "SIGNAL",
-            (Island("pad", (pad,)), Island("plane", (physical, virtual),
-                                           zone_anchors=((virtual, physical),))),
+            (
+                Island("pad", (pad,)),
+                Island(
+                    "plane", (physical, virtual), zone_anchors=((virtual, physical),)
+                ),
+            ),
             pad_sites=frozenset((pad,)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, layers=["B.Cu", "In1.Cu"], step_mm=.25)
-        backend.obstacles = (Obstacle(
-            Point.from_mm([1.1, -.1]), Point.from_mm([1.3, .1]),
-            ("F.Cu",), "OTHER", "pad",
-        ),)
-        with patch.object(backend, "_path_with_context", side_effect=NoGridRoute("blocked")):
+        backend = synthetic_backend(
+            net, budget, layers=["B.Cu", "In1.Cu"], step_mm=0.25
+        )
+        backend.obstacles = (
+            Obstacle(
+                Point.from_mm([1.1, -0.1]),
+                Point.from_mm([1.3, 0.1]),
+                ("F.Cu",),
+                "OTHER",
+                "pad",
+            ),
+        )
+        with patch.object(
+            backend, "_path_with_context", side_effect=NoGridRoute("blocked")
+        ):
             self.assertFalse(backend.paths(net, (), EMPTY_ROUTE, pad, virtual))
 
     def test_plane_search_prefers_a_clear_via_over_a_nearer_blocked_one(self):
         from pcb.route_optimizer import NoGridRoute, Obstacle
 
         pad = site(0, 0, "B.Cu")
-        blocked = site(.2, 0, "In1.Cu")
+        blocked = site(0.2, 0, "In1.Cu")
         clear = site(1.2, 0, "In1.Cu")
         physical = site(5, 0, "In1.Cu")
         net = Net(
             "SIGNAL",
-            (Island("pad", (pad,)), Island(
-                "plane", (blocked, clear, physical),
-                zone_anchors=((blocked, physical), (clear, physical)),
-            )),
+            (
+                Island("pad", (pad,)),
+                Island(
+                    "plane",
+                    (blocked, clear, physical),
+                    zone_anchors=((blocked, physical), (clear, physical)),
+                ),
+            ),
             pad_sites=frozenset((pad,)),
         )
-        budget = Budget(Limits(
-            seconds=30, tree_beam=1, connections_per_step=1,
-            fallback_connections_per_step=1, path_candidates=1, smoothing_trials=0,
-        ))
-        backend = synthetic_backend(net, budget, layers=["B.Cu", "In1.Cu"], step_mm=.25)
-        backend.obstacles = (Obstacle(
-            Point.from_mm([.15, -.05]), Point.from_mm([.25, .05]),
-            ("F.Cu",), "OTHER", "pad",
-        ),)
-        with patch.object(backend, "_path_with_context", side_effect=NoGridRoute("blocked")):
+        budget = Budget(
+            Limits(
+                seconds=30,
+                tree_beam=1,
+                connections_per_step=1,
+                fallback_connections_per_step=1,
+                path_candidates=1,
+                smoothing_trials=0,
+            )
+        )
+        backend = synthetic_backend(
+            net, budget, layers=["B.Cu", "In1.Cu"], step_mm=0.25
+        )
+        backend.obstacles = (
+            Obstacle(
+                Point.from_mm([0.15, -0.05]),
+                Point.from_mm([0.25, 0.05]),
+                ("F.Cu",),
+                "OTHER",
+                "pad",
+            ),
+        )
+        with patch.object(
+            backend, "_path_with_context", side_effect=NoGridRoute("blocked")
+        ):
             plans = whole_net(net, (), backend, budget)
         self.assertTrue(plans)
         self.assertEqual(plans[0].route.vias[0].at, clear.point)
@@ -864,15 +1151,25 @@ class NetGeometryTests(unittest.TestCase):
             (Island("start", (start,)), Island("end", (outside, inside))),
             pad_sites=frozenset((start, inside)),
         )
-        budget = Budget(Limits(
-            seconds=30, tree_beam=1, connections_per_step=1,
-            fallback_connections_per_step=1, path_candidates=1, smoothing_trials=0,
-        ))
-        backend = synthetic_backend(net, budget, step_mm=.25, bounds_mm=[-2, -2, 2, 2])
+        budget = Budget(
+            Limits(
+                seconds=30,
+                tree_beam=1,
+                connections_per_step=1,
+                fallback_connections_per_step=1,
+                path_candidates=1,
+                smoothing_trials=0,
+            )
+        )
+        backend = synthetic_backend(net, budget, step_mm=0.25, bounds_mm=[-2, -2, 2, 2])
         plans = whole_net(net, (), backend, budget)
         self.assertTrue(plans)
-        self.assertTrue(any(segment.end == inside.point or segment.start == inside.point
-                            for segment in plans[0].route.segments))
+        self.assertTrue(
+            any(
+                segment.end == inside.point or segment.start == inside.point
+                for segment in plans[0].route.segments
+            )
+        )
 
     def test_direct_plane_via_respects_configured_extra_keepout_on_other_layer(self):
         from pcb.route_optimizer import NoGridRoute, Obstacle
@@ -882,17 +1179,30 @@ class NetGeometryTests(unittest.TestCase):
         physical = site(5, 0, "In1.Cu")
         net = Net(
             "SIGNAL",
-            (Island("pad", (pad,)), Island("plane", (physical, virtual),
-                                           zone_anchors=((virtual, physical),))),
+            (
+                Island("pad", (pad,)),
+                Island(
+                    "plane", (physical, virtual), zone_anchors=((virtual, physical),)
+                ),
+            ),
             pad_sites=frozenset((pad,)),
         )
         budget = Budget(Limits(seconds=30, path_candidates=1, smoothing_trials=0))
-        backend = synthetic_backend(net, budget, layers=["B.Cu", "In1.Cu"], step_mm=.25)
-        backend.settings[net.name].extra = (Obstacle(
-            Point.from_mm([1.1, -.1]), Point.from_mm([1.3, .1]),
-            ("F.Cu",), "", "keepout",
-        ),)
-        with patch.object(backend, "_path_with_context", side_effect=NoGridRoute("blocked")):
+        backend = synthetic_backend(
+            net, budget, layers=["B.Cu", "In1.Cu"], step_mm=0.25
+        )
+        backend.settings[net.name].extra = (
+            Obstacle(
+                Point.from_mm([1.1, -0.1]),
+                Point.from_mm([1.3, 0.1]),
+                ("F.Cu",),
+                "",
+                "keepout",
+            ),
+        )
+        with patch.object(
+            backend, "_path_with_context", side_effect=NoGridRoute("blocked")
+        ):
             self.assertFalse(backend.paths(net, (), EMPTY_ROUTE, pad, virtual))
 
     def test_shared_copper_is_charged_once_and_collinear_joints_removed(self):
@@ -935,7 +1245,9 @@ class NetGeometryTests(unittest.TestCase):
     def test_native_contact_angle_is_checked(self):
         with self.assertRaisesRegex(ValueError, "45-degree"):
             combine(route(segment((4, 0), (4, 4))), existing=(segment((0, 0), (4, 0)),))
-        tee = combine(route(segment((4, 0), (4, 4))), existing=(segment((0, 0), (8, 0)),))
+        tee = combine(
+            route(segment((4, 0), (4, 4))), existing=(segment((0, 0), (8, 0)),)
+        )
         self.assertEqual(tee.bends, 0)
 
     def test_pad_connections_are_not_trace_bends(self):
@@ -1051,7 +1363,10 @@ class NetSearchTests(unittest.TestCase):
         self.assertLess(result.length_mm, candidate.length_mm)
         for pad in net.pad_sites:
             self.assertTrue(
-                any(s.layer == pad.layer and on_segment(pad.point, s) for s in result.segments),
+                any(
+                    s.layer == pad.layer and on_segment(pad.point, s)
+                    for s in result.segments
+                ),
                 pad,
             )
         self.assertTrue(any(on_segment(site(6, 4).point, s) for s in result.segments))
@@ -1061,32 +1376,56 @@ class NetSearchTests(unittest.TestCase):
         start, intermediate, old_contact = site(1, 4), site(4, 5), site(5, 5)
         net = Net(
             "A",
-            tuple(Island(str(i), (s,)) for i, s in enumerate((start, site(10, 4), site(9, 1)))),
+            tuple(
+                Island(str(i), (s,))
+                for i, s in enumerate((start, site(10, 4), site(9, 1)))
+            ),
             (segment((5, 5), (4, 6)),),
             frozenset((start, intermediate, site(10, 4), site(9, 1))),
         )
         backend = synthetic_backend(net, Budget(Limits(seconds=30)))
         candidate = backend.combine(
             net,
-            (route(
-                segment((1, 4), (3, 4)), segment((3, 4), (4, 5)),
-                segment((4, 5), (5, 5)), segment((5, 5), (6, 4)),
-                segment((6, 4), (10, 4)), segment((6, 4), (9, 1)),
-            ),),
+            (
+                route(
+                    segment((1, 4), (3, 4)),
+                    segment((3, 4), (4, 5)),
+                    segment((4, 5), (5, 5)),
+                    segment((5, 5), (6, 4)),
+                    segment((6, 4), (10, 4)),
+                    segment((6, 4), (9, 1)),
+                ),
+            ),
         )
         result = backend.refine_complete(net, (), candidate)
         for anchor in (intermediate, old_contact, *net.pad_sites):
-            self.assertTrue(any(s.layer == anchor.layer and on_segment(anchor.point, s) for s in result.segments), anchor)
+            self.assertTrue(
+                any(
+                    s.layer == anchor.layer and on_segment(anchor.point, s)
+                    for s in result.segments
+                ),
+                anchor,
+            )
 
-    def test_workflow_keeps_greedy_candidate_as_fallback_after_terminal_refinement(self):
+    def test_workflow_keeps_greedy_candidate_as_fallback_after_terminal_refinement(
+        self,
+    ):
         net = make_net("A", [(1, 4), (10, 4), (9, 1)])
         budget = Budget(Limits(seconds=30))
         backend = synthetic_backend(net, budget)
-        candidate = backend.combine(net, (route(
-            segment((1, 4), (3, 4)), segment((3, 4), (4, 5)),
-            segment((4, 5), (5, 5)), segment((5, 5), (6, 4)),
-            segment((6, 4), (10, 4)), segment((6, 4), (9, 1)),
-        ),))
+        candidate = backend.combine(
+            net,
+            (
+                route(
+                    segment((1, 4), (3, 4)),
+                    segment((3, 4), (4, 5)),
+                    segment((4, 5), (5, 5)),
+                    segment((5, 5), (6, 4)),
+                    segment((6, 4), (10, 4)),
+                    segment((6, 4), (9, 1)),
+                ),
+            ),
+        )
         original = NetPlan("A", candidate)
         with patch("pcb.net_routing.workflow.whole_net", return_value=(original,)):
             answers = _solve_with_terminal_refinement(net, (), backend, budget)
@@ -1305,7 +1644,9 @@ class NetSearchTests(unittest.TestCase):
         net = Net("A", (Island("already", (site(0, 0), site(8, 0))),))
         budget = Budget(Limits())
         backend = synthetic_backend(net, budget)
-        with patch.object(backend.settings["A"], "router", side_effect=AssertionError("unneeded grid")):
+        with patch.object(
+            backend.settings["A"], "router", side_effect=AssertionError("unneeded grid")
+        ):
             answer = _solve_with_terminal_refinement(net, (), backend, budget)
         self.assertEqual(answer[0].route, EMPTY_ROUTE)
         self.assertEqual(budget.calls, 0)
@@ -1323,8 +1664,14 @@ class NetSearchTests(unittest.TestCase):
         origin = site(0, 0)
         ends = tuple(site(x, 0) for x in range(1, 15))
         net = Net("A", (Island("start", (origin,)), Island("end", ends)))
-        budget = Budget(Limits(tree_beam=1, connections_per_step=3,
-                               fallback_connections_per_step=14, path_candidates=1))
+        budget = Budget(
+            Limits(
+                tree_beam=1,
+                connections_per_step=3,
+                fallback_connections_per_step=14,
+                path_candidates=1,
+            )
+        )
         seen = []
 
         class Backend:
@@ -1350,8 +1697,14 @@ class NetSearchTests(unittest.TestCase):
         origin = site(0, 0)
         ends = tuple(site(x, 0) for x in range(1, 15))
         net = Net("A", (Island("start", (origin,)), Island("end", ends)))
-        budget = Budget(Limits(tree_beam=1, connections_per_step=3,
-                               fallback_connections_per_step=14, path_candidates=1))
+        budget = Budget(
+            Limits(
+                tree_beam=1,
+                connections_per_step=3,
+                fallback_connections_per_step=14,
+                path_candidates=1,
+            )
+        )
         seen = []
 
         class Backend:
@@ -1373,8 +1726,14 @@ class NetSearchTests(unittest.TestCase):
         origin = site(0, 0)
         ends = tuple(site(x, 0) for x in range(1, 15))
         net = Net("A", (Island("start", (origin,)), Island("end", ends)))
-        budget = Budget(Limits(tree_beam=1, connections_per_step=3,
-                               fallback_connections_per_step=5, path_candidates=1))
+        budget = Budget(
+            Limits(
+                tree_beam=1,
+                connections_per_step=3,
+                fallback_connections_per_step=5,
+                path_candidates=1,
+            )
+        )
         seen = []
 
         class Backend:
@@ -1399,10 +1758,12 @@ class NetSearchTests(unittest.TestCase):
     def test_existing_explicit_access_limit_stays_a_hard_limit(self):
         old = Limits.from_config({"connections_per_step": 3})
         self.assertEqual(old.fallback_connections_per_step, 3)
-        extended = Limits.from_config({
-            "connections_per_step": 3,
-            "fallback_connections_per_step": 14,
-        })
+        extended = Limits.from_config(
+            {
+                "connections_per_step": 3,
+                "fallback_connections_per_step": 14,
+            }
+        )
         self.assertEqual(extended.fallback_connections_per_step, 14)
 
     def test_unknown_configuration_keys_rejected(self):
@@ -1458,11 +1819,16 @@ class NativeNetRoutingTests(unittest.TestCase):
                 existing=(segment((8, 5), (8, 7)),),
                 pad_sites=frozenset((start, ends[0])),
             )
-            budget = Budget(Limits(
-                tree_beam=1, connections_per_step=2,
-                fallback_connections_per_step=5, path_candidates=1,
-                smoothing_trials=0, seconds=30,
-            ))
+            budget = Budget(
+                Limits(
+                    tree_beam=1,
+                    connections_per_step=2,
+                    fallback_connections_per_step=5,
+                    path_candidates=1,
+                    smoothing_trials=0,
+                    seconds=30,
+                )
+            )
             native = synthetic_backend(net, budget, step_mm=0.5)
 
             class PartlyBlocked:
@@ -1480,9 +1846,15 @@ class NativeNetRoutingTests(unittest.TestCase):
 
             candidates = whole_net(net, (), PartlyBlocked(), budget)
             self.assertTrue(candidates)
-            changes = campaign_changes(candidates[0].route, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
-            contract = RouteContract("SIGNAL", start.point, "F.Cu", ends[0].point, "F.Cu")
-            evidence = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, [contract])
+            changes = campaign_changes(
+                candidates[0].route, "SIGNAL", mm(0.2), mm(0.6), mm(0.3)
+            )
+            contract = RouteContract(
+                "SIGNAL", start.point, "F.Cu", ends[0].point, "F.Cu"
+            )
+            evidence = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, [contract]
+            )
             self.assertEqual(evidence["status"], "no_new_drc_violations", evidence)
             self.assertEqual(evidence["candidate_unconnected"], 0)
             self.assertEqual(source.read_bytes(), before)
@@ -1496,20 +1868,32 @@ class NativeNetRoutingTests(unittest.TestCase):
             before = source.read_bytes()
             net = make_net("SIGNAL", [(2, 2), (8, 2), (8, 5)])
             backend = synthetic_backend(net, Budget(Limits(seconds=30)))
-            candidate = backend.combine(net, (route(
-                segment((2, 2), (3, 2)), segment((3, 2), (4, 1)),
-                segment((4, 1), (5, 1)), segment((5, 1), (6, 2)),
-                segment((6, 2), (8, 2)), segment((6, 2), (8, 4)),
-                segment((8, 4), (8, 5)),
-            ),))
+            candidate = backend.combine(
+                net,
+                (
+                    route(
+                        segment((2, 2), (3, 2)),
+                        segment((3, 2), (4, 1)),
+                        segment((4, 1), (5, 1)),
+                        segment((5, 1), (6, 2)),
+                        segment((6, 2), (8, 2)),
+                        segment((6, 2), (8, 4)),
+                        segment((8, 4), (8, 5)),
+                    ),
+                ),
+            )
             refined = backend.refine_complete(net, (), candidate)
             self.assertLess(refined.cost, candidate.cost)
             changes = campaign_changes(refined, "SIGNAL", mm(0.2), mm(0.6), mm(0.3))
             contracts = [
-                RouteContract("SIGNAL", site(2, 2).point, "F.Cu", site(*target).point, "F.Cu")
+                RouteContract(
+                    "SIGNAL", site(2, 2).point, "F.Cu", site(*target).point, "F.Cu"
+                )
                 for target in ((8, 2), (8, 5))
             ]
-            result = validate_routes(source, hashlib.sha256(before).hexdigest(), changes, contracts)
+            result = validate_routes(
+                source, hashlib.sha256(before).hexdigest(), changes, contracts
+            )
             self.assertEqual(result["status"], "no_new_drc_violations", result)
             self.assertEqual(result["candidate_unconnected"], 0)
             self.assertEqual(source.read_bytes(), before)
@@ -1567,19 +1951,29 @@ class NativeNetRoutingTests(unittest.TestCase):
             zone.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             outline = zone.Outline()
             outline.NewOutline()
-            for x, y in ((.2, .2), (9.8, .2), (9.8, 7.8), (.2, 7.8)):
+            for x, y in ((0.2, 0.2), (9.8, 0.2), (9.8, 7.8), (0.2, 7.8)):
                 outline.Append(mm(x), mm(y))
             board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
             before = source.read_bytes()
             conservative = load_board(source)
-            self.assertEqual(len(discover(
-                conservative, "SIGNAL", ("F.Cu",), Budget(Limits())
-            ).net.islands), 2)
+            self.assertEqual(
+                len(
+                    discover(
+                        conservative, "SIGNAL", ("F.Cu",), Budget(Limits())
+                    ).net.islands
+                ),
+                2,
+            )
             refilled = load_board(source, refill_zones=True)
-            self.assertEqual(len(discover(
-                refilled, "SIGNAL", ("F.Cu",), Budget(Limits())
-            ).net.islands), 1)
+            self.assertEqual(
+                len(
+                    discover(
+                        refilled, "SIGNAL", ("F.Cu",), Budget(Limits())
+                    ).net.islands
+                ),
+                1,
+            )
             self.assertEqual(source.read_bytes(), before)
 
     def test_planner_uses_refilled_zone_connectivity_when_requested(self):
@@ -1592,7 +1986,7 @@ class NativeNetRoutingTests(unittest.TestCase):
             zone.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             outline = zone.Outline()
             outline.NewOutline()
-            for x, y in ((.2, .2), (9.8, .2), (9.8, 7.8), (.2, 7.8)):
+            for x, y in ((0.2, 0.2), (9.8, 0.2), (9.8, 7.8), (0.2, 7.8)):
                 outline.Append(mm(x), mm(y))
             board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
@@ -1616,14 +2010,14 @@ class NativeNetRoutingTests(unittest.TestCase):
         trace = pcbnew.PCB_TRACK(board)
         trace.SetStart(pcbnew.VECTOR2I(mm(2), mm(2)))
         trace.SetEnd(pcbnew.VECTOR2I(mm(3), mm(2)))
-        trace.SetWidth(mm(.2))
+        trace.SetWidth(mm(0.2))
         trace.SetLayer(pcbnew.F_Cu)
         trace.SetNetCode(signal.GetNetCode())
         board.Add(trace)
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(pcbnew.VECTOR2I(mm(3), mm(2)))
-        via.SetWidth(mm(.6))
-        via.SetDrill(mm(.3))
+        via.SetWidth(mm(0.6))
+        via.SetDrill(mm(0.3))
         via.SetViaType(pcbnew.VIATYPE_THROUGH)
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
         via.SetNetCode(signal.GetNetCode())
@@ -1633,7 +2027,7 @@ class NativeNetRoutingTests(unittest.TestCase):
         zone.SetNetCode(signal.GetNetCode())
         outline = zone.Outline()
         outline.NewOutline()
-        for x, y in ((.2, .2), (9.8, .2), (9.8, 7.8), (.2, 7.8)):
+        for x, y in ((0.2, 0.2), (9.8, 0.2), (9.8, 7.8), (0.2, 7.8)):
             outline.Append(mm(x), mm(y))
         board.Add(zone)
         pcbnew.SaveBoard(str(source), board)
@@ -1644,17 +2038,24 @@ class NativeNetRoutingTests(unittest.TestCase):
             source = self.make_plane_fixture(Path(folder))
             before = source.read_bytes()
             filled = load_board(source, refill_zones=True)
-            found = discover(filled, "SIGNAL", ("B.Cu", "In1.Cu", "F.Cu"),
-                             Budget(Limits()), include_zone_access=True)
+            found = discover(
+                filled,
+                "SIGNAL",
+                ("B.Cu", "In1.Cu", "F.Cu"),
+                Budget(Limits()),
+                include_zone_access=True,
+            )
             self.assertEqual(len(found.net.islands), 2)
             plane = next(island for island in found.net.islands if island.zone_anchors)
-            self.assertTrue(any(
-                virtual.layer == "In1.Cu"
-                and abs(virtual.point.x - mm(8)) <= mm(1.5)
-                and abs(virtual.point.y - mm(5)) <= mm(1.5)
-                and physical.point == site(3, 2).point
-                for virtual, physical in plane.zone_anchors
-            ))
+            self.assertTrue(
+                any(
+                    virtual.layer == "In1.Cu"
+                    and abs(virtual.point.x - mm(8)) <= mm(1.5)
+                    and abs(virtual.point.y - mm(5)) <= mm(1.5)
+                    and physical.point == site(3, 2).point
+                    for virtual, physical in plane.zone_anchors
+                )
+            )
             self.assertEqual(source.read_bytes(), before)
 
     def test_plane_samples_skip_via_positions_too_close_to_the_target_pad(self):
@@ -1662,16 +2063,22 @@ class NativeNetRoutingTests(unittest.TestCase):
             source = self.make_plane_fixture(Path(folder))
             filled = load_board(source, refill_zones=True)
             found = discover(
-                filled, "SIGNAL", ("B.Cu", "In1.Cu", "F.Cu"), Budget(Limits()),
-                include_zone_access=True, zone_via_margin=mm(.5),
+                filled,
+                "SIGNAL",
+                ("B.Cu", "In1.Cu", "F.Cu"),
+                Budget(Limits()),
+                include_zone_access=True,
+                zone_via_margin=mm(0.5),
             )
             pad = list(filled.FindFootprintByReference("J2").Pads())[0]
             plane = next(island for island in found.net.islands if island.zone_anchors)
             self.assertTrue(plane.zone_anchors)
             for virtual, _ in plane.zone_anchors:
-                self.assertFalse(pad.HitTest(
-                    pcbnew.VECTOR2I(virtual.point.x, virtual.point.y), mm(.5)
-                ))
+                self.assertFalse(
+                    pad.HitTest(
+                        pcbnew.VECTOR2I(virtual.point.x, virtual.point.y), mm(0.5)
+                    )
+                )
 
     def test_plane_sites_never_claim_a_different_disconnected_filled_zone(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -1683,32 +2090,36 @@ class NativeNetRoutingTests(unittest.TestCase):
             extension = pcbnew.PCB_TRACK(board)
             extension.SetStart(pcbnew.VECTOR2I(mm(3), mm(2)))
             extension.SetEnd(pcbnew.VECTOR2I(mm(4.2), mm(2)))
-            extension.SetWidth(mm(.2))
+            extension.SetWidth(mm(0.2))
             extension.SetLayer(pcbnew.In1_Cu)
             extension.SetNetCode(signal.GetNetCode())
             board.Add(extension)
             via = pcbnew.PCB_VIA(board)
             via.SetPosition(pcbnew.VECTOR2I(mm(5.8), mm(2)))
-            via.SetWidth(mm(.6))
-            via.SetDrill(mm(.3))
+            via.SetWidth(mm(0.6))
+            via.SetDrill(mm(0.3))
             via.SetViaType(pcbnew.VIATYPE_THROUGH)
             via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
             via.SetNetCode(signal.GetNetCode())
             board.Add(via)
-            for left, right in ((.2, 4.8), (5.2, 9.8)):
+            for left, right in ((0.2, 4.8), (5.2, 9.8)):
                 zone = pcbnew.ZONE(board)
                 zone.SetLayer(pcbnew.In1_Cu)
                 zone.SetNetCode(signal.GetNetCode())
                 outline = zone.Outline()
                 outline.NewOutline()
-                for x, y in ((left, .2), (right, .2), (right, 7.8), (left, 7.8)):
+                for x, y in ((left, 0.2), (right, 0.2), (right, 7.8), (left, 7.8)):
                     outline.Append(mm(x), mm(y))
                 board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
             filled = load_board(source, refill_zones=True)
             found = discover(
-                filled, "SIGNAL", ("B.Cu", "In1.Cu", "F.Cu"), Budget(Limits()),
-                include_zone_access=True, zone_via_margin=mm(.5),
+                filled,
+                "SIGNAL",
+                ("B.Cu", "In1.Cu", "F.Cu"),
+                Budget(Limits()),
+                include_zone_access=True,
+                zone_via_margin=mm(0.5),
             )
             self.assertEqual(len(found.net.islands), 3)
             zones = [zone.GetFilledPolysList(pcbnew.In1_Cu) for zone in filled.Zones()]
@@ -1718,9 +2129,12 @@ class NativeNetRoutingTests(unittest.TestCase):
                     p = pcbnew.VECTOR2I(virtual.point.x, virtual.point.y)
                     q = pcbnew.VECTOR2I(physical.point.x, physical.point.y)
                     matches = [
-                        index for index, polygon in enumerate(zones)
-                        if any(polygon.Contains(p, i) and polygon.Contains(q, i)
-                               for i in range(polygon.OutlineCount()))
+                        index
+                        for index, polygon in enumerate(zones)
+                        if any(
+                            polygon.Contains(p, i) and polygon.Contains(q, i)
+                            for i in range(polygon.OutlineCount())
+                        )
                     ]
                     self.assertEqual(len(matches), 1)
                     used.add(matches[0])
@@ -1734,9 +2148,9 @@ class NativeNetRoutingTests(unittest.TestCase):
             blocker = pcbnew.NETINFO_ITEM(board, "OTHER")
             board.Add(blocker)
             wall = pcbnew.PCB_TRACK(board)
-            wall.SetStart(pcbnew.VECTOR2I(mm(5), mm(.3)))
+            wall.SetStart(pcbnew.VECTOR2I(mm(5), mm(0.3)))
             wall.SetEnd(pcbnew.VECTOR2I(mm(5), mm(7.7)))
-            wall.SetWidth(mm(.2))
+            wall.SetWidth(mm(0.2))
             wall.SetLayer(pcbnew.B_Cu)
             wall.SetNetCode(blocker.GetNetCode())
             board.Add(wall)
@@ -1745,15 +2159,26 @@ class NativeNetRoutingTests(unittest.TestCase):
             config = self.config()
             config["shared"].update(
                 layers=["B.Cu", "In1.Cu", "F.Cu"],
-                assume_zone_refill=True, step_mm=.25,
-                max_expansions=100000, topology_heuristic=True,
+                assume_zone_refill=True,
+                step_mm=0.25,
+                max_expansions=100000,
+                topology_heuristic=True,
             )
             config.update(max_islands=2)
             result = plan_nets(config, project, validate=True, include_changes=True)
             self.assertEqual(
-                result["status"], "validated_sampled_candidate",
-                {key: result.get(key) for key in
-                 ("status", "search", "checkpoints", "rejected_candidates", "trials")},
+                result["status"],
+                "validated_sampled_candidate",
+                {
+                    key: result.get(key)
+                    for key in (
+                        "status",
+                        "search",
+                        "checkpoints",
+                        "rejected_candidates",
+                        "trials",
+                    )
+                },
             )
             self.assertEqual(result["validation"]["candidate_unconnected"], 0)
             self.assertFalse(result["validation"]["broken_existing_connections"])
@@ -1769,23 +2194,24 @@ class NativeNetRoutingTests(unittest.TestCase):
                 pcbnew.VECTOR2I(mm(8), mm(2))
             )
             board.Add(pcbnew.NETINFO_ITEM(board, "OTHER"))
-            self.add_pad(board, "J3", (5, .5), net_name="OTHER")
+            self.add_pad(board, "J3", (5, 0.5), net_name="OTHER")
             self.add_pad(board, "J4", (5, 7.5), net_name="OTHER")
             zone = pcbnew.ZONE(board)
             zone.SetLayer(pcbnew.F_Cu)
             zone.SetNetCode(board.FindNet("SIGNAL").GetNetCode())
             outline = zone.Outline()
             outline.NewOutline()
-            for x, y in ((.5, 1), (9.5, 1), (9.5, 3), (.5, 3)):
+            for x, y in ((0.5, 1), (9.5, 1), (9.5, 3), (0.5, 3)):
                 outline.Append(mm(x), mm(y))
             board.Add(zone)
             pcbnew.SaveBoard(str(source), board)
             (project / "v4.1.kicad_sch").write_text("(kicad_sch (lib_symbols))")
             before = source.read_bytes()
-            crossing = route(segment((5, .5), (5, 7.5)))
-            changes = campaign_changes(crossing, "OTHER", mm(.2), mm(.6), mm(.3))
-            contract = RouteContract("OTHER", site(5, .5).point, "F.Cu",
-                                     site(5, 7.5).point, "F.Cu")
+            crossing = route(segment((5, 0.5), (5, 7.5)))
+            changes = campaign_changes(crossing, "OTHER", mm(0.2), mm(0.6), mm(0.3))
+            contract = RouteContract(
+                "OTHER", site(5, 0.5).point, "F.Cu", site(5, 7.5).point, "F.Cu"
+            )
             evidence = validate_routes(
                 source, hashlib.sha256(before).hexdigest(), changes, [contract]
             )

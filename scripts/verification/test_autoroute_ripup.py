@@ -44,17 +44,28 @@ class RipupTests(unittest.TestCase):
             except ValueError as error:
                 self.fail(f"Whole-net rip-up was rejected: {error}")
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
-            self.assertEqual(result["validation"]["whole_net_copper_connectivity"], "all_requested_copper_connected")
+            self.assertEqual(
+                result["validation"]["whole_net_copper_connectivity"],
+                "all_requested_copper_connected",
+            )
             self.assertEqual(result["validation"]["broken_existing_connections"], [])
             self.assertEqual(source.read_bytes(), before)
-            self.assertEqual(sum(change["op"] == "remove" for change in result["unvalidated_campaign_changes"]), 3)
+            self.assertEqual(
+                sum(
+                    change["op"] == "remove"
+                    for change in result["unvalidated_campaign_changes"]
+                ),
+                3,
+            )
 
     def test_partial_repair_restores_a_cut_island_without_claiming_other_islands(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             source, removed = self.make_project(project)
             board = pcbnew.LoadBoard(str(source))
-            net_fixtures.NativeNetRoutingTests.add_pad(board, "J3", (2, 6), net_name="SIGNAL")
+            net_fixtures.NativeNetRoutingTests.add_pad(
+                board, "J3", (2, 6), net_name="SIGNAL"
+            )
             pcbnew.SaveBoard(str(source), board)
             before = source.read_bytes()
             config = net_fixtures.NativeNetRoutingTests.config()
@@ -97,14 +108,24 @@ class RipupTests(unittest.TestCase):
             before = source.read_bytes()
             config = net_fixtures.NativeNetRoutingTests.config()
             config["rip_up"] = {"SIGNAL": removed}
-            with mock.patch.object(pcbnew.BOARD, "Remove", side_effect=AssertionError(
-                    "Do not mutate native copper ownership during proposal construction")):
+            with mock.patch.object(
+                pcbnew.BOARD,
+                "Remove",
+                side_effect=AssertionError(
+                    "Do not mutate native copper ownership during proposal construction"
+                ),
+            ):
                 result = plan_nets(config, project, validate=True, include_changes=True)
             self.assertEqual(result["status"], "validated_sampled_candidate", result)
             self.assertEqual(result["validation"]["broken_existing_connections"], [])
             self.assertEqual(source.read_bytes(), before)
-            self.assertEqual(sum(change["op"] == "remove"
-                                 for change in result["unvalidated_campaign_changes"]), 4)
+            self.assertEqual(
+                sum(
+                    change["op"] == "remove"
+                    for change in result["unvalidated_campaign_changes"]
+                ),
+                4,
+            )
             # A stale type registry also affects subsequently loaded boards.
             reloaded = pcbnew.LoadBoard(str(source))
             self.assertGreater(len(reloaded.GetTracks()), 0)

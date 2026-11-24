@@ -35,10 +35,16 @@ class IsolatedCopperTests(unittest.TestCase):
     @staticmethod
     def report(track):
         uid = track.m_Uuid.AsString()
-        return {"violations": [
-            {"severity": "error", "type": "clearance", "items": [{"uuid": uid}]},
-            {"severity": "warning", "type": "track_dangling", "items": [{"uuid": uid}]},
-        ]}
+        return {
+            "violations": [
+                {"severity": "error", "type": "clearance", "items": [{"uuid": uid}]},
+                {
+                    "severity": "warning",
+                    "type": "track_dangling",
+                    "items": [{"uuid": uid}],
+                },
+            ]
+        }
 
     def test_requires_tiny_unlocked_ungrouped_and_native_error_evidence(self):
         tiny = self.track()
@@ -49,17 +55,33 @@ class IsolatedCopperTests(unittest.TestCase):
         group = pcbnew.PCB_GROUP(self.board)
         self.board.Add(group)
         group.AddItem(grouped)
-        self.assertEqual(set(isolated_fragments(self.board, set())), {tiny.m_Uuid.AsString()})
-        self.assertEqual(isolated_dangling_fragments(self.board, self.report(tiny), set(), require_error=True),
-                         (tiny.m_Uuid.AsString(),))
-        self.assertEqual(isolated_dangling_fragments(self.board, {"violations": []}, set()), ())
+        self.assertEqual(
+            set(isolated_fragments(self.board, set())), {tiny.m_Uuid.AsString()}
+        )
+        self.assertEqual(
+            isolated_dangling_fragments(
+                self.board, self.report(tiny), set(), require_error=True
+            ),
+            (tiny.m_Uuid.AsString(),),
+        )
+        self.assertEqual(
+            isolated_dangling_fragments(self.board, {"violations": []}, set()), ()
+        )
         warning_only = {"violations": self.report(tiny)["violations"][1:]}
-        self.assertEqual(isolated_dangling_fragments(self.board, warning_only, set()),
-                         (tiny.m_Uuid.AsString(),))
-        self.assertEqual(isolated_dangling_fragments(self.board, warning_only, set(),
-                                                    require_error=True), ())
+        self.assertEqual(
+            isolated_dangling_fragments(self.board, warning_only, set()),
+            (tiny.m_Uuid.AsString(),),
+        )
+        self.assertEqual(
+            isolated_dangling_fragments(
+                self.board, warning_only, set(), require_error=True
+            ),
+            (),
+        )
         self.assertEqual(isolated_fragments(self.board, {"SIG"}), {})
-        self.assertNotIn(long_track.m_Uuid.AsString(), isolated_fragments(self.board, set()))
+        self.assertNotIn(
+            long_track.m_Uuid.AsString(), isolated_fragments(self.board, set())
+        )
 
     def test_touching_a_track_pad_via_or_same_net_zone_is_not_isolated(self):
         tiny = self.track()
@@ -114,19 +136,40 @@ class IsolatedCopperTests(unittest.TestCase):
     def test_protected_gate_allows_only_the_proven_removal(self):
         tiny = self.track()
         record = isolated_fragments(self.board, set())[tiny.m_Uuid.AsString()]
-        verify_isolated_protected_removals(self.board, Counter([record]), Counter(), {"SIG"}, set())
+        verify_isolated_protected_removals(
+            self.board, Counter([record]), Counter(), {"SIG"}, set()
+        )
         with self.assertRaisesRegex(RuntimeError, "cannot add"):
-            verify_isolated_protected_removals(self.board, Counter(), Counter([record]), {"SIG"}, set())
+            verify_isolated_protected_removals(
+                self.board, Counter(), Counter([record]), {"SIG"}, set()
+            )
         with self.assertRaisesRegex(RuntimeError, "not limited"):
-            verify_isolated_protected_removals(self.board, Counter([record]), Counter(), {"SIG"}, {"SIG"})
-        with patch("pcb.net_routing.working_save.unqualified_working_nets", return_value={"SIG"}):
+            verify_isolated_protected_removals(
+                self.board, Counter([record]), Counter(), {"SIG"}, {"SIG"}
+            )
+        with patch(
+            "pcb.net_routing.working_save.unqualified_working_nets",
+            return_value={"SIG"},
+        ):
             with self.assertRaisesRegex(RuntimeError, "electrical qualification"):
                 verify_working_net_copper(self.board, [record], [], ())
-            verify_working_net_copper(self.board, [record], [], (), allow_isolated_removals=True,
-                                      critical_nets=frozenset({"USB"}))
+            verify_working_net_copper(
+                self.board,
+                [record],
+                [],
+                (),
+                allow_isolated_removals=True,
+                critical_nets=frozenset({"USB"}),
+            )
             with self.assertRaisesRegex(RuntimeError, "not limited"):
-                verify_working_net_copper(self.board, [record], [], (), allow_isolated_removals=True,
-                                          critical_nets=frozenset({"SIG"}))
+                verify_working_net_copper(
+                    self.board,
+                    [record],
+                    [],
+                    (),
+                    allow_isolated_removals=True,
+                    critical_nets=frozenset({"SIG"}),
+                )
 
 
 if __name__ == "__main__":

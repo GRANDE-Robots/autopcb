@@ -13,7 +13,9 @@ def point(x, y):
 
 
 def route(points, via=()):
-    segments = tuple(Segment(point(*a), point(*b), "B.Cu") for a, b in zip(points, points[1:]))
+    segments = tuple(
+        Segment(point(*a), point(*b), "B.Cu") for a, b in zip(points, points[1:])
+    )
     vias = tuple(Via(point(*item), "F.Cu", "B.Cu") for item in via)
     return Route(segments, vias, (), 0, 0, 0, 0)
 
@@ -29,14 +31,18 @@ class SymmetryTests(unittest.TestCase):
         api = self.api()
         left = route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
         right = route([(9, 2), (7, 2), (6, 3)], [(6, 3)])
-        result = api.compare_routes(left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True))
+        result = api.compare_routes(
+            left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True)
+        )
         self.assertEqual(result.score, 0)
 
     def test_extra_via_or_misalignment_increases_error(self):
         api = self.api()
         left = route([(1, 2), (3, 2), (4, 3)], [(4, 3)])
         right = route([(9, 2), (7, 2), (6, 3)], [(6, 3), (7, 2)])
-        result = api.compare_routes(left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True))
+        result = api.compare_routes(
+            left, api.Frame(point(0, 0)), right, api.Frame(point(10, 0), mirror=True)
+        )
         self.assertGreater(result.score, 0)
         self.assertEqual(result.via_count_difference, 1)
 
@@ -44,14 +50,18 @@ class SymmetryTests(unittest.TestCase):
         api = self.api()
         left = route([(1, 2), (4, 2)], [(3, 2)])
         right = route([(1, 2), (4, 2)], [(3.04, 2)])
-        result = api.compare_routes(left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0)))
+        result = api.compare_routes(
+            left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0))
+        )
         self.assertEqual(result.score, 0)
 
     def test_segment_splitting_does_not_change_geometry_score(self):
         api = self.api()
         left = route([(1, 2), (5, 2)])
         right = route([(1, 2), (3, 2), (5, 2)])
-        result = api.compare_routes(left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0)))
+        result = api.compare_routes(
+            left, api.Frame(point(0, 0)), right, api.Frame(point(0, 0))
+        )
         self.assertEqual(result.score, 0)
 
     def test_rank_respects_feasibility_then_opens_then_symmetry(self):
@@ -68,10 +78,20 @@ class SymmetryTests(unittest.TestCase):
         api = self.api()
         whole = route([(0, 0), (4, 0)])
         fragments = Route(
-            tuple(Segment(point(a, 0), point(b, 0), "B.Cu") for a, b in ((0, 0.1), (1.95, 2.05), (3.9, 4))),
-            (), (), 0, 0, 0, 0,
+            tuple(
+                Segment(point(a, 0), point(b, 0), "B.Cu")
+                for a, b in ((0, 0.1), (1.95, 2.05), (3.9, 4))
+            ),
+            (),
+            (),
+            0,
+            0,
+            0,
+            0,
         )
-        result = api.compare_routes(whole, api.Frame(point(0, 0)), fragments, api.Frame(point(0, 0)))
+        result = api.compare_routes(
+            whole, api.Frame(point(0, 0)), fragments, api.Frame(point(0, 0))
+        )
         self.assertGreater(result.score, 0)
 
     def test_routing_cost_weights_are_configurable(self):

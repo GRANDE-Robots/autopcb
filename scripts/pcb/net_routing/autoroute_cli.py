@@ -12,7 +12,12 @@ from pathlib import Path
 
 from core.console import Console, add_output_arguments, progress_heartbeat
 from core.pcb_io import quiet_duplicate_image_handlers
-from pcb.net_routing.presentation import RoutingDisplay, show_pair_probe, show_preparation, show_run
+from pcb.net_routing.presentation import (
+    RoutingDisplay,
+    show_pair_probe,
+    show_preparation,
+    show_run,
+)
 from pcb.net_routing.prepare import prepare_project
 from pcb.net_routing.runner import read_status, run_project
 from pcb.net_routing.resources import limit_resources
@@ -32,44 +37,92 @@ def main(argv: list[str] | None = None) -> int:
     )
     reuse = run.add_mutually_exclusive_group()
     reuse.add_argument("--resume", help="resume a source-matched run ID")
-    reuse.add_argument("--renew", help="recheck a preview after code updates and rebuild its queue in a new run")
+    reuse.add_argument(
+        "--renew",
+        help="recheck a preview after code updates and rebuild its queue in a new run",
+    )
     run.add_argument(
-        "--max-rounds", type=int, help="pause after this many search rounds; 0 initializes without searching"
+        "--max-rounds",
+        type=int,
+        help="pause after this many search rounds; 0 initializes without searching",
     )
     run.add_argument(
         "--seconds-per-batch", type=float, help="override the per-batch search time"
     )
-    run.add_argument("--previous-board", type=Path,
-                     help="preimage for an explicitly renewed layer-annotation-only change")
-    run.add_argument("--previous-policy", type=Path,
-                     help="preimage for an explicitly renewed soft layer-cost change")
+    run.add_argument(
+        "--previous-board",
+        type=Path,
+        help="preimage for an explicitly renewed layer-annotation-only change",
+    )
+    run.add_argument(
+        "--previous-policy",
+        type=Path,
+        help="preimage for an explicitly renewed soft layer-cost change",
+    )
     run.add_argument("--workers", type=int, default=2, choices=(1, 2))
-    run.add_argument("--single-net-search", action="store_true",
-                     help="search one net per worker to avoid dividing its time across a group")
-    run.add_argument("--keep-placement", action="store_true",
-                     help="preserve every footprint and exclude placement moves from recovery")
-    run.add_argument('--search-cells', type=int, help='runtime grid-cell budget, at most 8000000')
-    run.add_argument('--search-expansions', type=int, help='runtime path-expansion budget, at most 2000000')
-    run.add_argument('--search-grid-mm', type=float,
-                     help='runtime grid ceiling from 0.025 to 0.5 mm; finer recovery grids are preserved')
-    run.add_argument('--search-heuristic-weight', type=float,
-                     help='search greediness from 1 to 20; actual routing costs and hard rules stay unchanged')
-    run.add_argument("--memory-gib", type=float,
-                     help="explicit aggregate memory budget, up to 6 GiB; default: half available RAM")
-    run.add_argument("--wait-for-memory", type=float, default=0,
-                     help="wait at most this many seconds for the launch memory budget")
+    run.add_argument(
+        "--single-net-search",
+        action="store_true",
+        help="search one net per worker to avoid dividing its time across a group",
+    )
+    run.add_argument(
+        "--keep-placement",
+        action="store_true",
+        help="preserve every footprint and exclude placement moves from recovery",
+    )
+    run.add_argument(
+        "--search-cells", type=int, help="runtime grid-cell budget, at most 8000000"
+    )
+    run.add_argument(
+        "--search-expansions",
+        type=int,
+        help="runtime path-expansion budget, at most 2000000",
+    )
+    run.add_argument(
+        "--search-grid-mm",
+        type=float,
+        help="runtime grid ceiling from 0.025 to 0.5 mm; finer recovery grids are preserved",
+    )
+    run.add_argument(
+        "--search-heuristic-weight",
+        type=float,
+        help="search greediness from 1 to 20; actual routing costs and hard rules stay unchanged",
+    )
+    run.add_argument(
+        "--memory-gib",
+        type=float,
+        help="explicit aggregate memory budget, up to 6 GiB; default: half available RAM",
+    )
+    run.add_argument(
+        "--wait-for-memory",
+        type=float,
+        default=0,
+        help="wait at most this many seconds for the launch memory budget",
+    )
     run.add_argument(
         "--apply", action="store_true", help="request publication (currently disabled)"
     )
     status = commands.add_parser("status", help="show a saved preview run")
     status.add_argument("--run", required=True, dest="run_id")
-    pair = commands.add_parser("pair-probe", help="test paired routing on a disposable board")
-    pair.add_argument("--seconds", type=int, default=45, help="paired router time budget")
+    pair = commands.add_parser(
+        "pair-probe", help="test paired routing on a disposable board"
+    )
+    pair.add_argument(
+        "--seconds", type=int, default=45, help="paired router time budget"
+    )
     pair.add_argument("--engine", choices=("fastroute", "krt"), default="fastroute")
-    pair.add_argument("--router-grid-mm", type=float, help="optional KRT search-grid spacing")
-    pair.add_argument("--pair-index", type=int, help="test one discovered pair by its one-based index")
-    pair.add_argument("--memory-gib", type=float, help="explicit aggregate memory budget, up to 6 GiB")
-    pair.add_argument("--run", dest="run_id", help="record diagnostic time on a current preview plot")
+    pair.add_argument(
+        "--router-grid-mm", type=float, help="optional KRT search-grid spacing"
+    )
+    pair.add_argument(
+        "--pair-index", type=int, help="test one discovered pair by its one-based index"
+    )
+    pair.add_argument(
+        "--memory-gib", type=float, help="explicit aggregate memory budget, up to 6 GiB"
+    )
+    pair.add_argument(
+        "--run", dest="run_id", help="record diagnostic time on a current preview plot"
+    )
     for command in (prepare, verify, run, status, pair):
         add_output_arguments(command, full_alias=True)
     args = parser.parse_args(argv)
@@ -89,22 +142,41 @@ def main(argv: list[str] | None = None) -> int:
 
             started = time.monotonic()
             try:
-                with progress_heartbeat(display), limit_resources(memory_gib=args.memory_gib, progress=display):
-                    result = run_native(probe, args.project, seconds=args.seconds, engine=args.engine,
-                                        router_grid_mm=args.router_grid_mm, pair_index=args.pair_index,
-                                        progress=display, forward_progress=True)
+                with (
+                    progress_heartbeat(display),
+                    limit_resources(memory_gib=args.memory_gib, progress=display),
+                ):
+                    result = run_native(
+                        probe,
+                        args.project,
+                        seconds=args.seconds,
+                        engine=args.engine,
+                        router_grid_mm=args.router_grid_mm,
+                        pair_index=args.pair_index,
+                        progress=display,
+                        forward_progress=True,
+                    )
             finally:
                 if args.run_id:
                     from pcb.net_routing.fast import record_unimproved_batch
 
-                    record_unimproved_batch(args.project, args.run_id, time.monotonic() - started,
-                                            progress=display)
+                    record_unimproved_batch(
+                        args.project,
+                        args.run_id,
+                        time.monotonic() - started,
+                        progress=display,
+                    )
             console.result(result, show_pair_probe)
             return 0
         if args.command == "run":
-            with progress_heartbeat(display), limit_resources(
-                memory_gib=args.memory_gib, wait_seconds=args.wait_for_memory, progress=display
-            ) as resource_limits:
+            with (
+                progress_heartbeat(display),
+                limit_resources(
+                    memory_gib=args.memory_gib,
+                    wait_seconds=args.wait_for_memory,
+                    progress=display,
+                ) as resource_limits,
+            ):
                 display(
                     {"event": "resources", **resource_limits, "workers": args.workers}
                 )

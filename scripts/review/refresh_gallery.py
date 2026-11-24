@@ -54,15 +54,29 @@ def required_outputs(layers=None):
     """Derive the named layer exports from the saved board's copper stack."""
     if layers is None:
         return set(PDFS), set(PNGS), set(ACTIVE)
-    if (not isinstance(layers, list) or len(layers) != len(set(layers))
-            or not {"F.Cu", "B.Cu"} <= set(layers)
-            or any(not isinstance(name, str)
-                   or not re.fullmatch(r"(?:F|B|In[1-9][0-9]?)\.Cu", name) for name in layers)):
+    if (
+        not isinstance(layers, list)
+        or len(layers) != len(set(layers))
+        or not {"F.Cu", "B.Cu"} <= set(layers)
+        or any(
+            not isinstance(name, str)
+            or not re.fullmatch(r"(?:F|B|In[1-9][0-9]?)\.Cu", name)
+            for name in layers
+        )
+    ):
         raise ValueError("Invalid review copper-layer inventory")
     inner = {f"PCB_{name.split('.')[0]}" for name in layers if name.startswith("In")}
-    pdfs = {name for name in PDFS if not name.startswith("PCB_In")} | {name + ".pdf" for name in inner}
-    pngs = {name for name in PNGS if not name.startswith("PCB_In")} | {name + ".png" for name in inner}
-    return pdfs, pngs, pdfs | pngs | {"source.json", "index.html", "index_standalone.html"}
+    pdfs = {name for name in PDFS if not name.startswith("PCB_In")} | {
+        name + ".pdf" for name in inner
+    }
+    pngs = {name for name in PNGS if not name.startswith("PCB_In")} | {
+        name + ".png" for name in inner
+    }
+    return (
+        pdfs,
+        pngs,
+        pdfs | pngs | {"source.json", "index.html", "index_standalone.html"},
+    )
 
 
 def digest(path: Path) -> str:
@@ -74,7 +88,13 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def run(command: list[str], label: str, env: dict[str, str], *, console: Console | None = None) -> None:
+def run(
+    command: list[str],
+    label: str,
+    env: dict[str, str],
+    *,
+    console: Console | None = None,
+) -> None:
     with console.activity(label) if console else nullcontext():
         result = subprocess.run(
             command,
@@ -96,21 +116,26 @@ def dependency_paths(project: Path) -> dict[str, Path]:
     support = asset_root(root)
     excluded_names = {"desktop.ini", "thumbs.db", ".ds_store"}
     candidates = [
-        path for directory in library_directories(root)
+        path
+        for directory in library_directories(root)
         for path in directory.rglob("*")
         if "__pycache__" not in path.parts
     ]
     candidates.extend((root / "fp-lib-table", root / "sym-lib-table"))
-    candidates.extend(support / "scripts" / name for name in (
-        "core/export_helpers.py",
-        "core/paths.py",
-        "review/render_views.py",
-        "review/refresh_gallery.py",
-        "review/rasterize_gallery.py",
-        "review/build_standalone_gallery.py",
-    ))
+    candidates.extend(
+        support / "scripts" / name
+        for name in (
+            "core/export_helpers.py",
+            "core/paths.py",
+            "review/render_views.py",
+            "review/refresh_gallery.py",
+            "review/rasterize_gallery.py",
+            "review/build_standalone_gallery.py",
+        )
+    )
     return {
-        path.relative_to(root).as_posix(): path for path in candidates
+        path.relative_to(root).as_posix(): path
+        for path in candidates
         if path.name.lower() not in excluded_names and path.is_file()
     }
 
@@ -145,7 +170,9 @@ def verify_gallery(folder: Path, source_hashes: dict[str, str]) -> None:
     )
 
 
-def gallery_is_current(project: Path, folder: Path, source_hashes: dict[str, str]) -> bool:
+def gallery_is_current(
+    project: Path, folder: Path, source_hashes: dict[str, str]
+) -> bool:
     """Verify the current set and its tracked dependencies before skipping rendering."""
     manifest = folder / "source.json"
     try:
@@ -162,8 +189,14 @@ def gallery_is_current(project: Path, folder: Path, source_hashes: dict[str, str
         if standalone.count("data:image/png;base64,") != len(pngs):
             return False
     except (FileNotFoundError, UnicodeError, ValueError, RuntimeError):
-        if manifest.is_file() and "manifest_bytes" in locals() and manifest.read_bytes() != manifest_bytes:
-            raise RuntimeError("Review manifest changed during the freshness check") from None
+        if (
+            manifest.is_file()
+            and "manifest_bytes" in locals()
+            and manifest.read_bytes() != manifest_bytes
+        ):
+            raise RuntimeError(
+                "Review manifest changed during the freshness check"
+            ) from None
         return False
 
     root = long_path(project)
@@ -189,8 +222,10 @@ def gallery_is_current(project: Path, folder: Path, source_hashes: dict[str, str
         raise RuntimeError("Review dependencies changed during the freshness check")
     if any(digest(root / name) != value for name, value in source_hashes.items()):
         raise RuntimeError("Design changed during the review freshness check")
-    return all(observed[(root / relative).resolve()] == expected
-               for relative, expected in dependencies.items())
+    return all(
+        observed[(root / relative).resolve()] == expected
+        for relative, expected in dependencies.items()
+    )
 
 
 def atomic_write(target: Path, content: bytes) -> None:
@@ -338,12 +373,26 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
     }
     if gallery_is_current(project, review, source_hashes):
         require(
-            full_hashes == {path.relative_to(project).as_posix(): digest(path) for path in
-                            [*source_paths, native_path(project, ".kicad_pro"), native_path(project, ".kicad_dru")]},
+            full_hashes
+            == {
+                path.relative_to(project).as_posix(): digest(path)
+                for path in [
+                    *source_paths,
+                    native_path(project, ".kicad_pro"),
+                    native_path(project, ".kicad_dru"),
+                ]
+            },
             "Native project settings changed during the review freshness check",
         )
-        console.result({"status": "unchanged", "review": str(review),
-                        "pdfs_refreshed": 0, "pngs_refreshed": 0}, show_gallery)
+        console.result(
+            {
+                "status": "unchanged",
+                "review": str(review),
+                "pdfs_refreshed": 0,
+                "pngs_refreshed": 0,
+            },
+            show_gallery,
+        )
         return 0
     tool_dir = asset_root(project) / "scripts" / "review"
     require(
@@ -363,7 +412,11 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
         os.pathsep + existing_pythonpath if existing_pythonpath else ""
     )
     tool_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    header = (native_path(project, ".kicad_pcb")).read_text(encoding="utf-8-sig").split("(setup", 1)[0]
+    header = (
+        (native_path(project, ".kicad_pcb"))
+        .read_text(encoding="utf-8-sig")
+        .split("(setup", 1)[0]
+    )
     layers = re.findall(r'\(\d+\s+"((?:F|B|In[0-9]+)\.Cu)"\s', header)
     pdfs, pngs, active = required_outputs(layers)
     original_review = ReviewSnapshot.capture(review, active)
@@ -463,15 +516,15 @@ def refresh(args: argparse.Namespace, console: Console) -> int:
         # The delivery identity may contain reviewed claims; do not rewrite it.
 
     console.result(
-            {
-                "review": str(review),
-                "pdfs_refreshed": len(pdfs),
-                "pngs_refreshed": len(pngs),
-                "view_count": len(pngs),
-                "source_sha256": source_hashes,
-                "standalone_embedded": True,
-                "redundant_snapshot_created": False,
-            },
+        {
+            "review": str(review),
+            "pdfs_refreshed": len(pdfs),
+            "pngs_refreshed": len(pngs),
+            "view_count": len(pngs),
+            "source_sha256": source_hashes,
+            "standalone_embedded": True,
+            "redundant_snapshot_created": False,
+        },
         show_gallery,
     )
     return 0

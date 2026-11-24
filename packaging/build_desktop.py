@@ -25,8 +25,10 @@ class WindowsInstaller:
             return candidate
         if located := shutil.which("ISCC"):
             return Path(located).resolve()
-        roots = [Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")),
-                 Path(os.environ.get("ProgramFiles", "C:/Program Files"))]
+        roots = [
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")),
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")),
+        ]
         if local := os.environ.get("LOCALAPPDATA"):
             roots.append(Path(local) / "Programs")
         for root in roots:
@@ -49,7 +51,9 @@ class WindowsInstaller:
         if len(pe) != 6 or pe[:4] != b"PE\0\0":
             raise RuntimeError(f"Invalid Windows executable: {executable}")
         if require_x64 and pe[4:] != b"\x64\x86":
-            raise RuntimeError("Build the Windows installer with an x64 Python runtime.")
+            raise RuntimeError(
+                "Build the Windows installer with an x64 Python runtime."
+            )
 
     @staticmethod
     def build(bundle: Path, output: Path, version: str, compiler: Path) -> Path:
@@ -71,7 +75,8 @@ SolidCompression=yes
 Source: "{bundle}\\*"; DestDir: "{{app}}"; Flags: recursesubdirs createallsubdirs ignoreversion
 [Icons]
 Name: "{{userprograms}}\\AutoPCB"; Filename: "{{app}}\\AutoPCB.exe"; Parameters: "desktop"; WorkingDir: "{{app}}"
-""", encoding="utf-8-sig",
+""",
+            encoding="utf-8-sig",
         )
         run(compiler, spec)
         return output / f"AutoPCB-{version}-windows.exe"
@@ -89,17 +94,47 @@ def macos(bundle: Path, output: Path, version: str) -> Path:
     engine = contents / "Resources" / "AutoPCB"
     shutil.copytree(bundle, engine, symlinks=True)
     start = mac / "launch"
-    start.write_text('#!/bin/sh\nexec "$(dirname "$0")/../Resources/AutoPCB/AutoPCB" desktop "$@"\n', encoding="utf-8")
+    start.write_text(
+        '#!/bin/sh\nexec "$(dirname "$0")/../Resources/AutoPCB/AutoPCB" desktop "$@"\n',
+        encoding="utf-8",
+    )
     start.chmod(0o755)
     with (contents / "Info.plist").open("wb") as handle:
-        plistlib.dump({"CFBundleName": "AutoPCB", "CFBundleIdentifier": "org.granderobots.autopcb",
-                       "CFBundleExecutable": "launch", "CFBundlePackageType": "APPL",
-                       "CFBundleShortVersionString": version.partition(".dev")[0], "NSHighResolutionCapable": True}, handle)
+        plistlib.dump(
+            {
+                "CFBundleName": "AutoPCB",
+                "CFBundleIdentifier": "org.granderobots.autopcb",
+                "CFBundleExecutable": "launch",
+                "CFBundlePackageType": "APPL",
+                "CFBundleShortVersionString": version.partition(".dev")[0],
+                "NSHighResolutionCapable": True,
+            },
+            handle,
+        )
     if signer := os.environ.get("AUTOPCB_CODESIGN_IDENTITY"):
-        run("codesign", "--force", "--deep", "--timestamp", "--options", "runtime",
-            "--sign", signer, contents.parent)
+        run(
+            "codesign",
+            "--force",
+            "--deep",
+            "--timestamp",
+            "--options",
+            "runtime",
+            "--sign",
+            signer,
+            contents.parent,
+        )
     target = output / f"AutoPCB-{version}-macos.dmg"
-    run("hdiutil", "create", "-volname", "AutoPCB", "-srcfolder", image, "-fs", "HFS+", target)
+    run(
+        "hdiutil",
+        "create",
+        "-volname",
+        "AutoPCB",
+        "-srcfolder",
+        image,
+        "-fs",
+        "HFS+",
+        target,
+    )
     return target
 
 
@@ -111,7 +146,8 @@ def linux(bundle: Path, output: Path, version: str) -> Path:
     (control / "control").write_text(
         f"Package: autopcb\nVersion: {version}\nSection: electronics\nPriority: optional\n"
         f"Architecture: {arch}\nMaintainer: AutoPCB\n"
-        "Description: Local KiCad project design and verification application\n", encoding="utf-8",
+        "Description: Local KiCad project design and verification application\n",
+        encoding="utf-8",
     )
     engine = package / "opt" / "autopcb"
     shutil.copytree(bundle, engine, symlinks=True)
@@ -122,7 +158,8 @@ def linux(bundle: Path, output: Path, version: str) -> Path:
     shortcuts.mkdir(parents=True)
     (shortcuts / "autopcb.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=AutoPCB\nExec=/usr/bin/autopcb desktop\n"
-        "Categories=Development;Electronics;\nTerminal=false\n", encoding="utf-8",
+        "Categories=Development;Electronics;\nTerminal=false\n",
+        encoding="utf-8",
     )
     result = output / f"autopcb_{version}_{arch}.deb"
     run("dpkg-deb", "--root-owner-group", "--build", package, result)
@@ -131,9 +168,13 @@ def linux(bundle: Path, output: Path, version: str) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True, help="new output directory")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="new output directory"
+    )
     parser.add_argument("--bundle-only", action="store_true")
-    parser.add_argument("--iscc", type=Path, help="path to Inno Setup's Windows compiler")
+    parser.add_argument(
+        "--iscc", type=Path, help="path to Inno Setup's Windows compiler"
+    )
     args = parser.parse_args()
     on_windows = sys.platform == "win32"
     if args.iscc is not None and (not on_windows or args.bundle_only):
@@ -148,15 +189,43 @@ def main() -> int:
             parser.error(str(error))
     import tomllib
 
-    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    with tempfile.TemporaryDirectory(prefix="autopcb-package-", dir=output.parent) as temporary:
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["version"]
+    with tempfile.TemporaryDirectory(
+        prefix="autopcb-package-", dir=output.parent
+    ) as temporary:
         scratch = Path(temporary)
         engine = scratch / "engine"
-        shutil.copytree(ROOT / "scripts", engine, ignore=shutil.ignore_patterns("__pycache__", "desktop.ini", "*.pyc"))
-        run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--name", "AutoPCB",
-            "--distpath", scratch / "dist", "--workpath", scratch / "work", "--specpath", scratch,
-            "--paths", ROOT / "scripts", "--add-data", str(ROOT / "scripts/autopcb/catalog.json") + os.pathsep + "autopcb", "--add-data", str(ROOT / "scripts/autopcb/serve.html") + os.pathsep + "autopcb", "--add-data", str(engine) + os.pathsep + "engine",
-            ROOT / "scripts/autopcb/__main__.py")
+        shutil.copytree(
+            ROOT / "scripts",
+            engine,
+            ignore=shutil.ignore_patterns("__pycache__", "desktop.ini", "*.pyc"),
+        )
+        run(
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--onedir",
+            "--name",
+            "AutoPCB",
+            "--distpath",
+            scratch / "dist",
+            "--workpath",
+            scratch / "work",
+            "--specpath",
+            scratch,
+            "--paths",
+            ROOT / "scripts",
+            "--add-data",
+            str(ROOT / "scripts/autopcb/catalog.json") + os.pathsep + "autopcb",
+            "--add-data",
+            str(ROOT / "scripts/autopcb/serve.html") + os.pathsep + "autopcb",
+            "--add-data",
+            str(engine) + os.pathsep + "engine",
+            ROOT / "scripts/autopcb/__main__.py",
+        )
         bundle = scratch / "dist" / "AutoPCB"
         executable = bundle / ("AutoPCB.exe" if on_windows else "AutoPCB")
         if on_windows:

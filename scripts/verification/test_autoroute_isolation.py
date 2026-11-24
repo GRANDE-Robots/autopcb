@@ -41,19 +41,28 @@ def _wait_for_cancel(*, progress):
 
 class NativeIsolationTests(unittest.TestCase):
     def test_large_operation_does_not_replay_an_unimportable_parent_entrypoint(self):
-        script = ("import sys; from types import SimpleNamespace; "
-                  "from pcb.net_routing.isolation import run_native; "
-                  "sys.modules['__main__'].__spec__=SimpleNamespace(name='missing_parent_entrypoint'); "
-                  "print(run_native(len, b'x' * 1048576))")
+        script = (
+            "import sys; from types import SimpleNamespace; "
+            "from pcb.net_routing.isolation import run_native; "
+            "sys.modules['__main__'].__spec__=SimpleNamespace(name='missing_parent_entrypoint'); "
+            "print(run_native(len, b'x' * 1048576))"
+        )
         try:
-            result = subprocess.run([sys.executable, '-B', '-c', script],
-                                    cwd=Path(__file__).resolve().parents[1],
-                                    capture_output=True, text=True, timeout=10, check=False,
-                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", script],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
         except subprocess.TimeoutExpired:
-            self.fail('Native worker startup blocked while sending a large operation to a failed bootstrap')
+            self.fail(
+                "Native worker startup blocked while sending a large operation to a failed bootstrap"
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), '1048576')
+        self.assertEqual(result.stdout.strip(), "1048576")
 
     def test_events_and_large_results_return_after_worker_exit(self):
         events = []
@@ -61,7 +70,9 @@ class NativeIsolationTests(unittest.TestCase):
         self.assertNotEqual(result["pid"], os.getpid())
         self.assertEqual(len(result["payload"]), 100000)
         self.assertEqual(events, [{"event": "stage", "message": "native check"}])
-        self.assertNotIn(result["pid"], {p.pid for p in multiprocessing.active_children()})
+        self.assertNotIn(
+            result["pid"], {p.pid for p in multiprocessing.active_children()}
+        )
 
     def test_expected_errors_remain_errors(self):
         with self.assertRaisesRegex(ValueError, "invalid native input"):

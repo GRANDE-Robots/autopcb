@@ -24,14 +24,21 @@ class PrivateCopyTests(unittest.TestCase):
         self.storage = ProjectStorage(root)
         self.policy = self.storage.config / "autopcb.json"
         self.policy.parent.mkdir(parents=True)
-        self.policy.write_text(json.dumps({"schema": 1, "recovery": {"stages": 3}}), encoding="utf-8")
+        self.policy.write_text(
+            json.dumps({"schema": 1, "recovery": {"stages": 3}}), encoding="utf-8"
+        )
 
     def test_recovery_override_reaches_only_the_copy(self):
         copy = PrivateCopy(self.project, self.storage)
         with copy.open(Benchmark.GREEDY) as (working, _):
-            copied = json.loads((working.root / copy.policy).read_text(encoding="utf-8"))
+            copied = json.loads(
+                (working.root / copy.policy).read_text(encoding="utf-8")
+            )
         self.assertEqual(copied["recovery"], Benchmark.GREEDY)
-        self.assertEqual(json.loads(self.policy.read_text(encoding="utf-8"))["recovery"], {"stages": 3})
+        self.assertEqual(
+            json.loads(self.policy.read_text(encoding="utf-8"))["recovery"],
+            {"stages": 3},
+        )
 
     def test_policy_change_during_a_run_is_refused(self):
         copy = PrivateCopy(self.project, self.storage)

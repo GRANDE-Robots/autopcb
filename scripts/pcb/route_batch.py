@@ -102,7 +102,10 @@ def _previous_obstacles(result: dict[str, Any]) -> list[dict[str, Any]]:
                     "layers": [segment["layer"]],
                     "net": net,
                     "kind": "copper",
-                    "centerline_mm": [[_number(ax), _number(ay)], [_number(bx), _number(by)]],
+                    "centerline_mm": [
+                        [_number(ax), _number(ay)],
+                        [_number(bx), _number(by)],
+                    ],
                     "radius_mm": _number(radius),
                 }
             )
@@ -204,7 +207,9 @@ def plan_batch(
         "note": "Sequential proposals require batch DRC, connectivity, reference-plane and electrical review.",
     }
     if snapshot is not None:
-        source = native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
+        source = (
+            native_path(project, ".kicad_pcb") if snapshot == "pcb" else Path(snapshot)
+        )
         if not source.is_absolute():
             source = project / source
         source = source.resolve()

@@ -33,7 +33,9 @@ class GroundAnchorPose:
     anchor_net: str
 
 
-def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> GroundAnchorPose | None:
+def _anchor_pose(
+    footprint, excluded: set[str], anchor_nets: set[str]
+) -> GroundAnchorPose | None:
     """Propose a half-turn preserving one symmetric protected pad.
 
     This is a geometric hypothesis, not electrical qualification. All
@@ -47,23 +49,48 @@ def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> Ground
         return None
     other_side = pcbnew.F_Cu if side == pcbnew.B_Cu else pcbnew.B_Cu
     pads = tuple(footprint.Pads())
-    if (len(pads) != 2 or len({str(pad.GetNumber()) for pad in pads}) != 2
-            or any(not str(pad.GetNumber()) or pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
-                   or not pad.IsOnLayer(side) or pad.IsOnLayer(other_side) for pad in pads)):
+    if (
+        len(pads) != 2
+        or len({str(pad.GetNumber()) for pad in pads}) != 2
+        or any(
+            not str(pad.GetNumber())
+            or pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD
+            or not pad.IsOnLayer(side)
+            or pad.IsOnLayer(other_side)
+            for pad in pads
+        )
+    ):
         return None
     anchored = [pad for pad in pads if str(pad.GetNetname()) in anchor_nets & excluded]
-    signal = [pad for pad in pads if str(pad.GetNetname()) not in excluded | {""}
-              and not str(pad.GetNetname()).startswith("unconnected-")]
+    signal = [
+        pad
+        for pad in pads
+        if str(pad.GetNetname()) not in excluded | {""}
+        and not str(pad.GetNetname()).startswith("unconnected-")
+    ]
     if len(anchored) != 1 or len(signal) != 1:
         return None
     pad = anchored[0]
-    mask, paste = (pcbnew.F_Mask, pcbnew.F_Paste) if side == pcbnew.F_Cu else (pcbnew.B_Mask, pcbnew.B_Paste)
+    mask, paste = (
+        (pcbnew.F_Mask, pcbnew.F_Paste)
+        if side == pcbnew.F_Cu
+        else (pcbnew.B_Mask, pcbnew.B_Paste)
+    )
     layers = tuple(layer for layer in (side, mask, paste) if pad.IsOnLayer(layer))
     for layer in layers:
         offset = pad.GetOffset(layer)
-        if (pad.GetShape(layer) not in {pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT,
-                                        pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_ROUNDRECT}
-                or pad.GetChamferPositions(layer) or offset.x != 0 or offset.y != 0):
+        if (
+            pad.GetShape(layer)
+            not in {
+                pcbnew.PAD_SHAPE_CIRCLE,
+                pcbnew.PAD_SHAPE_RECT,
+                pcbnew.PAD_SHAPE_OVAL,
+                pcbnew.PAD_SHAPE_ROUNDRECT,
+            }
+            or pad.GetChamferPositions(layer)
+            or offset.x != 0
+            or offset.y != 0
+        ):
             return None
     point, origin = pad.GetPosition(), footprint.GetPosition()
     x, y = 2 * point.x - origin.x, 2 * point.y - origin.y
@@ -71,19 +98,34 @@ def _anchor_pose(footprint, excluded: set[str], anchor_nets: set[str]) -> Ground
     clone = pcbnew.FOOTPRINT(footprint)
     clone.SetOrientationDegrees(angle)
     clone.SetPosition(pcbnew.VECTOR2I(x, y))
-    copied = [item for item in clone.Pads() if item.m_Uuid.AsString() == pad.m_Uuid.AsString()]
+    copied = [
+        item for item in clone.Pads() if item.m_Uuid.AsString() == pad.m_Uuid.AsString()
+    ]
     if len(copied) != 1:
         return None
     rotated = copied[0]
+
     def box(item):
         return item.GetX(), item.GetY(), item.GetWidth(), item.GetHeight()
 
-    if (rotated.GetPosition() != point
-            or any(box(pad.GetBoundingBox(layer)) != box(rotated.GetBoundingBox(layer)) for layer in layers)
-            or (rotated.GetOrientationDegrees() - pad.GetOrientationDegrees()) % 180.0 != 0):
+    if (
+        rotated.GetPosition() != point
+        or any(
+            box(pad.GetBoundingBox(layer)) != box(rotated.GetBoundingBox(layer))
+            for layer in layers
+        )
+        or (rotated.GetOrientationDegrees() - pad.GetOrientationDegrees()) % 180.0 != 0
+    ):
         return None
-    return GroundAnchorPose(reference, str(signal[0].GetNetname()), pad.m_Uuid.AsString(),
-                            x / 1e6, y / 1e6, angle, str(pad.GetNetname()))
+    return GroundAnchorPose(
+        reference,
+        str(signal[0].GetNetname()),
+        pad.m_Uuid.AsString(),
+        x / 1e6,
+        y / 1e6,
+        angle,
+        str(pad.GetNetname()),
+    )
 
 
 def ground_anchor_pose(footprint, excluded: set[str]) -> GroundAnchorPose | None:
@@ -112,7 +154,9 @@ class MoveGuide:
         self.board, self.witnesses = board, tuple(witnesses)
 
     @classmethod
-    def diagnose(cls, board, request, policy, recovery, anchors, critical_nets, options, nearby):
+    def diagnose(
+        cls, board, request, policy, recovery, anchors, critical_nets, options, nearby
+    ):
         """Relax the parts near the anchors, or every movable part when the net is cut off.
 
         A net that pads and saved copper leave no way through may need a
@@ -125,18 +169,39 @@ class MoveGuide:
 
         weights = ReworkWeights.from_config(request.get("rework"))
         target = request["nets"][0]["name"]
-        cut_off = len(options) > len(nearby) and len(
-            GridModel(board, policy=policy, saved_copper=True).groups(target)) > 1
+        cut_off = (
+            len(options) > len(nearby)
+            and len(GridModel(board, policy=policy, saved_copper=True).groups(target))
+            > 1
+        )
         # The parts a route starts and ends on are its endpoints, not obstructions.
-        movable = {item[2].m_Uuid.AsString(): weights.placement_mm for item in (options if cut_off else nearby)
-                   if not any(pad.HitTest(pcbnew.VECTOR2I(anchor.point.x, anchor.point.y))
-                              for pad in item[2].Pads() for anchor in anchors)}
+        movable = {
+            item[2].m_Uuid.AsString(): weights.placement_mm
+            for item in (options if cut_off else nearby)
+            if not any(
+                pad.HitTest(pcbnew.VECTOR2I(anchor.point.x, anchor.point.y))
+                for pad in item[2].Pads()
+                for anchor in anchors
+            )
+        }
         if not movable or not recovery.obstruction_trials:
             return cls(board)
         settings = {**request["shared"], **request["nets"][0]}
-        witnesses, _ = diagnose(board, anchors, [], settings, recovery, critical_nets, weights,
-                                movable=movable, first_feasible=True)
-        return cls(board, (witness for witness in witnesses if witness.identifiers <= movable.keys()))
+        witnesses, _ = diagnose(
+            board,
+            anchors,
+            [],
+            settings,
+            recovery,
+            critical_nets,
+            weights,
+            movable=movable,
+            first_feasible=True,
+        )
+        return cls(
+            board,
+            (witness for witness in witnesses if witness.identifiers <= movable.keys()),
+        )
 
     def names(self, selection) -> bool:
         identifiers = {item[2].m_Uuid.AsString() for item in selection}
@@ -144,16 +209,32 @@ class MoveGuide:
 
     @property
     def corridors(self):
-        return [witness.corridor for witness in self.witnesses if witness.corridor is not None]
+        return [
+            witness.corridor
+            for witness in self.witnesses
+            if witness.corridor is not None
+        ]
 
     def selections(self, options, nearby):
         """Diagnosed parts first, then the nearest singles and pairs."""
         by_id = {item[2].m_Uuid.AsString(): item for item in options}
-        diagnosed = [tuple(sorted((by_id[uid] for uid in witness.identifiers), key=lambda item: item[:2]))
-                     for witness in self.witnesses if len(witness.identifiers) <= 2]
+        diagnosed = [
+            tuple(
+                sorted(
+                    (by_id[uid] for uid in witness.identifiers),
+                    key=lambda item: item[:2],
+                )
+            )
+            for witness in self.witnesses
+            if len(witness.identifiers) <= 2
+        ]
         nearest = nearby[:3]
         result, seen = [], set()
-        for selection in (*diagnosed, *((item,) for item in nearest), *itertools.combinations(nearest, 2)):
+        for selection in (
+            *diagnosed,
+            *((item,) for item in nearest),
+            *itertools.combinations(nearest, 2),
+        ):
             key = tuple(item[1] for item in selection)
             if key not in seen:
                 seen.add(key)
@@ -169,7 +250,11 @@ class MoveGuide:
         shapes = []
         for copy in copies:
             for pad in copy.Pads():
-                active = tuple(layer for layer in layers if pad.IsOnLayer(self.board.GetLayerID(layer)))
+                active = tuple(
+                    layer
+                    for layer in layers
+                    if pad.IsOnLayer(self.board.GetLayerID(layer))
+                )
                 if active:
                     shapes.append(_pad_obstacle(self.board, pad, active))
         return not any(corridor.blocked_by(shapes) for corridor in corridors)
@@ -185,7 +270,11 @@ def _eligible(board, anchors, excluded, scope):
     result = []
     for footprint in board.GetFootprints():
         ref, pads = footprint.GetReference(), tuple(footprint.Pads())
-        if ref not in movable or not pads or any(p.GetNetClassName() not in classes for p in pads):
+        if (
+            ref not in movable
+            or not pads
+            or any(p.GetNetClassName() not in classes for p in pads)
+        ):
             continue
         names = {
             p.GetNetname()
@@ -213,7 +302,9 @@ def _incident_copper(board, selected, names):
         if name not in names:
             continue
         layers = tuple(
-            layer for layer in enabled_copper_layers(board) if item.IsOnLayer(board.GetLayerID(layer))
+            layer
+            for layer in enabled_copper_layers(board)
+            if item.IsOnLayer(board.GetLayerID(layer))
         )
         bounds = item.GetBoundingBox()
         # Overselect rather than missing a contact; native checks must repair
@@ -302,7 +393,10 @@ def _net_settings(board, name, policy, recovery, dimensions, target_settings=Non
 
 def _beyond_edge_clearance(board, pads) -> bool:
     """Whether any pad sits closer to the outline box than the copper edge rule."""
-    box, gap = board.GetBoardEdgesBoundingBox(), board.GetDesignSettings().m_CopperEdgeClearance
+    box, gap = (
+        board.GetBoardEdgesBoundingBox(),
+        board.GetDesignSettings().m_CopperEdgeClearance,
+    )
     return any(
         pad.GetBoundingBox().GetLeft() < box.GetLeft() + gap
         or pad.GetBoundingBox().GetRight() > box.GetRight() - gap
@@ -341,7 +435,9 @@ def _courtyard_conflicts(moved, all_geometry):
     return conflicts
 
 
-def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, excluded, request):
+def _placement_obstructions(
+    board, copies, selected_ids, removed_ids, policy, excluded, request
+):
     """Identify foreign copper hit by moved pads, or reject immovable obstructions."""
     import pcbnew
 
@@ -362,19 +458,28 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
 
     def clearance(a, b):
         return max(
-            global_gap, overrides.get(a.GetNetname(), 0), overrides.get(b.GetNetname(), 0),
-            *(classes[name].GetClearance() for name in (a.GetNetClassName(), b.GetNetClassName())
-              if name in classes),
+            global_gap,
+            overrides.get(a.GetNetname(), 0),
+            overrides.get(b.GetNetname(), 0),
+            *(
+                classes[name].GetClearance()
+                for name in (a.GetNetClassName(), b.GetNetClassName())
+                if name in classes
+            ),
         )
 
     original_pads = {pad.m_Uuid.AsString(): pad for pad in board.GetPads()}
     moved_pads = tuple(pad for part in copies for pad in part.Pads())
     static_pads = tuple(
-        pad for part in board.GetFootprints() if part.m_Uuid.AsString() not in selected_ids
+        pad
+        for part in board.GetFootprints()
+        if part.m_Uuid.AsString() not in selected_ids
         for pad in part.Pads()
     )
     pads = (*moved_pads, *static_pads)
-    tracks = tuple(item for item in board.GetTracks() if item.m_Uuid.AsString() not in removed_ids)
+    tracks = tuple(
+        item for item in board.GetTracks() if item.m_Uuid.AsString() not in removed_ids
+    )
     layers = tuple(board.GetLayerID(name) for name in enabled_copper_layers(board))
 
     def conflicts(shape, other, gap, layer):
@@ -383,21 +488,32 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
             drill = other.GetDrillSize()
             hole = other.GetEffectiveHoleShape() if drill.x or drill.y else None
         else:
-            hole = other.GetEffectiveHoleShape() if isinstance(other, pcbnew.PCB_VIA) else None
+            hole = (
+                other.GetEffectiveHoleShape()
+                if isinstance(other, pcbnew.PCB_VIA)
+                else None
+            )
         return (
             other_shape is not None and shape.Collide(other_shape, max(0, gap - 1))
         ) or (hole is not None and shape.Collide(hole, max(0, hole_gap - 1)))
 
     collateral = {}
-    for pad, layer in ((pad, layer) for pad in moved_pads for layer in layers if pad.IsOnLayer(layer)):
+    for pad, layer in (
+        (pad, layer) for pad in moved_pads for layer in layers if pad.IsOnLayer(layer)
+    ):
         shape = pad.GetEffectiveShape(layer)
         original_shape = original_pads[pad.m_Uuid.AsString()].GetEffectiveShape(layer)
         box = pad.GetBoundingBox()
         for other in pads:
-            if other.GetParentFootprint().m_Uuid.AsString() == pad.GetParentFootprint().m_Uuid.AsString():
+            if (
+                other.GetParentFootprint().m_Uuid.AsString()
+                == pad.GetParentFootprint().m_Uuid.AsString()
+            ):
                 # A footprint move leaves its own pad-to-pad geometry intact.
                 continue
-            if not other.IsOnLayer(layer) or (other.GetNetname() and other.GetNetname() == pad.GetNetname()):
+            if not other.IsOnLayer(layer) or (
+                other.GetNetname() and other.GetNetname() == pad.GetNetname()
+            ):
                 continue
             gap = clearance(pad, other)
             bounds = other.GetBoundingBox()
@@ -405,26 +521,43 @@ def _placement_obstructions(board, copies, selected_ids, removed_ids, policy, ex
             if not box.Intersects(bounds):
                 continue
             original_other = original_pads[other.m_Uuid.AsString()]
-            if conflicts(shape, other, gap, layer) and not conflicts(original_shape, original_other, gap, layer):
-                raise UnsupportedPlacement("Moved pad would violate another pad's clearance")
+            if conflicts(shape, other, gap, layer) and not conflicts(
+                original_shape, original_other, gap, layer
+            ):
+                raise UnsupportedPlacement(
+                    "Moved pad would violate another pad's clearance"
+                )
         for item in tracks:
-            if not item.IsOnLayer(layer) or (item.GetNetname() and item.GetNetname() == pad.GetNetname()):
+            if not item.IsOnLayer(layer) or (
+                item.GetNetname() and item.GetNetname() == pad.GetNetname()
+            ):
                 continue
             gap = clearance(pad, item)
             bounds = item.GetBoundingBox()
             bounds.Inflate(max(gap, hole_gap))
             if not box.Intersects(bounds):
                 continue
-            if not conflicts(shape, item, gap, layer) or conflicts(original_shape, item, gap, layer):
+            if not conflicts(shape, item, gap, layer) or conflicts(
+                original_shape, item, gap, layer
+            ):
                 continue
             name = item.GetNetname()
-            if (not name or name.startswith("unconnected-") or name in excluded
-                    or item.IsLocked() or item.GetParentGroup() is not None
-                    or isinstance(item, pcbnew.PCB_ARC)
-                    or (isinstance(item, pcbnew.PCB_VIA)
-                        and item.GetViaType() != pcbnew.VIATYPE_THROUGH)
-                    or not any(p.GetNetname() == name for p in board.GetPads())):
-                raise UnsupportedPlacement("Moved pad would hit copper that cannot be rerouted")
+            if (
+                not name
+                or name.startswith("unconnected-")
+                or name in excluded
+                or item.IsLocked()
+                or item.GetParentGroup() is not None
+                or isinstance(item, pcbnew.PCB_ARC)
+                or (
+                    isinstance(item, pcbnew.PCB_VIA)
+                    and item.GetViaType() != pcbnew.VIATYPE_THROUGH
+                )
+                or not any(p.GetNetname() == name for p in board.GetPads())
+            ):
+                raise UnsupportedPlacement(
+                    "Moved pad would hit copper that cannot be rerouted"
+                )
             collateral[item.m_Uuid.AsString()] = item
     return tuple(collateral.values())
 
@@ -436,13 +569,16 @@ def _include_obstructions(board, removals, dimensions, items):
     for item in items:
         name = item.GetNetname()
         via = isinstance(item, pcbnew.PCB_VIA)
-        removals.setdefault(name, []).append({
-            "kind": "via" if via else "segment", "uuid": item.m_Uuid.AsString()
-        })
+        removals.setdefault(name, []).append(
+            {"kind": "via" if via else "segment", "uuid": item.m_Uuid.AsString()}
+        )
         width, size, drill = dimensions.get(name, (0, 0, 0))
         if via:
-            sizes = [copper_width(item, layer=board.GetLayerID(layer))
-                     for layer in enabled_copper_layers(board) if item.IsOnLayer(board.GetLayerID(layer))]
+            sizes = [
+                copper_width(item, layer=board.GetLayerID(layer))
+                for layer in enabled_copper_layers(board)
+                if item.IsOnLayer(board.GetLayerID(layer))
+            ]
             size, drill = max(size, *sizes), max(drill, item.GetDrillValue())
         else:
             width = max(width, copper_width(item, layer=item.GetLayer()))
@@ -462,7 +598,9 @@ def _extend_exposed_copper(board, removals, copies, selected_ids, *, max_items):
         raise ValueError("A placement repair references missing copper")
     original = set(chosen)
     pads = tuple(
-        pad for part in board.GetFootprints() if part.m_Uuid.AsString() not in selected_ids
+        pad
+        for part in board.GetFootprints()
+        if part.m_Uuid.AsString() not in selected_ids
         for pad in part.Pads()
     ) + tuple(pad for part in copies for pad in part.Pads())
     zones = tuple(zone for zone in board.Zones() if not zone.GetIsRuleArea())
@@ -477,32 +615,57 @@ def _extend_exposed_copper(board, removals, copies, selected_ids, *, max_items):
         for item in tracks:
             identifier = item.m_Uuid.AsString()
             name = item.GetNetname()
-            if identifier in chosen or name not in affected or isinstance(item, pcbnew.PCB_VIA):
+            if (
+                identifier in chosen
+                or name not in affected
+                or isinstance(item, pcbnew.PCB_VIA)
+            ):
                 continue
             layer = item.GetLayer()
             for point in (item.GetStart(), item.GetEnd()):
-                if not any(other.GetNetname() == name and touches(other, point, layer)
-                           for other in removed):
+                if not any(
+                    other.GetNetname() == name and touches(other, point, layer)
+                    for other in removed
+                ):
                     continue
-                if any(pad.GetNetname() == name and touches(pad, point, layer) for pad in pads):
+                if any(
+                    pad.GetNetname() == name and touches(pad, point, layer)
+                    for pad in pads
+                ):
                     continue
-                if any(other.m_Uuid.AsString() not in chosen
-                       and other.m_Uuid.AsString() != identifier and other.GetNetname() == name
-                       and touches(other, point, layer) for other in tracks):
+                if any(
+                    other.m_Uuid.AsString() not in chosen
+                    and other.m_Uuid.AsString() != identifier
+                    and other.GetNetname() == name
+                    and touches(other, point, layer)
+                    for other in tracks
+                ):
                     continue
                 # A zone envelope is a conservative possible attachment; native
                 # refill and DRC will resolve whether copper is actually present.
-                if any(zone.GetNetname() == name and zone.IsOnLayer(layer)
-                       and zone.GetBoundingBox().Contains(point) for zone in zones):
+                if any(
+                    zone.GetNetname() == name
+                    and zone.IsOnLayer(layer)
+                    and zone.GetBoundingBox().Contains(point)
+                    for zone in zones
+                ):
                     continue
-                if item.IsLocked() or item.GetParentGroup() is not None or isinstance(item, pcbnew.PCB_ARC):
-                    raise UnsupportedPlacement("An exposed trace cannot be safely rerouted")
+                if (
+                    item.IsLocked()
+                    or item.GetParentGroup() is not None
+                    or isinstance(item, pcbnew.PCB_ARC)
+                ):
+                    raise UnsupportedPlacement(
+                        "An exposed trace cannot be safely rerouted"
+                    )
                 additional.add(identifier)
                 break
         if not additional:
             break
         if len(chosen | additional) > max_items:
-            raise UnsupportedPlacement("Exposed trace repair exceeds the copper item limit")
+            raise UnsupportedPlacement(
+                "Exposed trace repair exceeds the copper item limit"
+            )
         chosen.update(additional)
     return tuple(by_id[identifier] for identifier in sorted(chosen - original))
 
@@ -516,12 +679,19 @@ def singleton_group_members(source: str) -> frozenset[str]:
             continue
         identifier = ids[0].atoms()[1].value
         members = tuple(item.value for item in member_forms[0].atoms()[1:])
-        locked = bool(group.children("locked")) or any(item.value == "locked" for item in group.atoms())
+        locked = bool(group.children("locked")) or any(
+            item.value == "locked" for item in group.atoms()
+        )
         groups.append((identifier, members, locked))
     counts = Counter(member for _, members, _ in groups for member in members)
-    return frozenset(members[0] for identifier, members, locked in groups
-                     if not locked and len(members) == 1 and counts[members[0]] == 1
-                     and counts[identifier] == 0)
+    return frozenset(
+        members[0]
+        for identifier, members, locked in groups
+        if not locked
+        and len(members) == 1
+        and counts[members[0]] == 1
+        and counts[identifier] == 0
+    )
 
 
 def singleton_footprint_groups(board) -> frozenset[str]:
@@ -532,8 +702,16 @@ def singleton_footprint_groups(board) -> frozenset[str]:
     return singleton_group_members(source.read_text(encoding="utf-8-sig"))
 
 
-def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
-                     anchor_nets: set[str], selection: str):
+def _anchor_requests(
+    board,
+    request,
+    policy,
+    recovery,
+    anchors,
+    protected_nets,
+    anchor_nets: set[str],
+    selection: str,
+):
     """Generate private two-pad half-turns while leaving anchor copper intact."""
     import pcbnew
 
@@ -547,25 +725,41 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
     movable = MoveScope.from_config(policy.get("placement")).movable(text)
     singleton_members = singleton_group_members(text)
     footprints = tuple(board.GetFootprints())
-    all_geometry = {part.m_Uuid.AsString(): _courtyard_geometry(part) for part in footprints}
+    all_geometry = {
+        part.m_Uuid.AsString(): _courtyard_geometry(part) for part in footprints
+    }
     box = board.GetBoardEdgesBoundingBox()
     options = []
     for part in footprints:
         pose = _anchor_pose(part, excluded, anchor_nets)
-        if (pose is None or pose.reference not in movable
-                or (part.GetParentGroup() is not None
-                    and part.m_Uuid.AsString() not in singleton_members)):
+        if (
+            pose is None
+            or pose.reference not in movable
+            or (
+                part.GetParentGroup() is not None
+                and part.m_Uuid.AsString() not in singleton_members
+            )
+        ):
             continue
-        distance = min(math.hypot(pad.GetPosition().x - anchor.point.x,
-                                  pad.GetPosition().y - anchor.point.y)
-                       for pad in part.Pads() for anchor in anchors)
+        distance = min(
+            math.hypot(
+                pad.GetPosition().x - anchor.point.x,
+                pad.GetPosition().y - anchor.point.y,
+            )
+            for pad in part.Pads()
+            for anchor in anchors
+        )
         if pose.signal_net == target or distance <= mm(recovery.rip_up_radius_mm * 2):
-            options.append((pose.signal_net != target, distance, pose.reference, part, pose))
+            options.append(
+                (pose.signal_net != target, distance, pose.reference, part, pose)
+            )
 
     choices = []
     for _, _, reference, part, pose in sorted(options, key=lambda item: item[:3]):
-        if not (box.GetX() / 1e6 < pose.x_mm < box.GetRight() / 1e6
-                and box.GetY() / 1e6 < pose.y_mm < box.GetBottom() / 1e6):
+        if not (
+            box.GetX() / 1e6 < pose.x_mm < box.GetRight() / 1e6
+            and box.GetY() / 1e6 < pose.y_mm < box.GetBottom() / 1e6
+        ):
             continue
         selected = [(0, reference, part, {pose.signal_net})]
         names = {target, pose.signal_net}
@@ -580,41 +774,75 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
             clone.SetPosition(pcbnew.VECTOR2I(mm(pose.x_mm), mm(pose.y_mm)))
             uid = part.m_Uuid.AsString()
             before = _courtyard_conflicts({uid: all_geometry[uid]}, all_geometry)
-            if _courtyard_conflicts({uid: _courtyard_geometry(clone)}, all_geometry) - before:
+            if (
+                _courtyard_conflicts({uid: _courtyard_geometry(clone)}, all_geometry)
+                - before
+            ):
                 continue
-            removed_ids = {item["uuid"] for items in removals.values() for item in items}
-            obstacles = _placement_obstructions(board, [clone], {uid}, removed_ids,
-                                               policy, excluded, request)
+            removed_ids = {
+                item["uuid"] for items in removals.values() for item in items
+            }
+            obstacles = _placement_obstructions(
+                board, [clone], {uid}, removed_ids, policy, excluded, request
+            )
             _include_obstructions(board, removals, dimensions, obstacles)
-            exposed = _extend_exposed_copper(board, removals, [clone], {uid},
-                                              max_items=recovery.placement_items)
+            exposed = _extend_exposed_copper(
+                board, removals, [clone], {uid}, max_items=recovery.placement_items
+            )
             _include_obstructions(board, removals, dimensions, exposed)
         except UnsupportedPlacement:
             continue
         affected = names | set(removals)
-        if (affected & excluded or len(affected) > recovery.placement_nets
-                or sum(map(len, removals.values())) > recovery.placement_items):
+        if (
+            affected & excluded
+            or len(affected) > recovery.placement_nets
+            or sum(map(len, removals.values())) > recovery.placement_items
+        ):
             continue
         candidate = deepcopy(request)
         candidate.pop("orders", None)
-        candidate.update(recovery_stage=4, rip_up=removals,
-                         movable=[{"reference": reference,
-                                   "positions_mm": [[pose.x_mm, pose.y_mm]],
-                                   "rotations_deg": [pose.angle_deg]}],
-                         repair_max_islands=recovery.repair_islands,
-                         checkpoint_offset=0, checkpoint_margin_mm=recovery.wide_margin_mm)
+        candidate.update(
+            recovery_stage=4,
+            rip_up=removals,
+            movable=[
+                {
+                    "reference": reference,
+                    "positions_mm": [[pose.x_mm, pose.y_mm]],
+                    "rotations_deg": [pose.angle_deg],
+                }
+            ],
+            repair_max_islands=recovery.repair_islands,
+            checkpoint_offset=0,
+            checkpoint_margin_mm=recovery.wide_margin_mm,
+        )
         candidate["nets"] = [
-            _net_settings(board, name, policy, recovery, dimensions,
-                          {**request["shared"], **request["nets"][0]} if name == target else None)
+            _net_settings(
+                board,
+                name,
+                policy,
+                recovery,
+                dimensions,
+                {**request["shared"], **request["nets"][0]} if name == target else None,
+            )
             for name in (target, *sorted(affected - {target}))
         ]
         candidate["shared"]["bounds_mm"] = [
-            box.GetX() / 1e6, box.GetY() / 1e6,
-            box.GetRight() / 1e6, box.GetBottom() / 1e6,
+            box.GetX() / 1e6,
+            box.GetY() / 1e6,
+            box.GetRight() / 1e6,
+            box.GetBottom() / 1e6,
         ]
-        choices.append((candidate, {"selection": selection,
-                                    "references": [reference], "nets": sorted(affected),
-                                    "items": sum(map(len, removals.values()))}))
+        choices.append(
+            (
+                candidate,
+                {
+                    "selection": selection,
+                    "references": [reference],
+                    "nets": sorted(affected),
+                    "items": sum(map(len, removals.values())),
+                },
+            )
+        )
         if len(choices) >= recovery.placement_candidates:
             break
     return [item[0] for item in choices], [item[1] for item in choices]
@@ -622,15 +850,35 @@ def _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
 
 def ground_anchor_requests(board, request, policy, recovery, anchors, protected_nets):
     """Generate private two-pad half-turns while leaving ground copper intact."""
-    return _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
-                            {"GND"}, "ground_anchor_hypothesis")
+    return _anchor_requests(
+        board,
+        request,
+        policy,
+        recovery,
+        anchors,
+        protected_nets,
+        {"GND"},
+        "ground_anchor_hypothesis",
+    )
 
 
-def protected_anchor_requests(board, request, policy, recovery, anchors, protected_nets):
+def protected_anchor_requests(
+    board, request, policy, recovery, anchors, protected_nets
+):
     """Generate private hypotheses; working-save protection remains unchanged."""
-    anchor_nets = set(protected_nets) - set(policy.get("exclude_nets", ())) - {"GND", ""}
-    return _anchor_requests(board, request, policy, recovery, anchors, protected_nets,
-                            anchor_nets, "protected_anchor_hypothesis")
+    anchor_nets = (
+        set(protected_nets) - set(policy.get("exclude_nets", ())) - {"GND", ""}
+    )
+    return _anchor_requests(
+        board,
+        request,
+        policy,
+        recovery,
+        anchors,
+        protected_nets,
+        anchor_nets,
+        "protected_anchor_hypothesis",
+    )
 
 
 def placement_requests(board, request, policy, recovery, anchors, critical_nets):
@@ -645,7 +893,9 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         MoveScope.from_config(policy.get("placement")),
     )
     nearby = [item for item in options if item[0] <= mm(recovery.rip_up_radius_mm * 2)]
-    guide = MoveGuide.diagnose(board, request, policy, recovery, anchors, critical_nets, options, nearby)
+    guide = MoveGuide.diagnose(
+        board, request, policy, recovery, anchors, critical_nets, options, nearby
+    )
     selections = guide.selections(options, nearby)
     box = board.GetBoardEdgesBoundingBox()
     footprints = tuple(board.GetFootprints())
@@ -656,7 +906,8 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
     for selected in selections:
         selected_ids = {item[2].m_Uuid.AsString() for item in selected}
         before = _courtyard_conflicts(
-            {identifier: all_geometry[identifier] for identifier in selected_ids}, all_geometry
+            {identifier: all_geometry[identifier] for identifier in selected_ids},
+            all_geometry,
         )
         names = set().union(*(item[3] for item in selected)) | {target}
         if len(names) > recovery.placement_nets:
@@ -670,14 +921,21 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         choices = []
 
         def legal(selected, copies, before=before):
-            moved = {item[2].m_Uuid.AsString(): _courtyard_geometry(copy)
-                     for item, copy in strict_zip(selected, copies)}
+            moved = {
+                item[2].m_Uuid.AsString(): _courtyard_geometry(copy)
+                for item, copy in strict_zip(selected, copies)
+            }
             if _courtyard_conflicts(moved, all_geometry) - before:
                 return False
             # A pad pushed past the copper edge rule cannot pass native DRC.
-            return not (_beyond_edge_clearance(board, (pad for copy in copies for pad in copy.Pads()))
-                        and not _beyond_edge_clearance(board, (pad for item in selected
-                                                               for pad in item[2].Pads())))
+            return not (
+                _beyond_edge_clearance(
+                    board, (pad for copy in copies for pad in copy.Pads())
+                )
+                and not _beyond_edge_clearance(
+                    board, (pad for item in selected for pad in item[2].Pads())
+                )
+            )
 
         for pose in PoseSampler(board, guide, legal).poses(selected):
             candidate = deepcopy(request)
@@ -685,8 +943,14 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
             candidate.update(
                 recovery_stage=4,
                 rip_up=removals,
-                movable=[{"reference": ref, "positions_mm": [[x, y]], "rotations_deg": [angle]}
-                         for ref, x, y, angle in pose.moves],
+                movable=[
+                    {
+                        "reference": ref,
+                        "positions_mm": [[x, y]],
+                        "rotations_deg": [angle],
+                    }
+                    for ref, x, y, angle in pose.moves
+                ],
                 repair_max_islands=recovery.repair_islands,
                 checkpoint_offset=0,
                 checkpoint_margin_mm=recovery.wide_margin_mm,
@@ -699,23 +963,39 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                 continue
             candidate_removals = deepcopy(removals)
             candidate_dimensions = dict(dimensions)
-            removed_ids = {item["uuid"] for items in candidate_removals.values() for item in items}
+            removed_ids = {
+                item["uuid"] for items in candidate_removals.values() for item in items
+            }
             try:
                 obstructions = _placement_obstructions(
-                    board, copies, selected_ids, removed_ids, policy,
-                    set(critical_nets) | set(policy.get("exclude_nets", [])), request,
+                    board,
+                    copies,
+                    selected_ids,
+                    removed_ids,
+                    policy,
+                    set(critical_nets) | set(policy.get("exclude_nets", [])),
+                    request,
                 )
-                _include_obstructions(board, candidate_removals, candidate_dimensions, obstructions)
+                _include_obstructions(
+                    board, candidate_removals, candidate_dimensions, obstructions
+                )
                 exposed = _extend_exposed_copper(
-                    board, candidate_removals, copies, selected_ids,
+                    board,
+                    candidate_removals,
+                    copies,
+                    selected_ids,
                     max_items=recovery.placement_items,
                 )
-                _include_obstructions(board, candidate_removals, candidate_dimensions, exposed)
+                _include_obstructions(
+                    board, candidate_removals, candidate_dimensions, exposed
+                )
             except UnsupportedPlacement:
                 continue
             candidate_names = names | set(candidate_removals)
-            if (len(candidate_names) > recovery.placement_nets
-                    or sum(map(len, candidate_removals.values())) > recovery.placement_items):
+            if (
+                len(candidate_names) > recovery.placement_nets
+                or sum(map(len, candidate_removals.values())) > recovery.placement_items
+            ):
                 continue
             candidate["rip_up"] = candidate_removals
             candidate["nets"] = [
@@ -741,8 +1021,11 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
                 (
                     candidate,
                     {
-                        "selection": ("path_obstruction_move" if guide.names(selected)
-                                      else "placement_hypothesis"),
+                        "selection": (
+                            "path_obstruction_move"
+                            if guide.names(selected)
+                            else "placement_hypothesis"
+                        ),
                         "pose": pose.kind,
                         "references": [item[1] for item in selected],
                         "nets": sorted(candidate_names),
@@ -757,8 +1040,13 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         streams.append(choices)
     # Moves that open the diagnosed corridor come first; the rest share the
     # remaining slots so a small cap still samples every selection.
-    guided = [pair for choices in streams for pair in choices
-              if pair[1]["selection"] == "path_obstruction_move" and pair[1]["clears_corridor"]]
+    guided = [
+        pair
+        for choices in streams
+        for pair in choices
+        if pair[1]["selection"] == "path_obstruction_move"
+        and pair[1]["clears_corridor"]
+    ]
     first = {id(pair) for pair in guided}
     interleaved = (
         pair
@@ -766,5 +1054,9 @@ def placement_requests(board, request, policy, recovery, anchors, critical_nets)
         for pair in row
         if pair is not None and id(pair) not in first
     )
-    chosen = list(itertools.islice(itertools.chain(guided, interleaved), recovery.placement_candidates))
+    chosen = list(
+        itertools.islice(
+            itertools.chain(guided, interleaved), recovery.placement_candidates
+        )
+    )
     return [pair[0] for pair in chosen], [pair[1] for pair in chosen]

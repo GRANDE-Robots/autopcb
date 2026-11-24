@@ -25,11 +25,14 @@ def _executable(requested: Path | None) -> Path | None:
     if located:
         return Path(located).resolve()
     candidates = (
-        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "KiCad/10.0/bin/kicad-cli.exe",
+        Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+        / "KiCad/10.0/bin/kicad-cli.exe",
         Path("/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
         Path("/Applications/KiCad.app/Contents/MacOS/kicad-cli"),
     )
-    return next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
+    return next(
+        (candidate.resolve() for candidate in candidates if candidate.is_file()), None
+    )
 
 
 class RouterCache:
@@ -41,7 +44,11 @@ class RouterCache:
 
     @classmethod
     def fastroute(cls) -> Path:
-        return cls.root() / "fastroute-0.1.14" / ("fastroute.exe" if os.name == "nt" else "fastroute")
+        return (
+            cls.root()
+            / "fastroute-0.1.14"
+            / ("fastroute.exe" if os.name == "nt" else "fastroute")
+        )
 
     @classmethod
     def krt(cls) -> Path:
@@ -55,7 +62,9 @@ class RouterCache:
 def kicad_cli(requested: Path | None = None) -> Path:
     candidate = _executable(requested)
     if candidate is None or not candidate.is_file():
-        raise RuntimeError("KiCad CLI was not found. Install KiCad 10 or set KICAD_CLI.")
+        raise RuntimeError(
+            "KiCad CLI was not found. Install KiCad 10 or set KICAD_CLI."
+        )
     return candidate
 
 
@@ -64,12 +73,25 @@ def native_python_candidates(cli: Path | None = None) -> tuple[Path, ...]:
         return (Path(value).expanduser().resolve(),)
     candidates = []
     if cli:
-        candidates.extend(cli.with_name(name) for name in ("python.exe", "python3", "python"))
+        candidates.extend(
+            cli.with_name(name) for name in ("python.exe", "python3", "python")
+        )
         if sys.platform == "darwin":
-            candidates.extend(cli.parent.parent.glob("Frameworks/Python.framework/Versions/*/bin/python3"))
-    candidates.extend(Path(path) for path in (sys.executable, shutil.which("python3"),
-                                             "/usr/bin/python3") if path)
-    return tuple(dict.fromkeys(candidate.resolve() for candidate in candidates if candidate.is_file()))
+            candidates.extend(
+                cli.parent.parent.glob(
+                    "Frameworks/Python.framework/Versions/*/bin/python3"
+                )
+            )
+    candidates.extend(
+        Path(path)
+        for path in (sys.executable, shutil.which("python3"), "/usr/bin/python3")
+        if path
+    )
+    return tuple(
+        dict.fromkeys(
+            candidate.resolve() for candidate in candidates if candidate.is_file()
+        )
+    )
 
 
 def _run(cli: Path, args: list[str]) -> tuple[bool, str]:

@@ -54,7 +54,11 @@ PREVIOUS_FIELDS = LEGACY_FIELDS + (
     "degree_two_joints",
     "geometry_evidence",
 )
-FIELDS = PREVIOUS_FIELDS + ("symmetry_score", "routing_run_seconds", "optimization_evidence")
+FIELDS = PREVIOUS_FIELDS + (
+    "symmetry_score",
+    "routing_run_seconds",
+    "optimization_evidence",
+)
 
 
 @dataclass(frozen=True)
@@ -114,7 +118,11 @@ def read_history(path: Path) -> list[ProgressPoint]:
         return []
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
-        if reader.fieldnames not in (list(LEGACY_FIELDS), list(PREVIOUS_FIELDS), list(FIELDS)):
+        if reader.fieldnames not in (
+            list(LEGACY_FIELDS),
+            list(PREVIOUS_FIELDS),
+            list(FIELDS),
+        ):
             raise ValueError("Progress table has unexpected columns")
         points = []
         for row in reader:
@@ -133,7 +141,10 @@ def read_history(path: Path) -> list[ProgressPoint]:
                 or any(c not in "0123456789abcdef" for c in signature)
             ):
                 raise ValueError("Progress source signature is invalid")
-            geometry = [row.get(field, "") for field in ("track_length_mm", "via_count", "degree_two_joints")]
+            geometry = [
+                row.get(field, "")
+                for field in ("track_length_mm", "via_count", "degree_two_joints")
+            ]
             if any(geometry) and not all(geometry):
                 raise ValueError("Geometry measurements must be complete or empty")
             length, vias, joints = (
@@ -145,13 +156,28 @@ def read_history(path: Path) -> list[ProgressPoint]:
                 not math.isfinite(length) or length < 0 or vias < 0 or joints < 0
             ):
                 raise ValueError("Geometry measurements must be finite and nonnegative")
-            optimization = [row.get(field, "") for field in ("symmetry_score", "routing_run_seconds")]
-            symmetry, runtime = (float(value) if value else None for value in optimization)
-            if any(value is not None and (not math.isfinite(value) or value < 0) for value in (symmetry, runtime)):
-                raise ValueError("Optimization measurements must be finite and nonnegative")
+            optimization = [
+                row.get(field, "")
+                for field in ("symmetry_score", "routing_run_seconds")
+            ]
+            symmetry, runtime = (
+                float(value) if value else None for value in optimization
+            )
+            if any(
+                value is not None and (not math.isfinite(value) or value < 0)
+                for value in (symmetry, runtime)
+            ):
+                raise ValueError(
+                    "Optimization measurements must be finite and nonnegative"
+                )
             optimization_evidence = row.get("optimization_evidence", "")
-            if any(value is not None for value in (symmetry, runtime)) and not optimization_evidence.strip():
-                raise ValueError("Optimization measurements require source-bound evidence")
+            if (
+                any(value is not None for value in (symmetry, runtime))
+                and not optimization_evidence.strip()
+            ):
+                raise ValueError(
+                    "Optimization measurements require source-bound evidence"
+                )
             points.append(
                 ProgressPoint(
                     row["checked_at"],
@@ -219,14 +245,18 @@ def check_saved_board(
     project = long_path(project)
     files, before, signature = _fingerprint(project)
     board = native_path(project, ".kicad_pcb")
-    adjacent = kicad_python.parent / ("kicad-cli.exe" if os.name == "nt" else "kicad-cli")
+    adjacent = kicad_python.parent / (
+        "kicad-cli.exe" if os.name == "nt" else "kicad-cli"
+    )
     cli = kicad_cli(adjacent if adjacent.is_file() else None)
     with tempfile.TemporaryDirectory(prefix="jessie-progress-drc-") as directory:
         scratch = Path(directory)
         _copy_inputs(
             [path for path in files if path.suffix != ".kicad_sch"], board, scratch
         )
-        shutil.copy2(native_path(project, ".kicad_sch"), native_path(scratch, ".kicad_sch"))
+        shutil.copy2(
+            native_path(project, ".kicad_sch"), native_path(scratch, ".kicad_sch")
+        )
         copied = {name: _sha(scratch / name) for name in before}
         if copied != before:
             raise RuntimeError("Inputs changed while copying the saved board")
@@ -322,13 +352,20 @@ def latest_preview_pace(points: list[ProgressPoint], preview_start: int | None):
     for previous in reversed(points[preview_start:-1]):
         gain = previous.open_connections - latest.open_connections
         if gain > 0:
-            seconds = (datetime.fromisoformat(latest.checked_at)
-                       - datetime.fromisoformat(previous.checked_at)).total_seconds()
+            seconds = (
+                datetime.fromisoformat(latest.checked_at)
+                - datetime.fromisoformat(previous.checked_at)
+            ).total_seconds()
             return (gain, seconds, gain * 60 / seconds) if seconds > 0 else None
     first = points[preview_start]
-    if all(point.open_connections == latest.open_connections for point in points[preview_start:]):
-        seconds = (datetime.fromisoformat(latest.checked_at)
-                   - datetime.fromisoformat(first.checked_at)).total_seconds()
+    if all(
+        point.open_connections == latest.open_connections
+        for point in points[preview_start:]
+    ):
+        seconds = (
+            datetime.fromisoformat(latest.checked_at)
+            - datetime.fromisoformat(first.checked_at)
+        ).total_seconds()
         return (0, seconds, 0.0) if seconds > 0 else None
     return None
 
@@ -338,7 +375,9 @@ def latest_recorded_run_pace(points: list[ProgressPoint], preview_start: int | N
     if preview_start is None or preview_start < 0 or preview_start >= len(points) - 1:
         return None
     latest = points[-1]
-    if latest.routing_run_seconds is None or not math.isfinite(latest.routing_run_seconds):
+    if latest.routing_run_seconds is None or not math.isfinite(
+        latest.routing_run_seconds
+    ):
         return None
     for previous in reversed(points[preview_start:-1]):
         gain = previous.open_connections - latest.open_connections
@@ -349,8 +388,14 @@ def latest_recorded_run_pace(points: list[ProgressPoint], preview_start: int | N
             seconds = latest.routing_run_seconds - old_seconds
             return (gain, seconds, gain * 60 / seconds) if seconds > 0 else None
     first = points[preview_start]
-    if (all(point.open_connections == latest.open_connections for point in points[preview_start:])
-            and first.routing_run_seconds is not None and math.isfinite(first.routing_run_seconds)):
+    if (
+        all(
+            point.open_connections == latest.open_connections
+            for point in points[preview_start:]
+        )
+        and first.routing_run_seconds is not None
+        and math.isfinite(first.routing_run_seconds)
+    ):
         seconds = latest.routing_run_seconds - first.routing_run_seconds
         return (0, seconds, 0.0) if seconds > 0 else None
     return None
@@ -371,7 +416,9 @@ def _series_runs(vertices, break_indices):
     return runs
 
 
-def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int | None = None) -> None:
+def draw_chart(
+    points: list[ProgressPoint], output: Path, *, preview_start: int | None = None
+) -> None:
     """Plot each recorded count on one time axis without redundant annotations."""
     if not points:
         raise ValueError("At least one progress point is required")
@@ -467,21 +514,43 @@ def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int 
     series = chart_series(points)
     text(75, 50, "PCB progress", 34, "#15233b", bold=True)
     if preview_start is not None:
-        text(1525, 55, f"Saved: {points[preview_start - 1].open_connections} opens  |  Private preview: {points[-1].open_connections}",
-             20, "#34445a", anchor="ra")
+        text(
+            1525,
+            55,
+            f"Saved: {points[preview_start - 1].open_connections} opens  |  Private preview: {points[-1].open_connections}",
+            20,
+            "#34445a",
+            anchor="ra",
+        )
         pace = latest_preview_pace(points, preview_start)
         if pace is not None:
             gain, seconds, per_minute = pace
             unit = "open" if gain == 1 else "opens"
-            text(1525, 85, f"Elapsed: {gain} {unit} in {seconds / 60:.1f} min ({per_minute:.3g}/min)",
-                 16, "#34445a", anchor="ra")
+            text(
+                1525,
+                85,
+                f"Elapsed: {gain} {unit} in {seconds / 60:.1f} min ({per_minute:.3g}/min)",
+                16,
+                "#34445a",
+                anchor="ra",
+            )
         recorded = latest_recorded_run_pace(points, preview_start)
         if recorded is not None:
             gain, seconds, per_minute = recorded
             unit = "open" if gain == 1 else "opens"
-            text(1525, 106, f"Recorded run: {gain} {unit} in {seconds / 60:.1f} min ({per_minute:.3g}/min)",
-                 16, "#34445a", anchor="ra")
-    extra_axes = [axis for axis in ("mm", "score", "seconds") if any(item[5] == axis for item in series)]
+            text(
+                1525,
+                106,
+                f"Recorded run: {gain} {unit} in {seconds / 60:.1f} min ({per_minute:.3g}/min)",
+                16,
+                "#34445a",
+                anchor="ra",
+            )
+    extra_axes = [
+        axis
+        for axis in ("mm", "score", "seconds")
+        if any(item[5] == axis for item in series)
+    ]
     left, right, top, bottom = (
         135,
         1530 - 75 * len(extra_axes),
@@ -535,7 +604,14 @@ def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int 
             value = index * axis_step
             y = bottom - value * (bottom - top) / limit
             text(x, y, format(value, ".4g"), 17, color, anchor="lm")
-        text(x, top - 25, {"mm": "mm", "score": "score", "seconds": "s"}[axis_name], 16, color, anchor="lm")
+        text(
+            x,
+            top - 25,
+            {"mm": "mm", "score": "score", "seconds": "s"}[axis_name],
+            16,
+            color,
+            anchor="lm",
+        )
 
     times = [datetime.fromisoformat(point.checked_at) for point in points]
     seconds = [value.timestamp() for value in times]
@@ -548,14 +624,23 @@ def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int 
     if preview_start is not None:
         boundary = max(left, xs[preview_start])
         draw.rectangle((xy(boundary), xy(top), xy(right), xy(bottom)), fill="#eef7fa")
-        text(right, bottom + 83, "Triangles: KiCad-checked preview; electrical checks pending; not saved to PCB", 16, "#176780", anchor="ra")
+        text(
+            right,
+            bottom + 83,
+            "Triangles: KiCad-checked preview; electrical checks pending; not saved to PCB",
+            16,
+            "#176780",
+            anchor="ra",
+        )
     scope_change = latest_scope_change(points, preview_start)
     if scope_change is not None:
         index, description = scope_change
         x = xs[index]
         line([(x, top), (x, bottom)], "#9baabd", (4, 5), thickness=1)
         anchor = "ra" if x > (left + right) / 2 else "la"
-        text(x, bottom + 58, f"Scope change: {description}", 15, "#53657a", anchor=anchor)
+        text(
+            x, bottom + 58, f"Scope change: {description}", 15, "#53657a", anchor=anchor
+        )
     for _, _, color, pattern, shape, axis, values in series:
         limit = axis_high[axis]
         vertices = [
@@ -564,7 +649,8 @@ def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int 
         ]
         saved_end = len(points) if preview_start is None else preview_start
         boundaries = {
-            index for index, point in enumerate(points[:saved_end])
+            index
+            for index, point in enumerate(points[:saved_end])
             if "; scope change" in point.change.casefold()
         }
         if preview_start is not None:
@@ -576,16 +662,25 @@ def draw_chart(points: list[ProgressPoint], output: Path, *, preview_start: int 
         selected = set(valid[::stride]) | ({valid[-1]} if valid else set())
         for index in sorted(selected):
             x, y = vertices[index]
-            marker(x, y, color, "triangle" if preview_start is not None and index >= preview_start else shape)
+            marker(
+                x,
+                y,
+                color,
+                "triangle"
+                if preview_start is not None and index >= preview_start
+                else shape,
+            )
 
     tick_count = 5 if span > 0 else 1
     for index in range(tick_count):
         fraction = index / (tick_count - 1) if tick_count > 1 else 0.5
         stamp = seconds[0] + fraction * span
-        display_zone = times[preview_start - 1].tzinfo if preview_start is not None else times[-1].tzinfo
-        label = datetime.fromtimestamp(stamp, display_zone).strftime(
-            "%b %d  %I:%M %p"
+        display_zone = (
+            times[preview_start - 1].tzinfo
+            if preview_start is not None
+            else times[-1].tzinfo
         )
+        label = datetime.fromtimestamp(stamp, display_zone).strftime("%b %d  %I:%M %p")
         x = left + fraction * (right - left)
         draw.line(
             (xy(x), xy(bottom), xy(x), xy(bottom + 7)), fill="#a5b1c1", width=xy(1)
@@ -607,7 +702,9 @@ def _valid_chart(path: Path) -> bool:
         return False
 
 
-def review_points(history: list[ProgressPoint], review: Path) -> tuple[list[ProgressPoint], int | None]:
+def review_points(
+    history: list[ProgressPoint], review: Path
+) -> tuple[list[ProgressPoint], int | None]:
     """Overlay only source-matching private measurements; never rewrite saved history."""
     path = review / PREVIEW_NAME
     if not history or not path.is_file():
@@ -623,19 +720,32 @@ def review_points(history: list[ProgressPoint], review: Path) -> tuple[list[Prog
         actual = _sha(source) if source.is_file() else "absent"
         if actual != expected:
             return history, None  # An older preview is not current-board progress.
-    if data["inputs"].get(native_path(project, ".kicad_pcb").name) != history[-1].pcb_sha256:
+    if (
+        data["inputs"].get(native_path(project, ".kicad_pcb").name)
+        != history[-1].pcb_sha256
+    ):
         return history, None
     points = [ProgressPoint(**raw) for raw in data.get("points", [])]
     for point in points:
-        if (datetime.fromisoformat(point.checked_at).tzinfo is None
-                or any(isinstance(v, bool) or not isinstance(v, int) or v < 0
-                       for v in (point.open_connections, point.other_errors, point.other_warnings))
-                or len(point.pcb_sha256) != 64):
+        if (
+            datetime.fromisoformat(point.checked_at).tzinfo is None
+            or any(
+                isinstance(v, bool) or not isinstance(v, int) or v < 0
+                for v in (
+                    point.open_connections,
+                    point.other_errors,
+                    point.other_warnings,
+                )
+            )
+            or len(point.pcb_sha256) != 64
+        ):
             raise ValueError("Invalid private progress measurement")
     cutoff = datetime.fromisoformat(history[-1].checked_at)
     points = [p for p in points if datetime.fromisoformat(p.checked_at) >= cutoff]
-    if any(datetime.fromisoformat(a.checked_at) > datetime.fromisoformat(b.checked_at)
-           for a, b in zip(points, points[1:])):
+    if any(
+        datetime.fromisoformat(a.checked_at) > datetime.fromisoformat(b.checked_at)
+        for a, b in zip(points, points[1:])
+    ):
         raise ValueError("Private progress timestamps are out of order")
     return (history + points, len(history)) if points else (history, None)
 
@@ -645,7 +755,9 @@ def draw_review_chart(history: list[ProgressPoint], review: Path, output: Path) 
     draw_chart(points, output, preview_start=first)
 
 
-def publish_preview(project: Path, inputs: dict, run_id: str, samples: list[dict]) -> None:
+def publish_preview(
+    project: Path, inputs: dict, run_id: str, samples: list[dict]
+) -> None:
     """Publish already validated candidate measurements as a distinct preview series."""
     project = project.resolve()
     review = project / "deliverables" / "review"
@@ -657,11 +769,16 @@ def publish_preview(project: Path, inputs: dict, run_id: str, samples: list[dict
     payload = {"schema": 1, "run_id": run_id, "inputs": inputs, "points": samples}
     with tempfile.TemporaryDirectory(prefix="autopcb-preview-progress-") as directory:
         staged = Path(directory)
-        (staged / PREVIEW_NAME).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        (staged / PREVIEW_NAME).write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
         # Validate the native source identity immediately before publication.
         for name, expected in inputs.items():
             source = (project / name).resolve()
-            if not source.is_relative_to(project) or (_sha(source) if source.is_file() else "absent") != expected:
+            if (
+                not source.is_relative_to(project)
+                or (_sha(source) if source.is_file() else "absent") != expected
+            ):
                 raise RuntimeError("Routing inputs changed before progress publication")
         points = [ProgressPoint(**raw) for raw in samples]
         draw_chart(history + points, staged / PNG_NAME, preview_start=len(history))
@@ -682,7 +799,12 @@ def refresh_preview(project: Path, run_id: str) -> dict:
     from pcb.net_routing.controller import decode_checkpoint
     from pcb.net_routing.native import Snapshot, sha
     from pcb.net_routing.protection import ProtectedState
-    from pcb.net_routing.runner import _run_id, _source_hashes, _progress_sample, verify_resume_board
+    from pcb.net_routing.runner import (
+        _run_id,
+        _source_hashes,
+        _progress_sample,
+        verify_resume_board,
+    )
 
     assets = asset_root(project)
     path = assets / "results" / "autoroute" / f"{_run_id(run_id)}.json"
@@ -690,21 +812,38 @@ def refresh_preview(project: Path, run_id: str) -> dict:
     state = json.loads(original)
     with Snapshot(native_path(project, ".kicad_pcb")) as snapshot:
         inputs = _source_hashes(snapshot, project, assets)
-        candidate = decode_checkpoint(state["checkpoint"], inputs, snapshot.tool_hashes,
-                                      sha(assets / "config" / "autopcb.json"), allow_tool_changes=True)
+        candidate = decode_checkpoint(
+            state["checkpoint"],
+            inputs,
+            snapshot.tool_hashes,
+            sha(assets / "config" / "autopcb.json"),
+            allow_tool_changes=True,
+        )
         schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
-        if ProtectedState.capture(snapshot.original, schematic).differences(candidate, schematic):
+        if ProtectedState.capture(snapshot.original, schematic).differences(
+            candidate, schematic
+        ):
             raise ValueError("Preview changes protected design items")
         snapshot.board_path.write_bytes(candidate)
         verified = verify_resume_board(snapshot, project, state["best_preview_opens"])
-        _progress_sample(state, sha(snapshot.board_path), verified["drc"], verified["geometry"], state["elapsed_seconds"])
+        _progress_sample(
+            state,
+            sha(snapshot.board_path),
+            verified["drc"],
+            verified["geometry"],
+            state["elapsed_seconds"],
+        )
         snapshot.check()
         if path.read_bytes() != original:
             raise RuntimeError("Preview changed during progress verification; retry")
         publish_preview(project, inputs, run_id, state["progress_samples"])
-    return {"status": "preview_refreshed", "open_connections": state["saved_board_opens"],
-            "preview_opens": state["best_preview_opens"], "points": len(state["progress_samples"]),
-            "plot": str(project / "deliverables" / "review" / PNG_NAME)}
+    return {
+        "status": "preview_refreshed",
+        "open_connections": state["saved_board_opens"],
+        "preview_opens": state["best_preview_opens"],
+        "points": len(state["progress_samples"]),
+        "plot": str(project / "deliverables" / "review" / PNG_NAME),
+    }
 
 
 def redraw(review: Path) -> dict:
@@ -762,16 +901,21 @@ def attach_run_metrics(
         raise ValueError("Run metrics require an evidence reference")
     values = (symmetry_score, routing_run_seconds)
     if all(value is None for value in values) or any(
-        value is not None and (
+        value is not None
+        and (
             isinstance(value, bool)
             or not isinstance(value, (int, float))
             or not math.isfinite(value)
             or value < 0
-        ) for value in values
+        )
+        for value in values
     ):
         raise ValueError("Run metrics must be finite and nonnegative")
     old = (point.symmetry_score, point.routing_run_seconds)
-    if any(previous is not None and new is not None and previous != new for previous, new in strict_zip(old, values)):
+    if any(
+        previous is not None and new is not None and previous != new
+        for previous, new in strict_zip(old, values)
+    ):
         raise ValueError("Run metrics disagree with the recorded history")
     return replace(
         point,
@@ -891,9 +1035,14 @@ def record(
     if run_metrics is not None:
         if not isinstance(run_metrics, RunMetrics):
             raise ValueError("Run metrics must be a RunMetrics record")
-        point = attach_run_metrics(point, run_metrics.pcb_sha256, run_metrics.source_signature,
-                                   run_metrics.symmetry_score, run_metrics.routing_run_seconds,
-                                   run_metrics.evidence)
+        point = attach_run_metrics(
+            point,
+            run_metrics.pcb_sha256,
+            run_metrics.source_signature,
+            run_metrics.symmetry_score,
+            run_metrics.routing_run_seconds,
+            run_metrics.evidence,
+        )
     same = bool(
         history
         and history[-1].pcb_sha256 == point.pcb_sha256
@@ -917,13 +1066,20 @@ def record(
         if point.track_length_mm is not None:
             enriched = attach_geometry(
                 enriched,
-                GeometryMetrics(point.track_length_mm, point.via_count, point.degree_two_joints),
+                GeometryMetrics(
+                    point.track_length_mm, point.via_count, point.degree_two_joints
+                ),
                 point.geometry_evidence,
             )
         if run_metrics is not None:
-            enriched = attach_run_metrics(enriched, run_metrics.pcb_sha256, run_metrics.source_signature,
-                                          run_metrics.symmetry_score, run_metrics.routing_run_seconds,
-                                          run_metrics.evidence)
+            enriched = attach_run_metrics(
+                enriched,
+                run_metrics.pcb_sha256,
+                run_metrics.source_signature,
+                run_metrics.symmetry_score,
+                run_metrics.routing_run_seconds,
+                run_metrics.evidence,
+            )
         metrics_added = enriched != history[-1]
         history[-1] = enriched
     if same and not metrics_added and _valid_chart(review / PNG_NAME):
@@ -985,7 +1141,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--review", type=Path, required=True)
     parser.add_argument("--kicad-python", type=Path, required=True)
     parser.add_argument("--label", default="Saved board check")
-    parser.add_argument("--preview-run", help="revalidate and plot a retained private autorouter run")
+    parser.add_argument(
+        "--preview-run", help="revalidate and plot a retained private autorouter run"
+    )
     parser.add_argument(
         "--redraw",
         action="store_true",
@@ -1000,15 +1158,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     console = Console(json_mode=args.json, verbose=args.verbose)
     try:
-        if sum(bool(x) for x in (args.redraw, args.backfill_root, args.preview_run)) > 1:
-            raise ValueError("Choose only one of --redraw, --backfill-root and --preview-run")
-        label = ("Redrawing recorded progress" if args.redraw else
-                 "Checking historical progress sources" if args.backfill_root else
-                 "Checking saved-board connectivity, DRC and routing measurements")
+        if (
+            sum(bool(x) for x in (args.redraw, args.backfill_root, args.preview_run))
+            > 1
+        ):
+            raise ValueError(
+                "Choose only one of --redraw, --backfill-root and --preview-run"
+            )
+        label = (
+            "Redrawing recorded progress"
+            if args.redraw
+            else "Checking historical progress sources"
+            if args.backfill_root
+            else "Checking saved-board connectivity, DRC and routing measurements"
+        )
         with console.activity(label):
             result = (
                 refresh_preview(args.project, args.preview_run)
-                if args.preview_run else redraw(args.review)
+                if args.preview_run
+                else redraw(args.review)
                 if args.redraw
                 else backfill(args.project, args.review, args.backfill_root)
                 if args.backfill_root

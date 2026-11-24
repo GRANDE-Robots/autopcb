@@ -22,14 +22,18 @@ class PrepareTests(unittest.TestCase):
             "description": "Pad net (OLD) doesn't match net given by schematic (NEW)",
             "items": [{"uuid": "pad-1", "description": "Pad 7 [OLD] of D21"}],
         }
-        self.assertEqual(helper({"schematic_parity": [finding]}, {"pad-1": "OLD"}),
-                         ("NEW", "OLD"))
+        self.assertEqual(
+            helper({"schematic_parity": [finding]}, {"pad-1": "OLD"}), ("NEW", "OLD")
+        )
         self.assertEqual(helper({"schematic_parity": []}, {}), ())
         for report, pads in (
             ({"schematic_parity": [finding]}, {}),
             ({"schematic_parity": [finding]}, {"pad-1": "OTHER"}),
             ({"schematic_parity": [{**finding, "type": "unknown"}]}, {"pad-1": "OLD"}),
-            ({"schematic_parity": [{**finding, "description": "unreadable"}]}, {"pad-1": "OLD"}),
+            (
+                {"schematic_parity": [{**finding, "description": "unreadable"}]},
+                {"pad-1": "OLD"},
+            ),
         ):
             with self.subTest(report=report, pads=pads), self.assertRaises(ValueError):
                 helper(report, pads)
@@ -54,7 +58,9 @@ class PrepareTests(unittest.TestCase):
             source = route_fixtures.RouteOptimizerTests.make_board(Path(tmp))
             cli = kicad_cli()
             report = _drc(cli, source, Path(tmp) / "drc.json")
-            self.assertTrue({"error", "warning", "exclusion"} <= set(report["included_severities"]))
+            self.assertTrue(
+                {"error", "warning", "exclusion"} <= set(report["included_severities"])
+            )
 
     def test_native_parity_failure_cannot_be_reported_as_zero_findings(self):
         with tempfile.TemporaryDirectory(prefix="autopcb-missing-schematic-") as tmp:
@@ -73,7 +79,13 @@ class PrepareTests(unittest.TestCase):
 
     def test_incomplete_or_suppressed_drc_is_not_a_pass(self):
         api = self.api()
-        report = {"violations": [], "unconnected_items": [], "schematic_parity": [], "included_severities": ["error", "warning", "exclusion"], "ignored_checks": ["clearance"]}
+        report = {
+            "violations": [],
+            "unconnected_items": [],
+            "schematic_parity": [],
+            "included_severities": ["error", "warning", "exclusion"],
+            "ignored_checks": ["clearance"],
+        }
         result = api.summarize_drc(report)
         self.assertEqual(result["ignored_checks"], ["clearance"])
         self.assertFalse(result["complete"])
@@ -83,7 +95,15 @@ class PrepareTests(unittest.TestCase):
 
     def test_native_ignored_check_records_are_reported_by_key(self):
         api = self.api()
-        report = {"violations": [], "unconnected_items": [], "schematic_parity": [], "included_severities": ["error", "warning", "exclusion"], "ignored_checks": [{"key": "missing_courtyard", "description": "no courtyard"}]}
+        report = {
+            "violations": [],
+            "unconnected_items": [],
+            "schematic_parity": [],
+            "included_severities": ["error", "warning", "exclusion"],
+            "ignored_checks": [
+                {"key": "missing_courtyard", "description": "no courtyard"}
+            ],
+        }
         try:
             result = api.summarize_drc(report)
         except ValueError as error:
@@ -92,12 +112,14 @@ class PrepareTests(unittest.TestCase):
 
     def test_native_preparation_keeps_saved_sources_and_includes_all_nets(self):
         api = self.api()
-        schematic = '''(kicad_sch (version 20250114) (generator "eeschema")
+        schematic = """(kicad_sch (version 20250114) (generator "eeschema")
           (uuid "6b6b7707-0425-4195-9c79-1824e2f1a24e") (paper "A4")
-          (lib_symbols) (sheet_instances (path "/" (page "1"))) (embedded_fonts no))'''
+          (lib_symbols) (sheet_instances (path "/" (page "1"))) (embedded_fonts no))"""
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
-            source = route_fixtures.RouteOptimizerTests.make_board(project, crossing=True)
+            source = route_fixtures.RouteOptimizerTests.make_board(
+                project, crossing=True
+            )
             (project / "v4.1.kicad_sch").write_text(schematic, encoding="utf-8")
             # The route fixture intentionally writes a partial synthetic stackup;
             # let KiCad normalize it before recording this test's baseline.
@@ -107,14 +129,21 @@ class PrepareTests(unittest.TestCase):
             result = api.prepare_project(project)
             after = {p.name: p.read_bytes() for p in project.iterdir() if p.is_file()}
             self.assertEqual(before, after)
-            self.assertEqual({item["name"] for item in result["nets"]}, {"SIGNAL", "OTHER"})
+            self.assertEqual(
+                {item["name"] for item in result["nets"]}, {"SIGNAL", "OTHER"}
+            )
             self.assertIn("work", result)
-            self.assertEqual([item["name"] for item in result["work"]["items"]], ["SIGNAL"])
+            self.assertEqual(
+                [item["name"] for item in result["work"]["items"]], ["SIGNAL"]
+            )
             self.assertIn("OTHER", result["work"]["blocked_nets"])
             self.assertIn("style", result)
             self.assertIn("passed", result["style"])
             self.assertIn("reference_copper", result)
-            self.assertIn(result["reference_copper"]["status"], {"sampled_unverified", "missing_project_rules"})
+            self.assertIn(
+                result["reference_copper"]["status"],
+                {"sampled_unverified", "missing_project_rules"},
+            )
             self.assertFalse(result["reference_copper"]["electrically_verified"])
             self.assertGreater(result["drc"]["open_connections"], 0)
             self.assertEqual(result["status"], "prepared_incomplete")

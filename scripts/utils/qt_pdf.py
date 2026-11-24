@@ -24,8 +24,12 @@ def render(source: Path, output: Path, title: str) -> None:
     page = QWebEnginePage()
     settings = page.settings()
     settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, False)
-    settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-    settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
+    settings.setAttribute(
+        QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True
+    )
+    settings.setAttribute(
+        QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False
+    )
     layout = QPageLayout(
         QPageSize(QPageSize.PageSizeId.Letter),
         QPageLayout.Orientation.Portrait,

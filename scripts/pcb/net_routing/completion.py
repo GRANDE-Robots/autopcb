@@ -54,5 +54,7 @@ def completion_issues(evidence: VerificationEvidence) -> tuple[str, ...]:
         ("protected items", evidence.protected_unchanged),
         ("review views", evidence.views_current),
     )
-    issues.extend(f"{label}: not verified" for label, passed in checks if passed is not True)
+    issues.extend(
+        f"{label}: not verified" for label, passed in checks if passed is not True
+    )
     return tuple(issues)

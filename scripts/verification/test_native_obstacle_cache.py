@@ -24,7 +24,9 @@ class NativeObstacleCacheTests(unittest.TestCase):
             source.write_bytes(b"board one")
             rules.write_bytes(b"rules one")
             cache = NativeObstacleCache()
-            with patch("pcb.route_native.read_native_obstacles", side_effect=fake_snapshot) as read:
+            with patch(
+                "pcb.route_native.read_native_obstacles", side_effect=fake_snapshot
+            ) as read:
                 first = cache.load(source, "A", assume_refill=True)
                 self.assertIs(cache.load(source, "A", assume_refill=True), first)
                 self.assertEqual(read.call_count, 1)
@@ -56,7 +58,9 @@ class NativeObstacleCacheTests(unittest.TestCase):
             source.write_bytes(b"board")
             cache = NativeObstacleCache()
             removal = [{"kind": "segment", "uuid": "test"}]
-            with patch("pcb.route_native.read_native_obstacles", side_effect=fake_snapshot) as read:
+            with patch(
+                "pcb.route_native.read_native_obstacles", side_effect=fake_snapshot
+            ) as read:
                 cache.load(source, "A", removals=removal)
                 cache.load(source, "A", removals=removal)
                 self.assertEqual(read.call_count, 2)

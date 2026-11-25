@@ -27,6 +27,14 @@ class CodeHealthTests(unittest.TestCase):
         self.scripts = self.project / "autopcb" / "scripts"
         self.scripts.mkdir(parents=True)
         (self.scripts / "README.md").write_text("# Scripts\n", encoding="utf-8")
+        (self.project / "autopcb" / "README.md").write_text(
+            "# AutoPCB\n\n"
+            + "".join(
+                f"## {section}\n\n"
+                for section in audit_code_health.RuleFindings.ROOT_SECTIONS
+            ),
+            encoding="utf-8",
+        )
 
     def source(self, name: str, body: str = "value = 1\n") -> Path:
         """Write a script that carries the required header."""

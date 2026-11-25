@@ -13,7 +13,8 @@ import ast
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import sys
 
@@ -25,6 +26,16 @@ class RuleFindings:
 
     COPYRIGHT = "Copyright: GRANDE Robots and Aaron John Sabu"
     FOLDERS = ("packaging", "config", "data", "docs", ".github/workflows")
+    ROOT_SECTIONS = (
+        "Overview",
+        "Responsibilities",
+        "Requirements",
+        "Installation",
+        "Usage",
+        "Validation",
+        "File Structure",
+        "License",
+    )
 
     def __init__(self, support: Path):
         """Read the tree under one folder.
@@ -64,13 +75,80 @@ class RuleFindings:
             for node in ast.walk(tree)
         )
 
+    def tracked_entries(self, folder: Path) -> set[str] | None:
+        """Name what Git tracks directly inside a folder, apart from its README.
+
+        Outputs:
+            The entry names, or None when the support folder is not a Git
+            checkout or Git cannot list the folder.
+        """
+        if not (self.support / ".git").exists():
+            return None
+        relative = PurePosixPath(folder.relative_to(self.support).as_posix())
+        try:
+            listing = subprocess.run(
+                ["git", "-C", str(self.support), "ls-files", "--", relative.as_posix()],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        names = {
+            PurePosixPath(line).relative_to(relative).parts[0]
+            for line in listing.splitlines()
+            if line
+        }
+        names.discard("README.md")
+        return names
+
+    @staticmethod
+    def listed_entries(readme: Path) -> set[str] | None:
+        """Read the entry names in the first column of the File Structure table.
+
+        Outputs:
+            The names without a trailing slash, or None when the README has no
+            File Structure section.
+        """
+        _, found, section = readme.read_text(encoding="utf-8").partition(
+            "\n## File Structure"
+        )
+        if not found:
+            return None
+        return {
+            match.group(1).rstrip("/")
+            for line in section.split("\n## ")[0].splitlines()
+            if (match := re.match(r"\|\s*\[?`([^`]+)`", line))
+        }
+
+    def readme_findings(self, folder: Path) -> bool:
+        """Say whether a folder README's table misses a tracked entry or names a stale one."""
+        readme = folder / "README.md"
+        listed = self.listed_entries(readme)
+        tracked = self.tracked_entries(folder)
+        if tracked is None:
+            return False
+        return listed is None or listed != tracked
+
+    def root_sections_wrong(self) -> bool:
+        """Say whether the root README lacks the required sections in order."""
+        readme = self.support / "README.md"
+        if not readme.is_file():
+            return True
+        sections = re.findall(
+            r"^## (.+?)\s*$", readme.read_text(encoding="utf-8"), re.MULTILINE
+        )
+        return tuple(sections) != self.ROOT_SECTIONS
+
     def collect(self) -> dict[str, list[str]]:
         """Find every rule breach.
 
         Outputs:
-            Paths relative to the support folder, sorted, under four rules:
-            ``module_functions``, ``missing_header``, ``missing_docstrings``
-            and ``missing_readme``. Files that do not parse are left to the
+            Paths relative to the support folder, sorted, under six rules:
+            ``module_functions``, ``missing_header``, ``missing_docstrings``,
+            ``missing_readme``, ``readme_structure`` (a folder README whose File
+            Structure table does not match the entries Git tracks in the folder)
+            and ``root_readme_sections``. Files that do not parse are left to the
             syntax check.
         """
         found = {
@@ -78,6 +156,8 @@ class RuleFindings:
             "missing_header": [],
             "missing_docstrings": [],
             "missing_readme": [],
+            "readme_structure": [],
+            "root_readme_sections": [],
         }
         sources = self.sources()
         for path in sources:
@@ -100,6 +180,13 @@ class RuleFindings:
             for folder in folders
             if folder.is_dir() and not (folder / "README.md").is_file()
         )
+        found["readme_structure"] = sorted(
+            folder.relative_to(self.support).as_posix()
+            for folder in folders | {self.support}
+            if (folder / "README.md").is_file() and self.readme_findings(folder)
+        )
+        if self.root_sections_wrong():
+            found["root_readme_sections"] = ["README.md"]
         return found
 
 

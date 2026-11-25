@@ -25,3 +25,9 @@ Label connectors, indicators, and test points by function where space permits. K
 ## Older projects
 
 AutoPCB can read historical `design/` paths. Move each controlled collection, such as `release_inputs/`, as a unit with its manifest and evidence. `data/archive/` is reserved for local snapshots outside the active input search.
+
+## File Structure
+
+| File | Relevance | Dependencies | Used by |
+| --- | --- | --- | --- |
+| [`requirements.example.txt`](requirements.example.txt) | An example project brief: a two-layer I2C temperature sensor on a 35 x 25 mm board. Copy it to `data/requirements.txt` or pass it to `autopcb propose`. | None | `autopcb propose` |

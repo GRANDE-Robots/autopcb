@@ -15,7 +15,7 @@ Messages: unreachable (any network error or a 5 second timeout), not an AutoPCB 
 
 ## Build and test
 
-Requires macOS with Xcode 16 and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requires macOS with Xcode 16 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 brew install xcodegen

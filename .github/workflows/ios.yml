@@ -18,12 +18,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - name: Select Xcode 16
-        run: |
-          if ls /Applications/Xcode_16.app >/dev/null 2>&1; then
-            sudo xcode-select -s /Applications/Xcode_16.app
-          fi
-          xcodebuild -version
+      - name: Show Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project

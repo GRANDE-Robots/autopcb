@@ -1,14 +1,16 @@
 """serve.py: serve AutoPCB to a phone or any browser that can reach this computer.
 
 KiCad runs only on desktop systems, so a phone drives the jobs here. Every
-request needs the access token printed at startup. The default address is
-this computer only; pass --host to reach it over a LAN or Tailscale.
+request except the page and the version check needs the access token printed
+at startup, sent in the Authorization header and nowhere else. The default
+address is this computer only; pass --host to reach it over a LAN or Tailscale.
 
 Copyright: GRANDE Robots and Aaron John Sabu
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import secrets
@@ -18,6 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
+from importlib import metadata
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -182,18 +185,25 @@ class ServeApp:
             cli,
         )
 
-    def authorized(self, headers, query: dict) -> bool:
+    def authorized(self, headers) -> bool:
         """Say whether a request carries the access token.
 
         Inputs:
-            headers: Request headers; the token may be an Authorization bearer value.
-            query: Parsed query string; the token may be its ``token`` value.
+            headers: Request headers; the token is the Authorization bearer value.
+        Outputs:
+            True when the bearer value equals the token. A token in the URL is never
+            accepted, because URLs are logged and kept in browser history.
         """
-        supplied = (
-            headers.get("Authorization", "").removeprefix("Bearer ")
-            or query.get("token", [""])[0]
-        )
+        supplied = headers.get("Authorization", "").removeprefix("Bearer ")
         return secrets.compare_digest(supplied, self.token)
+
+    @staticmethod
+    def version() -> str:
+        """The installed AutoPCB version, or ``unknown`` when it is not installed."""
+        try:
+            return metadata.version("autopcb")
+        except metadata.PackageNotFoundError:
+            return "unknown"
 
     def projects(self) -> list[dict]:
         """The workspace's projects as name and path."""
@@ -257,15 +267,26 @@ class ServeApp:
             headers: Request headers.
             body: Request body bytes.
         Outputs:
-            The status code, content type and body. The page is served without a token and
-            every other path needs it (401). A missing project is 404, a busy project 409
+            The status code, content type and body. The page and ``/api/info`` are served
+            without a token and every other path needs it (401). ``/api/info`` reports
+            the product, version and API level, and whether this request's token is right. A missing project is 404, a busy project 409
             and a bad request 400.
         """
         parts = urlsplit(url)
         query = parse_qs(parts.query)
         if method == "GET" and parts.path == "/":
             return 200, "text/html; charset=utf-8", PAGE.read_bytes()
-        if not self.authorized(headers, query):
+        if method == "GET" and parts.path == "/api/info":
+            return self.json(
+                200,
+                {
+                    "product": "AutoPCB",
+                    "version": self.version(),
+                    "api": 1,
+                    "authorized": self.authorized(headers),
+                },
+            )
+        if not self.authorized(headers):
             return self.json(401, {"error": "Missing or wrong access token"})
         try:
             if method == "GET" and parts.path == "/api/projects":
@@ -305,6 +326,28 @@ class ServeApp:
     def json(status: int, payload: dict) -> tuple[int, str, bytes]:
         """A JSON response as a (status, content type, body) triple."""
         return status, "application/json", json.dumps(payload).encode()
+
+
+class PairingCode:
+    """Draw the pairing link as a QR code a phone camera or the AutoPCB app can read."""
+
+    @staticmethod
+    def draw(link: str) -> str | None:
+        """Render the link as terminal text.
+
+        Inputs:
+            link: Pairing link from ``Server.url``.
+        Outputs:
+            Lines of block characters, or None when the optional ``segno`` package
+            (``pip install "autopcb[phone]"``) is not installed.
+        """
+        try:
+            import segno
+        except ImportError:
+            return None
+        buffer = io.StringIO()
+        segno.make(link, error="m").terminal(out=buffer, compact=True)
+        return buffer.getvalue()
 
 
 class Server:
@@ -352,9 +395,12 @@ class Server:
 
     @property
     def url(self) -> str:
-        """The link that opens the page with the access token."""
+        """The pairing link: the address with the token in the fragment.
+
+        A browser never sends the fragment to the server, so it stays out of logs.
+        """
         host, port = self.http.server_address[:2]
-        return f"http://{host}:{port}/?token={self.app.token}"
+        return f"http://{host}:{port}/#token={self.app.token}"
 
     def run(self) -> None:
         """Serve until interrupted, then close the socket."""

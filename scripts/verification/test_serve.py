@@ -7,6 +7,7 @@ Copyright: GRANDE Robots and Aaron John Sabu
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import threading
@@ -15,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from autopcb.serve import JobRunner, Server, ServeApp
+from autopcb.serve import JobRunner, PairingCode, Server, ServeApp
 from autopcb.workspace import Workspace
 
 
@@ -76,10 +77,40 @@ class ServeTests(unittest.TestCase):
             )[0],
             401,
         )
-        status, payload = self.call("GET", "/api/projects?token=secret", headers={})
+        status, payload = self.call("GET", "/api/projects")
         self.assertEqual(
             (status, json.loads(payload)["projects"][0]["path"]), (200, self.entry)
         )
+
+    def test_token_in_the_url_is_never_accepted(self):
+        self.assertEqual(
+            self.call("GET", "/api/projects?token=secret", headers={})[0], 401
+        )
+        self.assertEqual(
+            self.call("GET", "/api/board.svg?token=secret", headers={})[0], 401
+        )
+
+    def test_info_is_public_and_says_whether_the_token_is_right(self):
+        status, payload = self.call("GET", "/api/info", headers={})
+        info = json.loads(payload)
+        self.assertEqual((status, info["product"], info["api"]), (200, "AutoPCB", 1))
+        self.assertEqual(info["version"], ServeApp.version())
+        self.assertFalse(info["authorized"])
+        self.assertTrue(json.loads(self.call("GET", "/api/info")[1])["authorized"])
+        wrong = {"Authorization": "Bearer wrong"}
+        self.assertFalse(
+            json.loads(self.call("GET", "/api/info", headers=wrong)[1])["authorized"]
+        )
+
+    def test_pairing_link_keeps_the_token_in_the_fragment(self):
+        server = Server(self.app, "127.0.0.1", 0)
+        self.addCleanup(server.http.server_close)
+        self.assertRegex(server.url, r"^http://127\.0\.0\.1:\d+/#token=secret$")
+
+    @unittest.skipUnless(importlib.util.find_spec("segno"), "needs autopcb[phone]")
+    def test_pairing_code_draws_the_link(self):
+        drawn = PairingCode.draw("http://127.0.0.1:8765/#token=secret")
+        self.assertGreater(len(drawn.splitlines()), 10)
 
     def test_jobs_are_limited_to_known_actions_workspace_projects_and_one_per_project(
         self,
@@ -120,7 +151,7 @@ class ServeTests(unittest.TestCase):
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
         self.addCleanup(server.http.shutdown)
-        base = server.url.split("/?")[0]
+        base = server.url.split("/#")[0]
         with urllib.request.urlopen(
             urllib.request.Request(base + "/api/jobs", headers=self.auth)
         ) as response:

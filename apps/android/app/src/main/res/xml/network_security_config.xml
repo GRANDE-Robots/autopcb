@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml: allows the plain HTTP that autopcb serve speaks.
+
+  Copyright: GRANDE Robots and Aaron John Sabu
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

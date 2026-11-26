@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  strings.xml: every text the app shows.
+
+  Copyright: GRANDE Robots and Aaron John Sabu
+-->
+<resources>
+    <string name="app_name">AutoPCB</string>
+    <string name="pair_intro">On your computer run autopcb serve, then scan the QR code it shows or paste the link it prints. Use this only on a network you trust.</string>
+    <string name="scan_button">Scan QR code</string>
+    <string name="scan_prompt">Scan the QR code shown by autopcb serve</string>
+    <string name="link_hint">http://HOST:PORT/#token=TOKEN</string>
+    <string name="pair_button">Pair</string>
+    <string name="retry">Retry</string>
+    <string name="pair_again">Pair again</string>
+    <string name="forget">Forget this computer</string>
+    <string name="status_bad_link">That is not an AutoPCB pairing link.</string>
+    <string name="status_checking">Checking the computer…</string>
+    <string name="status_ready">Paired.</string>
+    <string name="status_unreachable">Cannot reach the computer. Check that autopcb serve is running and that this phone is on the same network or Tailscale.</string>
+    <string name="status_not_autopcb">That address is not a supported AutoPCB server.</string>
+    <string name="status_token_rejected">The computer rejected the access token. Pair again with the newest link.</string>
+</resources>

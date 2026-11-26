@@ -106,7 +106,11 @@ In the desktop Layout tab, the saved and preview boards show native pad outlines
 
 ### Use AutoPCB from a phone
 
-KiCad runs on Windows, macOS and Linux, so phones drive a computer that has it. On that computer run `autopcb serve --host ADDRESS`, using its LAN or Tailscale address, and open the printed link on an Android phone or iPhone. The page lists the workspace's projects, shows each board, runs verify, route preview, apply and draft export, and shows every job's result. The link carries the access token and anyone holding it can run jobs, so share it only over a network you trust: Tailscale encrypts the traffic, plain LAN HTTP does not. Without `--host` the page is reachable only from the same computer.
+KiCad runs on Windows, macOS and Linux, so phones drive a computer that has it. On that computer run `autopcb serve --host ADDRESS`, using its LAN or Tailscale address. It prints a pairing link, `http://ADDRESS:8765/#token=...`, and draws the same link as a QR code when the `phone` extra is installed (`python -m pip install ".[phone]"`). Scan the QR code or open the link on an Android phone or iPhone. The page lists the workspace's projects, shows each board, runs verify, route preview, apply and draft export, and shows every job's result. Without `--host` the page is reachable only from the same computer.
+
+The token travels in the link's fragment, which a browser never sends to the server, and in the `Authorization` header of every API call. The server rejects a token in the URL. `GET /api/info` needs no token and reports the product, version, API level and whether the request's token is right, so an app can check a server before it stores anything. Anyone holding the link can run jobs, so share it only over a network you trust: Tailscale encrypts the traffic, plain LAN HTTP does not.
+
+[`apps/android`](apps/android/README.md) and [`apps/ios`](apps/ios/README.md) hold native shells that pair by scanning the code, keep the token in encrypted storage or the Keychain, and open the page in a view locked to the paired address.
 
 ### Evidence for a checked export
 
@@ -160,10 +164,11 @@ Copy the installer and [the validation script](packaging/check_windows_release.p
 | --- | --- | --- | --- |
 | [`.git-blame-ignore-revs`](.git-blame-ignore-revs) | The formatting-only commits that `git blame` skips. | None | Git |
 | [`.gitattributes`](.gitattributes) | Keeps the controlled release inputs byte-exact. | None | Git |
-| [`.github/`](.github/workflows/README.md) | GitHub Actions workflows for tests and installers. | GitHub Actions | GitHub pull requests |
+| [`.github/`](.github/workflows/README.md) | GitHub Actions workflows for tests, installers and the phone apps. | GitHub Actions | GitHub pull requests |
 | [`.gitignore`](.gitignore) | Keeps KiCad editor state, Python caches, `results/`, `config/campaigns/` and local snapshots out of Git. | None | Git |
 | [`AGENTS.md`](AGENTS.md) | The working rules for code, documentation, checks and Git. | None | Contributors and coding assistants |
 | [`LICENSE`](LICENSE) | The proprietary license. | None | Everyone who uses the repository |
+| [`apps/`](apps/README.md) | Native Android and iOS shells that pair with `autopcb serve`. | `scripts/autopcb/serve.py` | `.github/workflows/android.yml`, `.github/workflows/ios.yml` |
 | [`config/`](config/README.md) | Routing defaults and the PDF build list. | None | `scripts/autopcb`, `scripts/utils` |
 | [`data/`](data/README.md) | Project inputs: requirements, catalog and engineering evidence. | None | `scripts/autopcb`, `scripts/core` |
 | [`docs/`](docs/README.md) | Product documentation, including the algorithm guide and its PDF. | `scripts/utils` builds the PDF | Readers |

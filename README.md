@@ -20,7 +20,7 @@ AutoPCB does not replace editing in KiCad or engineering review. Production appr
 ## Requirements
 
 - Python 3.9 or newer.
-- KiCad 10 with a Python that can import `pcbnew`. Set `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly. The software checks in this repository run on KiCad 10, most recently 10.0.8, and the Windows release check expects KiCad 10.0.6.
+- KiCad 10 with a Python that can import `pcbnew`. Set `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly. CI installs the current KiCad 10 release on each system without pinning a patch version. The local Linux runs behind this README used KiCad 10.0.8, and the manual Windows installer check is pinned to KiCad 10.0.6.
 - Optional extras in `pyproject.toml`: `desktop` (PySide6), `benchmark` (psutil), `review` (Pillow, pypdfium2, markdown-it-py) and `desktop-build` (PySide6, PyInstaller).
 - Building the Windows installer also needs Inno Setup 6.
 

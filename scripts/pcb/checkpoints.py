@@ -72,6 +72,7 @@ class ConfigReader:
                 "max_checkpoints",
                 "recovery",
                 "rework",
+                "placement",
                 "zone_stitch",
                 "working_scope",
             },

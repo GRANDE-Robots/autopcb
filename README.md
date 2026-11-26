@@ -59,7 +59,7 @@ Omit `--iscc` to search for the compiler on PATH and in the standard Inno Setup 
 | --- | --- |
 | `config/` | Routing defaults and policies in `config/projects/<project>/`. Edit campaigns live in `config/campaigns/<project>/`. |
 | `data/` | Requirements, a component catalog, and project evidence such as stackup and load budgets in `data/projects/<project>/`. |
-| `results/` | Proposals, native files in `results/projects/`, run records in `results/jobs/`, and export packages in `results/exports/`. |
+| `results/` | Proposals, native files in `results/projects/`, downloaded sources in `results/sources/`, run records in `results/jobs/`, and export packages in `results/exports/`. See [results layout](docs/results-layout.md). |
 | `docs/` | Product documentation. |
 | `scripts/` | Shared jobs, KiCad adapters, and verification tools. |
 

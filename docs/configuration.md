@@ -40,7 +40,7 @@ A defaults file may hold any subset of the six dimensions. Keys it omits keep th
 
 ### Board minima
 
-`configure-layout` also reads five board limits from the board's `.kicad_pro` file, under `board.design_settings.rules`. They are set in KiCad, not in AutoPCB. `create` does not read them because the board does not exist yet.
+`configure-layout` also reads five board limits from the board's `.kicad_pro` file, under `board.design_settings.rules`. They are set in KiCad, not in AutoPCB. `create` does not read them.
 
 | Key | Unit | Default when absent | Effect |
 | --- | --- | --- | --- |
@@ -97,7 +97,7 @@ The keys below are the only ones `read_config` accepts. Any other key fails with
 | `search_margin_mm` | number above 0, or `null` | mm | no default. When absent the board-wide router uses `8.0`. The checkpoint planner then searches the whole board. Written as `6.0`. | Margin added around the pads and copper of each unfinished net to form its search window, clipped to the board outline. | [`scheduler.py`](../scripts/pcb/net_routing/scheduler.py), [`runner.py`](../scripts/pcb/net_routing/runner.py), [`prepare.py`](../scripts/pcb/net_routing/prepare.py), [`reference_repair.py`](../scripts/pcb/net_routing/reference_repair.py), [`checkpoints.py`](../scripts/pcb/checkpoints.py) |
 | `include_nets` | array of strings | none | `[]` | Checkpoint planner only: when not empty, only these nets are planned, and a name absent from the board is an error. The board-wide router ignores it and reports `legacy_include_list_ignored`. Names are non-empty and unique. | [`checkpoints.py`](../scripts/pcb/checkpoints.py), [`controller.py`](../scripts/pcb/net_routing/controller.py) |
 | `exclude_nets` | array of strings | none | `[]` | Nets the router must leave alone. They are not scheduled (blocked as "excluded by routing policy"). Rework does not remove copper on them. A part with a pad on one of them is not a candidate for a move. The checkpoint planner skips them. Names are non-empty and unique and must match KiCad net names exactly. They are not checked against the board. | [`controller.py`](../scripts/pcb/net_routing/controller.py), [`protection.py`](../scripts/pcb/net_routing/protection.py), [`reroute.py`](../scripts/pcb/net_routing/reroute.py), [`relocation.py`](../scripts/pcb/net_routing/relocation.py), [`checkpoints.py`](../scripts/pcb/checkpoints.py), [`runner.py`](../scripts/pcb/net_routing/runner.py), [`crowding.py`](../scripts/autopcb/crowding.py) |
-| `priorities` | object, net name to integer | rank | `{}`. A net not listed has rank `100`. | Scheduling rank. Lower ranks are scheduled first and a rank is finished before the next one starts. Values are integers, not booleans. | [`scheduler.py`](../scripts/pcb/net_routing/scheduler.py), [`controller.py`](../scripts/pcb/net_routing/controller.py), [`checkpoints.py`](../scripts/pcb/checkpoints.py) |
+| `priorities` | object, net name to integer | rank | `{}`. A net not listed has rank `100`. | Scheduling rank. Lower ranks are scheduled first, and the rounds of one rank are placed before those of the next. Values are integers, not booleans. | [`scheduler.py`](../scripts/pcb/net_routing/scheduler.py), [`controller.py`](../scripts/pcb/net_routing/controller.py), [`checkpoints.py`](../scripts/pcb/checkpoints.py) |
 | `route` | object | see below | `{}` in the code. Written with the keys shown above. | Settings every net starts from. See the next section. | [`controller.py`](../scripts/pcb/net_routing/controller.py), [`backend.py`](../scripts/pcb/net_routing/backend.py) |
 | `net_overrides` | object, net name to object | see below | `{}` | Per-net settings. Each value takes the same keys as `route`. Names are non-empty and not checked against the board. | [`controller.py`](../scripts/pcb/net_routing/controller.py), [`checkpoints.py`](../scripts/pcb/checkpoints.py), [`relocation.py`](../scripts/pcb/net_routing/relocation.py), [`reroute.py`](../scripts/pcb/net_routing/reroute.py) |
 | `search` | object | see below | `{}`, meaning the defaults of every `search` key | Search limits. | [`model.py`](../scripts/pcb/net_routing/model.py) |
@@ -107,7 +107,7 @@ The keys below are the only ones `read_config` accepts. Any other key fails with
 | `rework` | object | see below | `{}`, meaning the defaults of every `rework` key | Prices of changes to existing copper and parts. | [`rework.py`](../scripts/pcb/net_routing/rework.py) |
 | `zone_stitch` | object | see below | `{}` | Evidence for ground-island stitching. | [`zone_stitch.py`](../scripts/pcb/net_routing/zone_stitch.py) |
 | `working_scope` | object | see below | `{}`, meaning no scope | Which net classes a run may change. | [`protection.py`](../scripts/pcb/net_routing/protection.py), [`fast_rework.py`](../scripts/pcb/net_routing/fast_rework.py) |
-| `placement` | object | see below | not accepted | Which parts may move. See the placement section for a limit in this checkout. | [`move_scope.py`](../scripts/pcb/move_scope.py) |
+| `placement` | object | see the placement section | all parts may move | Which parts may move. | [`move_scope.py`](../scripts/pcb/move_scope.py) |
 
 ### route and net_overrides
 
@@ -238,8 +238,8 @@ All keys are optional. An unknown key, a boolean where a number is needed, a non
 
 | Key | Type | Unit | Default | Allowed | What it does | Read by |
 | --- | --- | --- | --- | --- | --- | --- |
-| `early_rework` | boolean | none | `false` | `true` or `false` | Tries copper and part-move repairs after a net's first failed stage-0 search instead of after the widening stages. Also keeps early rework requests when a saved queue is renewed. | [`runner.py`](../scripts/pcb/net_routing/runner.py), [`recovery.py`](../scripts/pcb/net_routing/recovery.py) |
-| `stages` | integer | stages | `3` | 0 to 3 | Widening stages before copper repair: pairs, finer grid, board detour. | [`recovery.py`](../scripts/pcb/net_routing/recovery.py), [`runner.py`](../scripts/pcb/net_routing/runner.py) |
+| `early_rework` | boolean | none | `false` | `true` or `false` | After a net's first failed stage-0 search, also queues a copper and part-move repair for that net, so the repair does not wait for the widening stages to finish. Also keeps early rework requests when a saved queue is renewed. | [`runner.py`](../scripts/pcb/net_routing/runner.py), [`recovery.py`](../scripts/pcb/net_routing/recovery.py) |
+| `stages` | integer | stages | `3` | 0 to 3 | Widening stages before copper repair, in order: wider pairs, finer pairs, board detour. | [`recovery.py`](../scripts/pcb/net_routing/recovery.py), [`runner.py`](../scripts/pcb/net_routing/runner.py) |
 | `alternatives_per_stage` | integer | endpoint pairs | `3` | 1 to 64 | Checkpoint choices tried per stage. | [`runner.py`](../scripts/pcb/net_routing/runner.py) |
 | `defer_rounds` | integer | rounds | `2` | 0 or more | How far down the queue a failed net is deferred. | [`runner.py`](../scripts/pcb/net_routing/runner.py) |
 | `wide_margin_mm` | number | mm | `12.0` | above 0 | Margin added around a net for wider windows. | [`recovery.py`](../scripts/pcb/net_routing/recovery.py), [`reroute.py`](../scripts/pcb/net_routing/reroute.py), [`relocation.py`](../scripts/pcb/net_routing/relocation.py), [`obstructions.py`](../scripts/pcb/net_routing/obstructions.py) |
@@ -291,7 +291,7 @@ Also read by [`fast_rework.py`](../scripts/pcb/net_routing/fast_rework.py), whic
 
 | Key | Type | Unit | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `proofs` | array of objects | none | `[]` | One entry per ground pad. Read by `ZoneStitchSearch` in [`zone_stitch.py`](../scripts/pcb/net_routing/zone_stitch.py), which raises "Invalid zone-stitch branch evidence" for a malformed entry. Any `evidence.source` file named inside is hashed into the run inputs, as a path relative to the project folder ([`runner.py`](../scripts/pcb/net_routing/runner.py)). |
+| `proofs` | array of objects | none | `[]` | One entry per ground pad. Read by `StitchAllowances.proofs_from_policy` in [`zone_stitch.py`](../scripts/pcb/net_routing/zone_stitch.py), which raises "Invalid zone-stitch branch evidence" for a malformed entry. Any `evidence.source` file named inside is hashed into the run inputs, as a path relative to the project folder ([`runner.py`](../scripts/pcb/net_routing/runner.py)). |
 
 Each entry of `proofs` has these keys. All are required except `island_items` and `board_sha256`, which default to an empty list and an empty string. An empty `board_sha256` never matches a board, so the entry is skipped.
 
@@ -321,7 +321,7 @@ In this checkout the assessment never sets `electrically_verified`, and `zone_st
 
 Limits in this checkout:
 
-- `read_config` does not list `placement` among its accepted top-level keys. A policy that sets it fails with "Invalid AutoPCB configuration or unexpected fields". `autopcb route` reports that as `blocked` with exit status 2. The engine code that calls `MoveScope.from_config(policy.get("placement"))` therefore only ever sees the default scope for a validated policy. The key is accepted in the net-planner request described in the narrowing example below, and by `CrowdedVariant` ([`crowding.py`](../scripts/autopcb/crowding.py)), which reads the raw policy object.
+- `read_config` accepts `placement` as a top-level key and validates it with `MoveScope.from_config`. Earlier versions left it out of the accepted keys, so a policy that set it was rejected as "Invalid AutoPCB configuration or unexpected fields".
 - `autopcb route` keeps every part fixed unless `--allow-placement` is given. It passes `--keep-placement` and sets `recovery.placement_candidates` to 0.
 
 ## Keys for compatibility or internal use
@@ -331,7 +331,7 @@ Limits in this checkout:
 | `include_nets` | Legacy for the board-wide router, which ignores it. Used by the checkpoint planner (`run.py pcb checkpoints`). |
 | `max_nets`, `max_checkpoints` | Used only by the checkpoint planner. |
 | `route.bounds_mm` | Used as a fixed window by the checkpoint planner. Replaced by the scheduled window in the board-wide router. |
-| `placement` | Read by the engine and by `CrowdedVariant`, but rejected by `read_config`. See above. |
+| `placement` | Accepted by `read_config`. It is read by the engine and by `CrowdedVariant`. |
 | `_ground_anchor_candidates`, `_protected_anchor_candidates` | Internal. `fast_rework.py` sets them on an in-memory copy of the policy for ground-island repair. `read_config` rejects them in a file. |
 | `schema` | A version marker. Only `1` is accepted. |
 
@@ -357,11 +357,11 @@ The policy's SHA-256 is bound into every run record. After a change to the polic
 
 ## Examples
 
-All three policies below pass `read_config`. The two policy examples were also run through the work-plan builder and the net-planner and grid-router checks, using placeholder net names. They show syntax, not values to copy. Take the numbers from the board's own design rules.
+The two policy examples pass `read_config`. They were also run through the work-plan builder, the net-planner request check and the grid-router checks, using placeholder net names. The first example is a net-planner request, not a policy, and it passes the net-planner request check. The examples show syntax, not values to copy. Take the numbers from the board's own design rules.
 
 ### Narrowing which parts may move
 
-`autopcb route` already keeps every part fixed. The router may move parts only with `--allow-placement`, and then `placement` narrows the choice. Because the project policy does not accept `placement` in this checkout, the example is a net-planner configuration, which runs with `run.py pcb plan-nets --config FILE` and accepts the key. It lets only unlocked, bottom-side, surface-mount parts move, and lists the explicit poses to try for one part.
+`autopcb route` keeps every part fixed. The router may move parts only with `--allow-placement`, and then `placement` narrows the choice. The first example puts the key in a net-planner configuration, which runs with `run.py pcb plan-nets --config FILE`. The same `placement` object is also accepted in the project policy. It lets only unlocked, bottom-side, surface-mount parts move, and lists the explicit poses to try for one part.
 
 ```json
 {
@@ -412,7 +412,7 @@ Lower `width_mm` and `clearance_mm`, use a finer grid, raise `max_cells` so the 
 }
 ```
 
-The values only take effect where they exceed the board's own limits. The width and clearance of a segment are the largest of these values, the board's net class values and its Board Setup minimums, so set the same limits in KiCad. A finer `step_mm` multiplies the grid cells, and the step is raised again whenever a window would exceed `max_cells`.
+A lower value takes effect only when the board's own values allow it. The width and clearance of a segment are the largest of these values, the board's net class values and its Board Setup minimums, so set the same limits in KiCad. A finer `step_mm` multiplies the grid cells, and the step is raised again whenever a window would exceed `max_cells`.
 
 ### Excluding a net
 

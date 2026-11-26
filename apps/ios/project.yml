@@ -6,8 +6,6 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
-    CODE_SIGN_STYLE: Automatic
 targets:
   AutoPCB:
     type: application
@@ -18,8 +16,6 @@ targets:
       - path: Resources
         excludes:
           - Info.plist
-    info:
-      path: Resources/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.grande.autopcb

@@ -20,7 +20,7 @@ AutoPCB does not replace editing in KiCad or engineering review. Production appr
 ## Requirements
 
 - Python 3.9 or newer.
-- KiCad 10 with a Python that can import `pcbnew`. Set `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly. The software checks in this repository run on KiCad 10, most recently 10.0.8, and the Windows release check expects KiCad 10.0.6.
+- KiCad 10 with a Python that can import `pcbnew`. Set `KICAD_CLI` and `KICAD_PYTHON` if the executables need to be selected explicitly. CI installs the current KiCad 10 release on each system without pinning a patch version. The local Linux runs behind this README used KiCad 10.0.8, and the manual Windows installer check is pinned to KiCad 10.0.6.
 - Optional extras in `pyproject.toml`: `desktop` (PySide6), `benchmark` (psutil), `review` (Pillow, pypdfium2, markdown-it-py) and `desktop-build` (PySide6, PyInstaller).
 - Building the Windows installer also needs Inno Setup 6.
 
@@ -59,7 +59,7 @@ Omit `--iscc` to search for the compiler on PATH and in the standard Inno Setup 
 | --- | --- |
 | `config/` | Routing defaults and policies in `config/projects/<project>/`. Edit campaigns live in `config/campaigns/<project>/`. |
 | `data/` | Requirements, a component catalog, and project evidence such as stackup and load budgets in `data/projects/<project>/`. |
-| `results/` | Proposals, native files in `results/projects/`, run records in `results/jobs/`, and export packages in `results/exports/`. |
+| `results/` | Proposals, native files in `results/projects/`, downloaded sources in `results/sources/`, run records in `results/jobs/`, and export packages in `results/exports/`. See [results layout](docs/results-layout.md). |
 | `docs/` | Product documentation. |
 | `scripts/` | Shared jobs, KiCad adapters, and verification tools. |
 

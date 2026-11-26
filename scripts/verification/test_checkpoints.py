@@ -293,6 +293,18 @@ class GroupingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Non-finite"):
                 checkpoints.read_config(path)
 
+    def test_placement_section_is_accepted_and_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(
+                '{"schema": 1, "max_pins": 3, "placement": {"locked": false}}'
+            )
+            config, _ = checkpoints.read_config(path)
+            self.assertEqual(config["placement"], {"locked": False})
+            path.write_text('{"schema": 1, "max_pins": 3, "placement": {"bogus": 1}}')
+            with self.assertRaises(ValueError):
+                checkpoints.read_config(path)
+
 
 class CheckpointTests(unittest.TestCase):
     """Tests of checkpoint planning, attempts, neutral seeds and sequential previews."""

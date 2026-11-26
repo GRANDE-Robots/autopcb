@@ -164,10 +164,11 @@ Copy the installer and [the validation script](packaging/check_windows_release.p
 | --- | --- | --- | --- |
 | [`.git-blame-ignore-revs`](.git-blame-ignore-revs) | The formatting-only commits that `git blame` skips. | None | Git |
 | [`.gitattributes`](.gitattributes) | Keeps the controlled release inputs byte-exact. | None | Git |
-| [`.github/`](.github/workflows/README.md) | GitHub Actions workflows for tests and installers. | GitHub Actions | GitHub pull requests |
+| [`.github/`](.github/workflows/README.md) | GitHub Actions workflows for tests, installers and the phone apps. | GitHub Actions | GitHub pull requests |
 | [`.gitignore`](.gitignore) | Keeps KiCad editor state, Python caches, `results/`, `config/campaigns/` and local snapshots out of Git. | None | Git |
 | [`AGENTS.md`](AGENTS.md) | The working rules for code, documentation, checks and Git. | None | Contributors and coding assistants |
 | [`LICENSE`](LICENSE) | The proprietary license. | None | Everyone who uses the repository |
+| [`apps/`](apps/README.md) | Native Android and iOS shells that pair with `autopcb serve`. | `scripts/autopcb/serve.py` | `.github/workflows/android.yml`, `.github/workflows/ios.yml` |
 | [`config/`](config/README.md) | Routing defaults and the PDF build list. | None | `scripts/autopcb`, `scripts/utils` |
 | [`data/`](data/README.md) | Project inputs: requirements, catalog and engineering evidence. | None | `scripts/autopcb`, `scripts/core` |
 | [`docs/`](docs/README.md) | Product documentation, including the algorithm guide and its PDF. | `scripts/utils` builds the PDF | Readers |

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  themes.xml: the app theme.
+
+  Copyright: GRANDE Robots and Aaron John Sabu
+-->
+<resources>
+    <style name="Theme.AutoPCB" parent="Theme.AppCompat.DayNight.DarkActionBar" />
+</resources>

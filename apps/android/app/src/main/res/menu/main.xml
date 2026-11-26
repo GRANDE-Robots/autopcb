@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  main.xml: the options menu of the main screen.
+
+  Copyright: GRANDE Robots and Aaron John Sabu
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/forget"
+        android:title="@string/forget" />
+</menu>

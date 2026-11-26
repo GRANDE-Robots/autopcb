@@ -45,15 +45,32 @@ button.act:disabled { opacity: .5; }
   <section><h2>Jobs</h2><div id="jobs" class="empty">No jobs yet.</div></section>
 </main>
 <script>
-const token = new URLSearchParams(location.search).get("token") || "";
+const tokenKey = "autopcb-token";
+const fragment = new URLSearchParams(location.hash.slice(1)).get("token");
+if (fragment) {
+  try { sessionStorage.setItem(tokenKey, fragment); } catch (error) { /* private mode */ }
+  history.replaceState(null, "", location.pathname);
+}
+let token = fragment || "";
+try { token = token || sessionStorage.getItem(tokenKey) || ""; } catch (error) { /* private mode */ }
 const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
 let selected = null;
+let boardUrl = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || response.statusText);
   return body;
+}
+
+async function showBoard(project) {
+  const query = new URLSearchParams({ project: project.path, t: Date.now() });
+  const response = await fetch("/api/board.svg?" + query, { headers });
+  if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+  if (boardUrl) URL.revokeObjectURL(boardUrl);
+  boardUrl = URL.createObjectURL(await response.blob());
+  document.getElementById("board").src = boardUrl;
 }
 
 function text(tag, value, className) {
@@ -93,8 +110,7 @@ function choose(project, button) {
   document.querySelectorAll(".project").forEach((node) => node.setAttribute("aria-pressed", String(node === button)));
   document.getElementById("selected").hidden = false;
   document.getElementById("name").textContent = project.name;
-  const query = new URLSearchParams({ project: project.path, token, t: Date.now() });
-  document.getElementById("board").src = "/api/board.svg?" + query;
+  showBoard(project).catch((error) => alert(error.message));
 }
 
 async function start(action, extra = {}, project = selected && selected.path) {

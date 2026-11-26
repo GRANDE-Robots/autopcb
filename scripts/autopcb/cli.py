@@ -479,7 +479,7 @@ class AutoPcbCommand:
         """
         import secrets
 
-        from autopcb.serve import JobRunner, ServeApp, Server
+        from autopcb.serve import JobRunner, PairingCode, ServeApp, Server
 
         workspace = Workspace(args.workspace)
         extra = tuple(
@@ -503,6 +503,11 @@ class AutoPcbCommand:
         )
         print(
             f"AutoPCB is serving {workspace.root}. Open this link on your phone:\n{server.url}",
+            flush=True,
+        )
+        code = PairingCode.draw(server.url)
+        print(
+            code or 'Install "autopcb[phone]" to also print this link as a QR code.',
             flush=True,
         )
         try:

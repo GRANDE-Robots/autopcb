@@ -128,6 +128,20 @@ Software checks, KiCad verification and hardware evidence are reported separatel
 | KiCad verification | ERC, DRC, schematic agreement and reference-copper sampling on a saved board. | `autopcb verify`, and `autopcb qualify` on the reference designs. Each run records its own results under `results/`, which Git ignores. |
 | Hardware evidence | Behavior of a built board. | Pending. The bench bring-up procedure for the USB reference design is in the [USB breakout review](docs/usb-breakout-review.md). |
 
+### Release 1.0.0
+
+The manual [Release workflow](.github/workflows/release.yml) builds the installers and the Android APK, then drafts the GitHub release with a `SHA256SUMS` file. It is a draft so that a person decides when to publish. The release notes are in [`packaging/release-notes.md`](packaging/release-notes.md).
+
+| Artifact | Checked in CI | Not checked |
+| --- | --- | --- |
+| Windows installer | Built on `windows-2022`. | Installing and qualifying it on a clean Windows 11 VM, which is the manual check below. Not code-signed. |
+| Linux package | Built, then installed, qualified on both reference designs and removed on a clean runner. | Other distributions than Ubuntu 24.04. |
+| macOS disk image | Built on `macos-15`. | Installing and qualifying it on a clean Mac. Not code-signed. |
+| Android APK | Unit tests, and an emulator test of the pair flow. Signed with a debug key. | A device, the camera QR scan, and a store signing key. |
+| iOS app | Unit and UI tests on a simulator. No build is released. | A real iPhone, which needs an Apple Developer account. |
+
+Hardware evidence stays pending until the bench bring-up of the reference boards is run.
+
 ### Software tests
 
 ```bash
@@ -156,7 +170,7 @@ autopcb qualify --output results/nominal-control --fixed-outlines --rounds 65 --
 Copy the installer and [the validation script](packaging/check_windows_release.ps1) to a clean Windows 11 x64 VM. Use a non-elevated PowerShell session that permits local scripts, with the same standard user and evidence directory for both phases. Phase Install requires a VM with AutoPCB and KiCad absent. It checks setup, the Start menu entry, the installed CLI, and the missing KiCad diagnostic. Then install KiCad 10.0.6 in its standard location in the VM and run Phase Qualify.
 
 ```powershell
-.\check_windows_release.ps1 -Phase Install -Installer .\AutoPCB-1.0.0.dev0-windows.exe -EvidenceDir '..\AutoPCB QA'
+.\check_windows_release.ps1 -Phase Install -Installer .\AutoPCB-1.0.0-windows.exe -EvidenceDir '..\AutoPCB QA'
 
 ## File Structure
 

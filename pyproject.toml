@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autopcb"
-version = "1.0.0.dev0"
+version = "1.0.0"
 description = "Local KiCad design, routing and verification tools"
 readme = "README.md"
 license = {text = "Proprietary"}

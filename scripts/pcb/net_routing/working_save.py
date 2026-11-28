@@ -19,9 +19,11 @@ import sys
 from pathlib import Path
 
 from core.paths import asset_root, config_path, data_path, results_path, stored_result
+from core.kicad_sexpr import parse
 from core.pcb_io import BoardSaveGuard, quiet_duplicate_image_handlers
 from pcb.checkpoints import read_config
 from pcb.freeroute_delta import read_copper
+from pcb.move_scope import MoveScope
 from pcb.net_routing.controller import (
     decode_checkpoint,
     encode_checkpoint,
@@ -36,7 +38,7 @@ from pcb.net_routing.protection import (
     protected_footprint_changes,
     unqualified_working_nets,
 )
-from pcb.route_validation import stable_connection_items
+from pcb.route_validation import _canonical, stable_connection_items
 from pcb.net_routing.runner import (
     _check_sources,
     _exclusive,
@@ -51,6 +53,57 @@ from pcb.net_routing.runner import (
 
 class WorkingQualification:
     """Decides which changes a work-in-progress board may carry into the saved board."""
+
+    @staticmethod
+    def verify_design(
+        source: Path,
+        original: bytes,
+        candidate: bytes,
+        schematic: bytes,
+        scope: MoveScope | None,
+    ) -> None:
+        """Allow only exact native pose changes to existing, policy-permitted parts."""
+        protected = ProtectedState.capture(original, schematic)
+        changes = protected.differences(candidate, schematic)
+        if changes and (changes != ("fixed footprints",) or scope is None):
+            raise RuntimeError("The preview changes protected design items")
+        if scope is None:
+            return
+
+        from pcb.footprint_pose import verify_native_pose_change
+
+        text = candidate.decode("utf-8-sig")
+        board = parse(text)
+        old_groups = parse(original.decode("utf-8-sig")).children("group")
+        if Counter(map(_canonical, old_groups)) != Counter(
+            map(_canonical, board.children("group"))
+        ):
+            raise RuntimeError("The placement preview changes board groups")
+        if not changes:
+            return
+        remaining = dict(protected.fixed_footprints)
+        for footprint in board.children("footprint"):
+            uid = protected.form_field(footprint, "uuid")
+            if uid not in remaining:
+                raise RuntimeError("The placement preview adds a footprint")
+            if remaining.pop(uid) == protected.digest(_canonical(footprint)):
+                continue
+            verify_native_pose_change(
+                source,
+                {
+                    "document": "pcb",
+                    "target": {
+                        "kind": "footprint",
+                        "reference": scope.reference(footprint),
+                    },
+                    "op": "replace",
+                    "path": [],
+                    "expression": text[footprint.start : footprint.end],
+                },
+                scope,
+            )
+        if remaining:
+            raise RuntimeError("The placement preview removes a footprint")
 
     @staticmethod
     def working_improvement(
@@ -290,9 +343,14 @@ class WorkingSave:
                     allow_tool_changes=True,
                 )
                 schematic = (native_path(snapshot.directory, ".kicad_sch")).read_bytes()
-                protected = ProtectedState.capture(snapshot.original, schematic)
-                if protected.differences(candidate, schematic):
-                    raise RuntimeError("The preview changes protected design items")
+                scope = (
+                    MoveScope.from_config(policy.get("placement"))
+                    if state.get("keep_placement") is False
+                    else None
+                )
+                WorkingQualification.verify_design(
+                    snapshot.board_path, snapshot.original, candidate, schematic, scope
+                )
                 BoardSaveGuard(
                     board_path, tuple(snapshot.fingerprints.items())
                 ).verify_editor_unlocked()

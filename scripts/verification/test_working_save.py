@@ -19,6 +19,56 @@ from pcb.net_routing.working_save import save_working, WorkingQualification
 class WorkingSaveTests(unittest.TestCase):
     """Tests for saving routing progress only after a checked improvement."""
 
+    def test_working_save_permits_only_the_native_pose_of_a_movable_part(self):
+        from core.kicad_campaign import CampaignForms
+        from core.kicad_sexpr import parse
+        from pcb.footprint_pose import native_pose_change
+        from pcb.move_scope import MoveScope
+        from verification.test_route_optimizer import RouteOptimizerTests
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = RouteOptimizerTests.make_board(Path(folder))
+            original = source.read_bytes()
+            text = original.decode()
+            scope = MoveScope.from_config({"locked": False})
+            change = native_pose_change(source, "J1", 3.0, 2.0, 90.0, scope)
+            old = CampaignForms.select(parse(text), change["target"])
+            pose = change["expression"]
+            candidate = (text[: old.start] + pose + text[old.end :]).encode()
+            check = WorkingQualification.verify_design
+            check(source, original, candidate, b"schematic", scope)
+            regrouped = text[: parse(text).end - 1] + '(group "Changed")\n)'
+            with self.assertRaisesRegex(RuntimeError, "board groups"):
+                check(source, original, regrouped.encode(), b"schematic", scope)
+            with self.assertRaisesRegex(RuntimeError, "protected design"):
+                check(source, original, candidate, b"schematic", None)
+            with self.assertRaisesRegex(ValueError, "keeps fixed"):
+                check(
+                    source,
+                    original,
+                    candidate,
+                    b"schematic",
+                    MoveScope.from_config({"sides": ["bottom"]}),
+                )
+            altered = pose.replace('(pad "1"', '(pad "2"', 1)
+            self.assertNotEqual(altered, pose)
+            with self.assertRaisesRegex(ValueError, "exact native pose"):
+                check(
+                    source,
+                    original,
+                    (text[: old.start] + altered + text[old.end :]).encode(),
+                    b"schematic",
+                    scope,
+                )
+            with self.assertRaisesRegex(RuntimeError, "removes a footprint"):
+                check(
+                    source,
+                    original,
+                    (text[: old.start] + text[old.end :]).encode(),
+                    b"schematic",
+                    scope,
+                )
+
     def test_saved_checkpoint_replans_only_current_unfinished_nets(self):
         from pcb.net_routing import working_save as api
 
